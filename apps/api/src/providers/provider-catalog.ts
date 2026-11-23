@@ -12,7 +12,7 @@ import type { AppEnv } from "../app.ts";
 import { cachedRead } from "../d1-cache.ts";
 import { createDb, type Db, schema } from "../db/index.ts";
 
-// The last list read, for code that works out a job's environment synchronously (job-times.ts).
+// The last list read, for code that works out a job's environment synchronously (reports/environments.ts).
 let latest = BASE_CATALOG;
 let ids = new Set(latest.map((p) => p.id));
 

@@ -48,8 +48,6 @@ export interface AppEnv {
     accessIdentity: AccessIdentity;
     // Set by attachSession when the request carries an agent access token (agent-auth.ts).
     agent?: AgentPrincipal;
-    // Set by requireMachine on the routes a machine calls with its own token.
-    machine: typeof schema.machine.$inferSelect;
     // Flag values already evaluated for this request (src/flags.ts).
     flags?: Partial<Flags>;
   };

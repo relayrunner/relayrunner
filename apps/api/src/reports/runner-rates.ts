@@ -8,7 +8,7 @@ import {
   githubRate,
   type PriceBook,
 } from "@relayrunner/providers";
-import { routeIdFromLabels } from "../routing/routing.ts";
+import { asksForSelfHosted } from "../routing/routing.ts";
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
 // opportunity: it pays for a whole minute however little of it ran.
@@ -78,9 +78,7 @@ export const GITHUB_HOSTED_GROUP = "GitHub Actions";
  */
 export function runnerClass(labels: string[], runnerGroupName?: string | null): RunnerClass {
   const lower = labels.map((label) => label.toLowerCase());
-  // A pick (`runs-on: relayrunner`) or a route's machine is self-hosted too.
-  if (lower.includes("self-hosted") || lower.includes("relayrunner") || routeIdFromLabels(labels))
-    return "self-hosted";
+  if (asksForSelfHosted(labels)) return "self-hosted";
   // A runner group other than GitHub's own means the org's runners, unless the labels name a hosted
   // image (larger hosted runners can sit in custom groups).
   const hosted = lower.find((label) => /^(ubuntu|windows|macos|xcode)-/.test(label));

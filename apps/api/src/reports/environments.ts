@@ -8,8 +8,7 @@ import { type Db, schema } from "../db/index.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "../providers/cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "../machines/machines.ts";
 import { currentProviders } from "../providers/provider-catalog.ts";
-import { routeIdFromLabels } from "../routing/routing.ts";
-import { RELAYRUNNER_LABEL } from "../routing/labels.ts";
+import { asksForSelfHosted } from "../routing/routing.ts";
 import { GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./runner-rates.ts";
 
 // Adds the size runnerSize finds for a provider's label, when it finds one.
@@ -52,11 +51,7 @@ export function environmentFor(
   const group = runnerGroupName || "Default";
   // Asked for by name: a `self-hosted` label, a pick, or a route to a machine. GitHub matches group
   // names without case, so `default` and `Default` are one row.
-  if (
-    lower.includes("self-hosted") ||
-    lower.includes(RELAYRUNNER_LABEL) ||
-    routeIdFromLabels(labels)
-  )
+  if (asksForSelfHosted(labels))
     return {
       key: `self-hosted:${group.toLowerCase()}`,
       label: "Self-hosted",

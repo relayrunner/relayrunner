@@ -495,7 +495,7 @@ export const jobTiming = sqliteTable(
     runnerGroupName: text("runner_group_name"),
     // The machine a route sent the job to, set with workflow_job's by setJobMachine (src/ingest/jobs.ts),
     // since the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
-    // (src/reports/job-times.ts) report it as its own environment.
+    // (src/reports/environments.ts) report it as its own environment.
     machineId: text("machine_id"),
     // When GitHub queued the job, for the wait before a runner took it.
     queuedAt: integer("queued_at", { mode: "timestamp_ms" }),

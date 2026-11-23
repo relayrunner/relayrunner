@@ -18,9 +18,3 @@ export const RAW_RETENTION_DAYS = 62;
 // How far back a filtered Signals page, a signal's runs and pull request folders look: shorter than
 // single jobs are kept, since each of those reads (and GitHub calls) grows with it.
 export const LIVE_DAYS = 30;
-
-// A failed queue message's delay before its retry: 30s, 60s, 120s, ... capped at 15 minutes.
-// `attempts` starts at 1.
-export function retryDelaySeconds(attempts: number) {
-  return Math.min(30 * 2 ** Math.max(0, attempts - 1), 15 * 60);
-}

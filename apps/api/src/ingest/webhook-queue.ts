@@ -3,7 +3,7 @@
  * sends a compact WebhookMessage to `relayrunner-github-webhooks`; this Worker processes it.
  *
  * Each message in a batch runs at the same time and is acked or retried on its own, so one
- * failing delivery never re-runs its batchmates. Retries back off exponentially (see retryDelaySeconds in time.ts), so the retry budget spans
+ * failing delivery never re-runs its batchmates. Retries back off exponentially (see queue-retry.ts), so the retry budget spans
  * about half an hour: long enough to roll back a bad API deploy before anything is dead-lettered.
  *
  * After max_retries a message moves to `relayrunner-github-webhooks-dlq`. The DLQ consumer archives
@@ -15,7 +15,7 @@
  * keyed on the job's state, not on arrival order.
  */
 import { usesRelayRunner } from "../routing/labels.ts";
-import { retryDelaySeconds } from "../time.ts";
+import { retryDelaySeconds } from "../queue-retry.ts";
 import { WEBHOOK_DLQ, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";

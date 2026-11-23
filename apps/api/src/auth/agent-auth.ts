@@ -14,6 +14,7 @@
 // (routes/feedback.ts) changes no workspace state, only records what the agent reports,
 // rate-limited per user.
 
+import { bearerToken } from "./bearer.ts";
 import { mcp } from "@better-auth/mcp";
 import { AppError } from "@relayrunner/errors";
 import { APIError } from "better-auth/api";
@@ -162,10 +163,10 @@ const JWKS_CACHE_KEY = {};
 
 // An OAuth access token, as opposed to a Better Auth session token (bearer plugin), which is opaque.
 export function agentBearer(headers: Headers) {
-  const match = /^Bearer\s+(\S+)$/i.exec(headers.get("authorization") ?? "");
-  if (!match) return null;
+  const token = bearerToken(headers);
+  if (!token) return null;
   try {
-    return decodeProtectedHeader(match[1]).typ === "at+jwt" ? match[1] : null;
+    return decodeProtectedHeader(token).typ === "at+jwt" ? token : null;
   } catch {
     return null;
   }

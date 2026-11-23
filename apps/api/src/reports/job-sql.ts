@@ -55,11 +55,11 @@ export function inWorkspace(
     where ${schema.workspace.id} = ${workspaceId})`;
 }
 
-/** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
 /** Before `until` (epoch ms), when the window ends before now. */
 export const before = (until?: number) =>
   until === undefined ? sql`` : sql` and ${table.completedAt} < ${until}`;
 
+/** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
 export const windowWhere = (workspaceId: string, since: Date, until?: number) =>
   sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}${before(until)}
     and ${RAN}`;

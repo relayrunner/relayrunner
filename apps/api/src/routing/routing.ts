@@ -9,6 +9,7 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
+import { usesRelayRunner } from "./labels.ts";
 import {
   type HostedProviderId,
   isProviderLabel,
@@ -96,6 +97,18 @@ export function routeIdFromLabels(labels: string[]): string | null {
     if (match) return match[1];
   }
   return null;
+}
+
+/**
+ * Whether the labels ask for a self-hosted runner by name: a `self-hosted` label, a pick
+ * (`runs-on: relayrunner`) or a route to a machine.
+ */
+export function asksForSelfHosted(labels: string[]) {
+  return (
+    labels.some((label) => label.toLowerCase() === "self-hosted") ||
+    usesRelayRunner(labels) ||
+    routeIdFromLabels(labels) !== null
+  );
 }
 
 /** Whether a route still keeps its machine from being picked for another job. */

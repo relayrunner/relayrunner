@@ -1,8 +1,6 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { MACHINE_SHARING } from "@relayrunner/activity";
 import { z } from "zod";
-import type { AppEnv } from "../../app.ts";
 import { createDb, schema } from "../../db/index.ts";
 import { requestOrigin } from "../../machines/device-origin.ts";
 import { FAILED_CONCLUSIONS } from "../../ingest/job-counts.ts";
@@ -13,12 +11,9 @@ import {
   presentMachine,
   presentMachineWorkspaces,
   removeMachineFromWorkspace,
-  setMachinePaused,
   setMachineSharing,
   userWorkspaces,
-  type PauseActor,
 } from "../../machines/machines.ts";
-import type { Env } from "../../env.ts";
 import { isBillingProvider } from "@relayrunner/providers";
 import {
   chooseWorkspace,
@@ -36,10 +31,11 @@ import {
   machineJobSteps,
   machineWorkspaceFor,
 } from "../../machines/machine-jobs.ts";
-import { requireMachine } from "../../middleware/machine.ts";
+import { pauseResponse, SharingBody } from "./shared.ts";
+import { type MachineEnv, requireMachine } from "../../middleware/machine.ts";
 
 // Routes a machine calls as itself, with its token: `Authorization: Bearer rrm_…`. A missing,
-// unknown or revoked token gets a 401 (requireMachine).
+// unknown or revoked token gets a 401 (requireMachine), before /connect's WebSocket upgrade too.
 
 const JobId = z.coerce.number().int().positive();
 const JobsQuery = z.object({
@@ -51,20 +47,21 @@ const JobsQuery = z.object({
   since: z.coerce.number().int().positive().optional(),
 });
 
-export const SharingBody = z.object({ sharing: z.enum(MACHINE_SHARING) });
 const MachineConnectBody = z.object({
   token: z.string().trim().min(8).max(4096),
   options: z.record(z.string(), z.string()).optional(),
   workspace: z.string().trim().min(1).max(200).optional(),
 });
 
-export const machineTokenRoutes = new Hono<AppEnv>()
-  // The machine's WebSocket: `Upgrade: websocket` with `Authorization: Bearer rrm_…`. A missing,
-  // unknown or revoked token gets a 401 before the upgrade. After that the machine sends `hello`,
+export const machineTokenRoutes = new Hono<MachineEnv>()
+  // Paths of their own, so the token check can't reach the dashboard's routes.
+  .use("/connect", requireMachine)
+  .use("/me/*", requireMachine)
+  // The machine's WebSocket: `Upgrade: websocket`. After the upgrade the machine sends `hello`,
   // then `status` as a heartbeat (src/durable-objects/machine-session.ts has the timings and
   // close codes). The token is checked first because a failed upgrade hides its status from the
   // CLI, so it asks with a plain GET: 401 means sign in again, 426 means the token is fine.
-  .get("/connect", requireMachine, async (c) => {
+  .get("/connect", async (c) => {
     const { machine } = c.var;
     if (c.req.header("upgrade")?.toLowerCase() !== "websocket")
       throw new AppError("WEBSOCKET_REQUIRED");
@@ -77,11 +74,9 @@ export const machineTokenRoutes = new Hono<AppEnv>()
     headers.set(MACHINE_ORIGIN_HEADER, JSON.stringify(requestOrigin(c.req.raw)));
     return c.env.MACHINE_LINK.getByName(machine.id).fetch(new Request(c.req.raw, { headers }));
   })
-  // Who a machine token belongs to, for `relayrunner whoami`: `Authorization: Bearer rrm_…`. A
-  // missing, unknown or revoked token gets a 401, the same as /connect.
-  .get("/me", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // Who a machine token belongs to, for `relayrunner whoami`.
+  .get("/me", async (c) => {
+    const { machine, machineDb: db } = c.var;
 
     const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
       presentMachineWorkspaces(db, machine),
@@ -102,12 +97,11 @@ export const machineTokenRoutes = new Hono<AppEnv>()
       enrolledBy: enrolledBy ?? null,
     });
   })
-  // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244):
-  // `Authorization: Bearer rrm_…`, 401 like /me. Only an owner may change sharing, and the token
-  // lives on the owner's computer, so the change is logged as theirs.
-  .put("/me/sharing", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244). Only an
+  // owner may change sharing, and the token lives on the owner's computer, so the change is logged
+  // as theirs.
+  .put("/me/sharing", async (c) => {
+    const { machine, machineDb: db } = c.var;
     const body = SharingBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) throw new AppError("INVALID_REQUEST");
     if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
@@ -120,11 +114,10 @@ export const machineTokenRoutes = new Hono<AppEnv>()
       },
     });
   })
-  // The jobs this machine ran, for RelayRunner for Mac: `Authorization: Bearer rrm_…`, 401 like
-  // /me. Newest first; `before` (ms, from `next`) continues. A machine sees only its own jobs.
-  .get("/me/jobs", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // The jobs this machine ran, for RelayRunner for Mac, newest first; `before` (ms, from `next`)
+  // continues. A machine sees only its own jobs.
+  .get("/me/jobs", async (c) => {
+    const { machine, machineDb: db } = c.var;
     const query = JobsQuery.safeParse(c.req.query());
     if (!query.success) throw new AppError("INVALID_REQUEST");
     return c.json(await machineJobs(db, machine.id, query.data));
@@ -132,9 +125,8 @@ export const machineTokenRoutes = new Hono<AppEnv>()
   // One of them with its steps from GitHub (null when GitHub no longer has the job) and, for a
   // failed one, why, as /failure has it (null otherwise), read together. 404 when the job didn't
   // run on this machine.
-  .get("/me/jobs/:jobId", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  .get("/me/jobs/:jobId", async (c) => {
+    const { machine, machineDb: db } = c.var;
     const jobId = JobId.safeParse(c.req.param("jobId"));
     if (!jobId.success) throw new AppError("INVALID_REQUEST");
     const found = await machineJob(db, machine.id, jobId.data);
@@ -152,9 +144,8 @@ export const machineTokenRoutes = new Hono<AppEnv>()
   })
   // Why one of them failed: the failed step, annotations, a log excerpt and, when the workspace has
   // AI on, the likely cause. 404 when it didn't run here or didn't fail.
-  .get("/me/jobs/:jobId/failure", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  .get("/me/jobs/:jobId/failure", async (c) => {
+    const { machine, machineDb: db } = c.var;
     const jobId = JobId.safeParse(c.req.param("jobId"));
     if (!jobId.success) throw new AppError("INVALID_REQUEST");
     const found = await machineJob(db, machine.id, jobId.data);
@@ -164,18 +155,16 @@ export const machineTokenRoutes = new Hono<AppEnv>()
     if (!failure) throw new AppError("NOT_FOUND");
     return c.json(failure);
   })
-  // The machine's workspaces, for `relayrunner workspaces` (#366): `Authorization: Bearer rrm_…`,
-  // 401 like /me. `workspaces` are the ones it takes jobs in, `others` its owner's other ones.
-  .get("/me/workspaces", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // The machine's workspaces, for `relayrunner workspaces` (#366). `workspaces` are the ones it
+  // takes jobs in, `others` its owner's other ones.
+  .get("/me/workspaces", async (c) => {
+    const { machine, machineDb: db } = c.var;
     return c.json(await presentWorkspaceChoice(db, machine));
   })
   // Adds the machine to, or takes it out of, one of its owner's workspaces. The token lives on the
   // owner's computer, so the change is logged as theirs.
-  .on(["PUT", "DELETE"], "/me/workspaces/:workspaceId", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  .on(["PUT", "DELETE"], "/me/workspaces/:workspaceId", async (c) => {
+    const { machine, machineDb: db } = c.var;
     if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
     const workspaceId = c.req.param("workspaceId");
     const mine = await userWorkspaces(db, machine.userId);
@@ -190,12 +179,11 @@ export const machineTokenRoutes = new Hono<AppEnv>()
     return c.json(await presentWorkspaceChoice(db, machine));
   })
   // Connects a provider account for one of the owner's workspaces, for `relayrunner blacksmith
-  // connect`: `Authorization: Bearer rrm_…`, 401 like /me. The owner must own or administer that
-  // workspace, as in Settings → Providers. `workspace` (an id, slug or name) picks one; without it, the
-  // workspace installed on the provider's organization, or the owner's only one.
-  .put("/me/providers/:provider/connection", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // connect`. The owner must own or administer that workspace, as in Settings → Providers.
+  // `workspace` (an id, slug or name) picks one; without it, the workspace installed on the
+  // provider's organization, or the owner's only one.
+  .put("/me/providers/:provider/connection", async (c) => {
+    const { machine, machineDb: db } = c.var;
     if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
     const provider = c.req.param("provider");
     if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
@@ -229,34 +217,14 @@ export const machineTokenRoutes = new Hono<AppEnv>()
       connection: result.connection,
     });
   })
-  // Pausing from the machine itself, for `relayrunner pause` and `resume`: `Authorization: Bearer
-  // rrm_…`, 401 like /me. Registered before /:id so "me" isn't read as a machine id.
-  .post("/me/:action{pause|resume}", requireMachine, async (c) => {
-    const db = createDb(c.env.DB);
-    const { machine } = c.var;
+  // Pausing from the machine itself, for `relayrunner pause` and `resume`.
+  .post("/me/:action{pause|resume}", async (c) => {
+    const { machine, machineDb: db } = c.var;
     return pauseResponse(c.env, db, machine.id, c.req.param("action") === "pause", {
       userId: null,
       via: "cli",
     });
   });
-
-// Pauses or resumes the machine, tells its open connection, and answers with the machine.
-export async function pauseResponse(
-  env: Env,
-  db: ReturnType<typeof createDb>,
-  machineId: string,
-  paused: boolean,
-  actor: PauseActor,
-) {
-  const result = await setMachinePaused(db, machineId, paused, actor);
-  if (!result) throw new AppError("NOT_FOUND");
-  const by = await pausedByName(db, result.machine);
-  const link = env.MACHINE_LINK.getByName(machineId);
-  if (result.changed) await link.notifyPaused(paused, by);
-  return Response.json({
-    machine: { ...presentMachine(result.machine, by), status: await link.status() },
-  });
-}
 
 // What `relayrunner workspaces` shows: the machine, the owner's workspaces it takes jobs in, and
 // their others.

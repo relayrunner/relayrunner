@@ -4,7 +4,7 @@ import type { Env } from "../env.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { createTestEnv } from "../testing.ts";
-import { retryDelaySeconds } from "../time.ts";
+import { retryDelaySeconds } from "../queue-retry.ts";
 import * as consumer from "./webhook-queue.ts";
 
 // Storage is covered against a real D1 in jobs.test.ts and job-timings.test.ts.

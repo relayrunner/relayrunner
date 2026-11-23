@@ -44,7 +44,8 @@ import { canControlMachine, requireManager } from "../../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
 import { changeActor } from "../../auth/changes.ts";
 import { enrollRoutes } from "./enroll.ts";
-import { machineTokenRoutes, pauseResponse, SharingBody } from "./machine-token.ts";
+import { machineTokenRoutes } from "./machine-token.ts";
+import { pauseResponse, SharingBody } from "./shared.ts";
 
 const AddToWorkspaceBody = z.object({
   machineIds: z.array(z.string().min(1)).min(1).max(50),
@@ -705,5 +706,3 @@ async function recentRunnerJobs(db: Db, installationId: number) {
     return latest;
   };
 }
-
-// Pauses or resumes the machine, tells its open connection, and answers with the machine.

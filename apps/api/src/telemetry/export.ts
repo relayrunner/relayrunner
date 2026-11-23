@@ -3,7 +3,7 @@
 // for workspaces with an export on. This queue's consumer batches them per workspace and POSTs one
 // OTLP/HTTP JSON request each. Spans are telemetry, not records: ones that run out of retries are
 // dropped, and the run is still in History.
-import { retryDelaySeconds } from "../time.ts";
+import { retryDelaySeconds } from "../queue-retry.ts";
 import { environmentFor, environmentProvider, nameMachines } from "../reports/environments.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq } from "drizzle-orm";
