@@ -32,7 +32,7 @@ public struct CrashReport: Equatable, Sendable {
   }
 
   /// The most frames kept: enough to see where it crashed and what called it.
-  public static let frameLimit = 24
+  public static let frameLimit = 40
 
   /// Reads a `.ips` crash report. Nil for anything else, such as a hang, or a crash of a process
   /// that isn't RelayRunner for Mac's: the standalone `relayrunner` CLI writes reports by the same

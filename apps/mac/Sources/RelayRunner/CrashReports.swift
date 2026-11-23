@@ -80,6 +80,9 @@ final class CrashReports {
     view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
     view.autoresizingMask = [.height]
     scroll.documentView = view
+    // It opens at the top left, with the summary in view.
+    view.sizeToFit()
+    view.scroll(.zero)
     return scroll
   }
 }
