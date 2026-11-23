@@ -1,24 +1,14 @@
-import { recordEvent } from "../ingest/activity-log.ts";
+import { recordEvent } from "../../ingest/activity-log.ts";
 import { and, asc, eq, gt, inArray, isNotNull, isNull, max } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";
-import { APIError } from "better-auth/api";
-import { HelloMessage } from "@relayrunner/machine-protocol";
-import { MACHINE_SHARING } from "@relayrunner/activity";
 import { z } from "zod";
-import type { AppEnv } from "../app.ts";
-import { MACHINE_CLIENT_ID } from "../auth/auth.ts";
-import { createDb, type Db, schema } from "../db/index.ts";
-import { presentOrigin, requestOrigin } from "../machines/device-origin.ts";
-import { runningJobs } from "../ingest/jobs.ts";
-import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
-import { claimRunnerJobs } from "../ingest/job-timings.ts";
-import {
-  MACHINE_ID_HEADER,
-  MACHINE_ORIGIN_HEADER,
-  OFFLINE,
-} from "../durable-objects/machine-session.ts";
-import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../github/github-app.ts";
+import type { AppEnv } from "../../app.ts";
+import { createDb, type Db, schema } from "../../db/index.ts";
+import { runningJobs } from "../../ingest/jobs.ts";
+import { claimRunnerJobs } from "../../ingest/job-timings.ts";
+import { OFFLINE } from "../../durable-objects/machine-session.ts";
+import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../../github/github-app.ts";
 import {
   addedRunnerScope,
   cannotAdd,
@@ -32,113 +22,32 @@ import {
   runnerArch,
   runnerOs,
   type GroupAccess,
-} from "../github/github-runners.ts";
-import { MAX_RUNNER_REPOS, privateRepos } from "../github/repositories.ts";
-import { loadRunnerReleases } from "../machines/runner-releases.ts";
+} from "../../github/github-runners.ts";
+import { MAX_RUNNER_REPOS, privateRepos } from "../../github/repositories.ts";
+import { loadRunnerReleases } from "../../machines/runner-releases.ts";
 import {
   addedMachineScope,
   addMachinesToWorkspace,
-  generateMachineToken,
   inWorkspace,
-  normalizeUserCode,
   otherMachines,
   pausedByName,
   presentMachine,
   presentRunner,
-  presentMachineWorkspaces,
-  recordMachineEvents,
   removeMachineFromWorkspace,
   removeRoutingLabel,
   revokeMachines,
-  setMachinePaused,
   setMachineSharing,
-  sha256Hex,
-  userWorkspaces,
-  verifyMachineToken,
-  type PauseActor,
-} from "../machines/machines.ts";
-import type { Env } from "../env.ts";
-import { isBillingProvider } from "@relayrunner/providers";
-import {
-  chooseWorkspace,
-  connectProvider,
-  managedWorkspaces,
-  parseOptions,
-} from "../providers/provider-connections.ts";
-import { sendEmail } from "../email.ts";
-import { inBackground, requireUser } from "../middleware/session.ts";
-import { requireWorkspace } from "../middleware/workspace.ts";
-import { canControlMachine, requireManager } from "../auth/roles.ts";
-import { AppError, type ErrorCode } from "@relayrunner/errors";
-import { changeActor } from "../auth/changes.ts";
-import { annotate } from "../tracing.ts";
-import { machineJobFailure } from "../reports/job-failures.ts";
-import {
-  JOB_RESULTS,
-  MAX_MACHINE_JOBS,
-  machineJob,
-  machineJobs,
-  machineJobSteps,
-  machineWorkspaceFor,
-} from "../machines/machine-jobs.ts";
-
-// Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
-//
-// 1. The CLI asks for a code: POST /api/auth/device/code with client_id "relayrunner-cli". It
-//    opens the returned verification_uri_complete (the dashboard's /device page), adding
-//    &name=<hostname> as the default machine name, and polls /api/auth/device/token.
-// 2. On /device the signed-in user picks a name and the workspaces it takes jobs in, and approves:
-//    POST /approve below. That creates the machine (unclaimed, keyed by a hash of the device code),
-//    owned by them (#318), with a machine_workspace row for each workspace picked (#363). Deny
-//    goes straight to /api/auth/device/deny.
-// 3. The CLI's next poll returns a user session token. It calls POST /claim below with that
-//    session as a bearer token plus the device code, gets the machine token back once, and the
-//    session is revoked. From then on the machine authenticates as itself.
-//
-// A code approved but never claimed leaves an unclaimed row that nothing lists or accepts.
-//
-// Once enrolled, the CLI stays connected over GET /connect below, a WebSocket to the machine's
-// MachineLink Durable Object speaking @relayrunner/machine-protocol.
-
-const JobId = z.coerce.number().int().positive();
-const JobsQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(MAX_MACHINE_JOBS).optional(),
-  before: z.coerce.number().int().positive().optional(),
-  repo: z.string().min(1).max(200).optional(),
-  workflow: z.string().min(1).max(200).optional(),
-  result: z.enum(JOB_RESULTS).optional(),
-  since: z.coerce.number().int().positive().optional(),
-});
-
-const ApproveBody = z.object({
-  userCode: z.string().min(1).max(64),
-  // Ignored: a machine belongs to its user, not a workspace (#318). Still accepted from
-  // dashboards that send it.
-  workspaceId: z.string().min(1).optional(),
-  name: z.string().trim().min(1).max(64),
-  // The workspaces it takes jobs in (#363), each one the user is a member of. At least one when
-  // they have any. Left out (dashboards from before #364), it's the workspaces they own: the ones
-  // they installed and their personal account's, never one they only joined.
-  workspaceIds: z.array(z.string().min(1)).max(100).optional(),
-});
+} from "../../machines/machines.ts";
+import { requireUser } from "../../middleware/session.ts";
+import { requireWorkspace } from "../../middleware/workspace.ts";
+import { canControlMachine, requireManager } from "../../auth/roles.ts";
+import { AppError } from "@relayrunner/errors";
+import { changeActor } from "../../auth/changes.ts";
+import { enrollRoutes } from "./enroll.ts";
+import { machineTokenRoutes, pauseResponse, SharingBody } from "./machine-token.ts";
 
 const AddToWorkspaceBody = z.object({
   machineIds: z.array(z.string().min(1)).min(1).max(50),
-});
-
-const ClaimBody = z.object({
-  deviceCode: z.string().min(1),
-  os: HelloMessage.shape.os,
-  arch: HelloMessage.shape.arch,
-});
-
-const DenyBody = z.object({ userCode: z.string().min(1).max(32) });
-
-const SharingBody = z.object({ sharing: z.enum(MACHINE_SHARING) });
-const MachineConnectBody = z.object({
-  token: z.string().trim().min(8).max(4096),
-  options: z.record(z.string(), z.string()).optional(),
-  workspace: z.string().trim().min(1).max(200).optional(),
 });
 
 const AddRunnersBody = z.object({
@@ -148,370 +57,11 @@ const AddRunnersBody = z.object({
   runnerIds: z.array(z.number().int().positive()).min(1).max(50),
 });
 
+// Enrolling (enroll.ts), the machine's own routes (machine-token.ts), then the dashboard's for the
+// signed-in user's active workspace. The machine's routes go first so "/me" isn't read as an id.
 export const machineRoutes = new Hono<AppEnv>()
-  // The /device page's look at a code, without claiming it. Better Auth's own GET /device ties an
-  // unclaimed code to whoever views it, so a link opened in a browser signed in as someone else
-  // (the default browser, before a private window) would lock out the account that approves.
-  // Approve and deny below claim the code instead, at the moment someone acts on it.
-  .get("/device", requireUser, async (c) => {
-    const userCode = normalizeUserCode(c.req.query("user_code") ?? "");
-    const db = createDb(c.env.DB);
-    const [code] = await db
-      .select({
-        status: schema.deviceCode.status,
-        expiresAt: schema.deviceCode.expiresAt,
-        clientId: schema.deviceCode.clientId,
-        createdAt: schema.deviceCode.createdAt,
-        requestCountry: schema.deviceCode.requestCountry,
-        requestCity: schema.deviceCode.requestCity,
-      })
-      .from(schema.deviceCode)
-      .where(eq(schema.deviceCode.userCode, userCode))
-      .limit(1);
-    if (!code || code.clientId !== MACHINE_CLIENT_ID) throw new AppError("DEVICE_CODE_INVALID");
-    if (code.expiresAt < new Date()) throw new AppError("DEVICE_CODE_EXPIRED");
-    return c.json({
-      user_code: userCode,
-      status: code.status,
-      // Where the machine could take jobs (#364). `joined`: a workspace the user only joined
-      // through GitHub, which /device starts unticked.
-      workspaces: await userWorkspaces(db, c.var.user!.id),
-      // When and where `relayrunner connect` asked for this code, so the approver can tell
-      // whether it was them.
-      requested_at: code.createdAt,
-      requested_from: presentOrigin(
-        { country: code.requestCountry, city: code.requestCity },
-        requestOrigin(c.req.raw),
-      ),
-    });
-  })
-
-  .post("/deny", requireUser, async (c) => {
-    const parsed = DenyBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    const userCode = normalizeUserCode(parsed.data.userCode);
-    try {
-      // Claim it first (a no-op if this user already has), then deny.
-      await c.var.auth.api.deviceVerify({
-        query: { user_code: userCode },
-        headers: c.req.raw.headers,
-      });
-      await c.var.auth.api.deviceDeny({ body: { userCode }, headers: c.req.raw.headers });
-    } catch (error) {
-      throw deviceError(error);
-    }
-    return c.json({ success: true });
-  })
-
-  .post("/approve", requireUser, async (c) => {
-    const parsed = ApproveBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    const { name } = parsed.data;
-    const userCode = normalizeUserCode(parsed.data.userCode);
-    const user = c.var.user!;
-    const db = createDb(c.env.DB);
-
-    // Opening the code ties it to this user (Better Auth only lets that user approve it). The
-    // dashboard only looks at it through GET /device above, so this is where it gets claimed.
-    try {
-      await c.var.auth.api.deviceVerify({
-        query: { user_code: userCode },
-        headers: c.req.raw.headers,
-      });
-    } catch (error) {
-      throw deviceError(error);
-    }
-
-    const [code] = await db
-      .select()
-      .from(schema.deviceCode)
-      .where(eq(schema.deviceCode.userCode, userCode))
-      .limit(1);
-    if (!code || code.expiresAt < new Date()) throw new AppError("DEVICE_CODE_EXPIRED");
-    if (code.clientId !== MACHINE_CLIENT_ID) throw new AppError("DEVICE_CODE_INVALID");
-    if (code.status !== "pending") throw new AppError("DEVICE_CODE_USED");
-    if (code.userId !== user.id) throw new AppError("DEVICE_CODE_CLAIMED");
-
-    const mine = await userWorkspaces(db, user.id);
-    const picked = parsed.data.workspaceIds
-      ? [...new Set(parsed.data.workspaceIds)]
-      : mine.filter((workspace) => !workspace.joined).map((workspace) => workspace.id);
-    if (picked.some((id) => !mine.some((workspace) => workspace.id === id)))
-      throw new AppError("NOT_A_MEMBER");
-    if (parsed.data.workspaceIds && picked.length === 0 && mine.length > 0)
-      throw new AppError("INVALID_REQUEST", { message: "Choose at least one workspace." });
-
-    const machineId = crypto.randomUUID();
-    await db.insert(schema.machine).values({
-      id: machineId,
-      name,
-      enrollmentHash: await sha256Hex(code.deviceCode),
-      userId: user.id,
-    });
-    if (picked.length > 0)
-      await db
-        .insert(schema.machineWorkspace)
-        .values(picked.map((workspaceId) => ({ machineId, workspaceId })));
-
-    try {
-      await c.var.auth.api.deviceApprove({ body: { userCode }, headers: c.req.raw.headers });
-    } catch (error) {
-      await db.delete(schema.machine).where(eq(schema.machine.id, machineId));
-      throw deviceError(error);
-    }
-    return c.json({ machineId });
-  })
-  // Called by the CLI with the device-flow session as `Authorization: Bearer <token>`.
-  .post("/claim", requireUser, async (c) => {
-    const parsed = ClaimBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    const { deviceCode, os, arch } = parsed.data;
-    const db = createDb(c.env.DB);
-
-    const token = generateMachineToken();
-    // The enrollment hash is cleared in the same statement, so a code claims at most once.
-    const [machine] = await db
-      .update(schema.machine)
-      .set({ os, arch, tokenHash: await sha256Hex(token), enrollmentHash: null })
-      .where(
-        and(
-          eq(schema.machine.enrollmentHash, await sha256Hex(deviceCode)),
-          eq(schema.machine.userId, c.var.user!.id),
-          isNull(schema.machine.revokedAt),
-        ),
-      )
-      .returning();
-    if (!machine) throw new AppError("NOT_FOUND");
-    await recordMachineEvents(db, machine, {
-      type: "machine.enrolled",
-      data: { machineName: machine.name, os: machine.os, arch: machine.arch },
-      machineId: machine.id,
-      actorUserId: c.var.user!.id,
-    });
-
-    // The CLI is done with the user session; only the machine token stays on the machine.
-    await db.delete(schema.session).where(eq(schema.session.id, c.var.session!.id));
-
-    const { workspace, workspaces } = await presentMachineWorkspaces(db, machine);
-
-    // Notice to whoever approved the machine: its token can run their workspaces' jobs. They can
-    // turn it off in Account settings.
-    const notice = sendEmail(c.env, {
-      to: c.var.user!.email,
-      userId: c.var.user!.id,
-      template: "machine-connected",
-      context: {
-        machineName: machine.name,
-        os: machine.os,
-        arch: machine.arch,
-        workspaceNames: workspaces.map((w) => w.name),
-        connectedAt: new Date(),
-      },
-    });
-    await inBackground(c, notice);
-    // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in every
-    // workspace, there's nobody else's jobs to take. `workspace` is for CLI 0.5.0, which reads
-    // only that one; `workspaces` is every workspace the machine is now in.
-    return c.json({
-      machine: presentMachine(machine),
-      workspace,
-      workspaces,
-      token,
-    });
-  })
-  // The machine's WebSocket: `Upgrade: websocket` with `Authorization: Bearer rrm_…`. A missing,
-  // unknown or revoked token gets a 401 before the upgrade. After that the machine sends `hello`,
-  // then `status` as a heartbeat (src/durable-objects/machine-session.ts has the timings and
-  // close codes). The token is checked first because a failed upgrade hides its status from the
-  // CLI, so it asks with a plain GET: 401 means sign in again, 426 means the token is fine.
-  .get("/connect", async (c) => {
-    const machine = await machineFromToken(createDb(c.env.DB), c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    if (c.req.header("upgrade")?.toLowerCase() !== "websocket")
-      throw new AppError("WEBSOCKET_REQUIRED");
-
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete("authorization");
-    headers.set(MACHINE_ID_HEADER, machine.id);
-    // Where the connection came from, so MachineLink can tell the owner when a connection from
-    // somewhere else takes over (request.cf doesn't reach a Durable Object).
-    headers.set(MACHINE_ORIGIN_HEADER, JSON.stringify(requestOrigin(c.req.raw)));
-    return c.env.MACHINE_LINK.getByName(machine.id).fetch(new Request(c.req.raw, { headers }));
-  })
-  // Who a machine token belongs to, for `relayrunner whoami`: `Authorization: Bearer rrm_…`. A
-  // missing, unknown or revoked token gets a 401, the same as /connect.
-  .get("/me", async (c) => {
-    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const db = createDb(c.env.DB);
-    const machine = await verifyMachineToken(db, token);
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-
-    const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
-      presentMachineWorkspaces(db, machine),
-      machine.userId
-        ? db
-            .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-            .from(schema.user)
-            .where(eq(schema.user.id, machine.userId))
-            .limit(1)
-        : Promise.resolve([]),
-      c.env.MACHINE_LINK.getByName(machine.id).status(),
-    ]);
-    return c.json({
-      machine: { ...presentMachine(machine, await pausedByName(db, machine)), status },
-      // As in the claim: one workspace for CLI 0.5.0, and the full list.
-      workspace,
-      workspaces,
-      enrolledBy: enrolledBy ?? null,
-    });
-  })
-  // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244):
-  // `Authorization: Bearer rrm_…`, 401 like /me. Only an owner may change sharing, and the token
-  // lives on the owner's computer, so the change is logged as theirs.
-  .put("/me/sharing", async (c) => {
-    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const db = createDb(c.env.DB);
-    const machine = await verifyMachineToken(db, token);
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    const body = SharingBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) throw new AppError("INVALID_REQUEST");
-    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
-    const result = await setMachineSharing(db, machine.id, body.data.sharing, machine.userId);
-    if (!result) throw new AppError("NOT_FOUND");
-    return c.json({
-      machine: {
-        ...presentMachine(result.machine, await pausedByName(db, result.machine)),
-        status: await c.env.MACHINE_LINK.getByName(machine.id).status(),
-      },
-    });
-  })
-  // The jobs this machine ran, for RelayRunner for Mac: `Authorization: Bearer rrm_…`, 401 like
-  // /me. Newest first; `before` (ms, from `next`) continues. A machine sees only its own jobs.
-  .get("/me/jobs", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    const query = JobsQuery.safeParse(c.req.query());
-    if (!query.success) throw new AppError("INVALID_REQUEST");
-    return c.json(await machineJobs(db, machine.id, query.data));
-  })
-  // One of them with its steps from GitHub (null when GitHub no longer has the job) and, for a
-  // failed one, why, as /failure has it (null otherwise), read together. 404 when the job didn't
-  // run on this machine.
-  .get("/me/jobs/:jobId", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    const jobId = JobId.safeParse(c.req.param("jobId"));
-    if (!jobId.success) throw new AppError("INVALID_REQUEST");
-    const found = await machineJob(db, machine.id, jobId.data);
-    if (!found) throw new AppError("NOT_FOUND");
-    const failed = FAILED_CONCLUSIONS.includes(found.job.conclusion ?? "");
-    const [steps, failure] = await Promise.all([
-      machineJobSteps(c.env, found.job, found.installationId),
-      failed
-        ? machineWorkspaceFor(db, machine, found.installationId).then((workspaceId) =>
-            machineJobFailure(db, c.env, machine.id, jobId.data, workspaceId),
-          )
-        : null,
-    ]);
-    return c.json({ job: found.job, steps, failure });
-  })
-  // Why one of them failed: the failed step, annotations, a log excerpt and, when the workspace has
-  // AI on, the likely cause. 404 when it didn't run here or didn't fail.
-  .get("/me/jobs/:jobId/failure", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    const jobId = JobId.safeParse(c.req.param("jobId"));
-    if (!jobId.success) throw new AppError("INVALID_REQUEST");
-    const found = await machineJob(db, machine.id, jobId.data);
-    if (!found) throw new AppError("NOT_FOUND");
-    const workspaceId = await machineWorkspaceFor(db, machine, found.installationId);
-    const failure = await machineJobFailure(db, c.env, machine.id, jobId.data, workspaceId);
-    if (!failure) throw new AppError("NOT_FOUND");
-    return c.json(failure);
-  })
-  // The machine's workspaces, for `relayrunner workspaces` (#366): `Authorization: Bearer rrm_…`,
-  // 401 like /me. `workspaces` are the ones it takes jobs in, `others` its owner's other ones.
-  .get("/me/workspaces", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    return c.json(await presentWorkspaceChoice(db, machine));
-  })
-  // Adds the machine to, or takes it out of, one of its owner's workspaces. The token lives on the
-  // owner's computer, so the change is logged as theirs.
-  .on(["PUT", "DELETE"], "/me/workspaces/:workspaceId", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
-    const workspaceId = c.req.param("workspaceId");
-    const mine = await userWorkspaces(db, machine.userId);
-    if (!mine.some((workspace) => workspace.id === workspaceId)) throw new AppError("NOT_FOUND");
-    if (c.req.method === "PUT")
-      await addMachinesToWorkspace(db, {
-        userId: machine.userId,
-        workspaceId,
-        machineIds: [machine.id],
-      });
-    else await removeMachineFromWorkspace(db, machine, workspaceId, machine.userId);
-    return c.json(await presentWorkspaceChoice(db, machine));
-  })
-  // Connects a provider account for one of the owner's workspaces, for `relayrunner blacksmith
-  // connect`: `Authorization: Bearer rrm_…`, 401 like /me. The owner must own or administer that
-  // workspace, as in Settings → Providers. `workspace` (an id, slug or name) picks one; without it, the
-  // workspace installed on the provider's organization, or the owner's only one.
-  .put("/me/providers/:provider/connection", async (c) => {
-    const db = createDb(c.env.DB);
-    const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
-    const provider = c.req.param("provider");
-    if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
-    const parsed = MachineConnectBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success)
-      throw new AppError("INVALID_REQUEST", { message: "Send the whole token." });
-    const options = parseOptions(provider, parsed.data.options);
-    if (!options) throw new AppError("INVALID_REQUEST", { message: "Check the options." });
-    const managed = await managedWorkspaces(db, machine.userId);
-    if (managed.length === 0)
-      throw new AppError("FORBIDDEN", {
-        message: "Only a workspace's owners and admins can connect a provider.",
-      });
-    const workspace = chooseWorkspace(managed, options.organization, parsed.data.workspace);
-    if (!workspace)
-      throw new AppError(parsed.data.workspace ? "NOT_FOUND" : "PROVIDER_WORKSPACE_UNCLEAR", {
-        details: {
-          workspaces: managed.map(({ id, name, slug }) => ({ id, name, slug })),
-        },
-      });
-    const result = await connectProvider(c.env, db, {
-      workspaceId: workspace.id,
-      provider,
-      token: parsed.data.token,
-      options,
-      userId: machine.userId,
-    });
-    if (!result.ok) throw new AppError(result.error, { details: { reason: result.message } });
-    return c.json({
-      workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
-      connection: result.connection,
-    });
-  })
-  // Pausing from the machine itself, for `relayrunner pause` and `resume`: `Authorization: Bearer
-  // rrm_…`, 401 like /me. Registered before /:id so "me" isn't read as a machine id.
-  .post("/me/:action{pause|resume}", async (c) => {
-    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const db = createDb(c.env.DB);
-    const machine = await verifyMachineToken(db, token);
-    if (!machine) throw new AppError("UNAUTHENTICATED");
-    return pauseResponse(c.env, db, machine.id, c.req.param("action") === "pause", {
-      userId: null,
-      via: "cli",
-    });
-  })
+  .route("/", enrollRoutes)
+  .route("/", machineTokenRoutes)
   // Only a connected machine's owner pauses or resumes it, from any workspace it shows up in; a
   // runner added from GitHub, by the workspace's owners and admins (#318). Pausing is global:
   // every workspace stops routing to it.
@@ -1157,60 +707,3 @@ async function recentRunnerJobs(db: Db, installationId: number) {
 }
 
 // Pauses or resumes the machine, tells its open connection, and answers with the machine.
-async function pauseResponse(
-  env: Env,
-  db: ReturnType<typeof createDb>,
-  machineId: string,
-  paused: boolean,
-  actor: PauseActor,
-) {
-  const result = await setMachinePaused(db, machineId, paused, actor);
-  if (!result) throw new AppError("NOT_FOUND");
-  const by = await pausedByName(db, result.machine);
-  const link = env.MACHINE_LINK.getByName(machineId);
-  if (result.changed) await link.notifyPaused(paused, by);
-  return Response.json({
-    machine: { ...presentMachine(result.machine, by), status: await link.status() },
-  });
-}
-
-// The machine a `Bearer rrm_…` header belongs to, or null.
-async function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
-  const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  const machine = await verifyMachineToken(db, token);
-  annotate({ "relayrunner.machine_id": machine?.id, "user.id": machine?.userId });
-  return machine;
-}
-
-// What `relayrunner workspaces` shows: the machine, the owner's workspaces it takes jobs in, and
-// their others.
-async function presentWorkspaceChoice(
-  db: ReturnType<typeof createDb>,
-  machine: { id: string; name: string; sharing: string; userId: string | null },
-) {
-  const [mine, rows] = await Promise.all([
-    machine.userId ? userWorkspaces(db, machine.userId) : Promise.resolve([]),
-    db
-      .select({ workspaceId: schema.machineWorkspace.workspaceId })
-      .from(schema.machineWorkspace)
-      .where(eq(schema.machineWorkspace.machineId, machine.id)),
-  ]);
-  const listed = new Set(rows.map((row) => row.workspaceId));
-  return {
-    machine: { id: machine.id, name: machine.name, sharing: machine.sharing },
-    workspaces: mine.filter((workspace) => listed.has(workspace.id)),
-    others: mine.filter((workspace) => !listed.has(workspace.id)),
-  };
-}
-
-// Better Auth's device errors carry an RFC 8628 code in the body; give each its own code.
-const DEVICE_ERRORS: Record<string, ErrorCode> = {
-  expired_token: "DEVICE_CODE_EXPIRED",
-  device_code_already_processed: "DEVICE_CODE_USED",
-  access_denied: "DEVICE_CODE_CLAIMED",
-};
-function deviceError(error: unknown) {
-  if (!(error instanceof APIError)) return error;
-  const body = error.body as { error?: string } | undefined;
-  return new AppError(DEVICE_ERRORS[body?.error ?? ""] ?? "DEVICE_CODE_INVALID", { cause: error });
-}

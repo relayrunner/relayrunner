@@ -23,7 +23,7 @@ import { telemetryRoutes } from "./routes/telemetry.ts";
 import { logBucketRoutes } from "./routes/log-bucket.ts";
 import { githubRoutes } from "./routes/github.ts";
 import { healthRoutes } from "./routes/health.ts";
-import { machineRoutes } from "./routes/machines.ts";
+import { machineRoutes } from "./routes/machines/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { jobTimesRoutes } from "./routes/job-times.ts";
 import { signalRoutes } from "./routes/signals.ts";
@@ -48,6 +48,8 @@ export interface AppEnv {
     accessIdentity: AccessIdentity;
     // Set by attachSession when the request carries an agent access token (agent-auth.ts).
     agent?: AgentPrincipal;
+    // Set by requireMachine on the routes a machine calls with its own token.
+    machine: typeof schema.machine.$inferSelect;
     // Flag values already evaluated for this request (src/flags.ts).
     flags?: Partial<Flags>;
   };
