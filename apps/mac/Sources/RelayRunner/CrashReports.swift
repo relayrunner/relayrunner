@@ -50,8 +50,8 @@ final class CrashReports {
     alert.addButton(withTitle: "Don't Send")
     alert.showsSuppressionButton = true
     alert.suppressionButton?.title = "Don't ask again"
-    alert.layout()
-    (alert.accessoryView as? NSScrollView)?.documentView?.scroll(.zero)
+    // The button has the focus, so the report box doesn't scroll to its insertion point.
+    alert.window.initialFirstResponder = alert.buttons.first
     NSApp.activate(ignoringOtherApps: true)
     let send = alert.runModal() == .alertFirstButtonReturn
     if alert.suppressionButton?.state == .on { AppSettings.crashReportsOff = true }
@@ -77,27 +77,18 @@ final class CrashReports {
     alert.runModal()
   }
 
-  /// The report as it's sent, in a scrolling box that can be read and copied but not changed.
-  private static func preview(_ text: String) -> NSView {
-    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 200))
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = true
+  /// The report as it's sent, in a scrolling box that can be read and copied but not changed. AppKit's
+  /// own scrolling text view, with lines wrapped, so it opens at the start of the report.
+  private static func preview(_ text: String) -> NSScrollView {
+    let scroll = NSTextView.scrollableTextView()
+    scroll.frame = NSRect(x: 0, y: 0, width: 480, height: 200)
     scroll.borderType = .bezelBorder
-    let view = NSTextView(frame: scroll.bounds)
+    let view = scroll.documentView as! NSTextView
     view.string = text
     view.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
     view.isEditable = false
     view.isSelectable = true
     view.textContainerInset = NSSize(width: 4, height: 4)
-    // Lines don't wrap, so frames stay one per line.
-    view.isHorizontallyResizable = true
-    view.textContainer?.widthTracksTextView = false
-    view.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-    view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-    view.autoresizingMask = [.height]
-    scroll.documentView = view
-    // A text view keeps its insertion point at the end of what it was given, and scrolls there
-    // when the alert shows it; at the start, the summary is what's in view.
     view.setSelectedRange(NSRange(location: 0, length: 0))
     return scroll
   }
