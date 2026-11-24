@@ -17,6 +17,7 @@ import { plural } from "@/lib/job-times";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import type { RouterSetup, SetupWorkflow } from "@/lib/router-setup";
 import { cn, count, exact } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const DEFAULT = "default";
 const ORDER = "order";
@@ -85,7 +86,10 @@ export function RouterWorkflows({
             <div className="grid gap-4 px-5 py-5 sm:px-6">
               <div className="grid gap-1">
                 <SheetTitle>{open.workflow}</SheetTitle>
-                <SheetDescription>{open.repository}</SheetDescription>
+                <SheetDescription>
+                  {open.repository}
+                  <PublicRepoMark repository={open.repository} />
+                </SheetDescription>
               </div>
               <p className="text-[13px] text-muted-foreground">
                 {open.autoJobs.some((job) => job.canEdit)
@@ -157,6 +161,7 @@ function RepoWorkflows({
             )}
           />
           <span className="min-w-0 truncate text-[13px] font-semibold">{repository}</span>
+          <PublicRepoMark repository={repository} className="ml-0" />
           {routed.length > 0 && (
             <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
               {routed.length} of {workflows.length}

@@ -39,6 +39,7 @@ import {
 import type { RouteWalk } from "@/lib/route-walk";
 import { useNow } from "@/lib/use-now";
 import { cn, elapsed } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 // While a run is going, how often an open run's jobs and a running job's steps are refetched.
 // Paused while the tab is hidden or idle (lib/live-refresh.ts).
@@ -303,6 +304,7 @@ function RunView({
           <span>
             {header.title && header.workflow && <>{workflowLink} · </>}
             {header.repository}
+            <PublicRepoMark repository={header.repository} />
           </span>
           <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
@@ -485,7 +487,10 @@ function JobView({
           <span className="min-w-0 break-words">{job.name}</span>
         </SheetTitle>
         <SheetDescription className="flex flex-wrap items-center gap-x-2.5 pl-[26px]">
-          <span>{header.repository}</span>
+          <span>
+            {header.repository}
+            <PublicRepoMark repository={header.repository} />
+          </span>
           <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
       </header>

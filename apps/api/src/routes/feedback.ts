@@ -1,10 +1,10 @@
 import { and, eq, gt, sql } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { AGENT_WORKSPACE_HEADER, agentClientName, agentWorkspaceId } from "../auth/agent-auth.ts";
 import type { AppEnv } from "../app.ts";
-import { createDb, schema } from "../db/index.ts";
+import { createDb, type Db, schema } from "../db/index.ts";
 import { emailOperators } from "../email.ts";
 import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "@relayrunner/activity";
 import { FEEDBACK_RATE, sanitizeFeedback, sanitizeMessage } from "../operator/feedback.ts";
@@ -25,12 +25,36 @@ const DashboardBody = z.object({
   message: z.string().min(1).max(slack(FEEDBACK_LIMITS.details)),
   page: z.string().max(slack(FEEDBACK_LIMITS.page)).optional(),
 });
+/** `relayrunner feedback`, and RelayRunner for Mac's crash reports through it. */
+export const MachineFeedbackBody = z.object({
+  message: z.string().min(1).max(slack(FEEDBACK_LIMITS.details)),
+  category: z.enum(FEEDBACK_CATEGORIES).default("other"),
+  // False sends it without the owner's name or email: stored with only the machine, for the rate limit.
+  contact: z.boolean().default(true),
+});
+/** Feedback bodies are small; anything bigger is refused before it's read. */
+export const feedbackBodyLimit = bodyLimit({
+  maxSize: 16 * 1024,
+  onError: () => {
+    throw new AppError("PAYLOAD_TOO_LARGE");
+  },
+});
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Feedback ready to store, from either source, and how many secret-like values were redacted. */
-type Entry = {
-  source: "agent" | "dashboard";
+type Workspace = { id: string; name: string };
+
+/**
+ * Who sent it: a person, whose name and email go with it so the team can reply, or only a machine,
+ * for an anonymous report. The rate limit counts whichever it names.
+ */
+export type Sender =
+  | { user: { id: string; name: string; email: string }; machineId?: string }
+  | { user: null; machineId: string };
+
+/** Feedback ready to store, from any source, and how many secret-like values were redacted. */
+export type Entry = {
+  source: "agent" | "dashboard" | "machine";
   category: string;
   summary: string;
   details: string | null;
@@ -38,6 +62,8 @@ type Entry = {
   page?: string | null;
   grantId?: string;
   clientId?: string;
+  /** The machine that sent it, for the email only. */
+  machine?: { name: string; macAppVersion: string | null };
   redacted: number;
 };
 
@@ -49,19 +75,14 @@ type Entry = {
 // isn't echoed back.
 export const feedbackRoutes = new Hono<AppEnv>().post(
   "/",
-  bodyLimit({
-    maxSize: 16 * 1024,
-    onError: () => {
-      throw new AppError("PAYLOAD_TOO_LARGE");
-    },
-  }),
+  feedbackBodyLimit,
   requireUser,
   async (c) => {
     const { agent, user } = c.var;
     const db = createDb(c.env.DB);
     const body = await c.req.json().catch(() => null);
 
-    let workspace: () => Promise<{ id: string; name: string } | null>;
+    let workspace: () => Promise<Workspace | null>;
     let entry: Entry;
     if (agent) {
       const requested = c.req.header(AGENT_WORKSPACE_HEADER);
@@ -89,68 +110,87 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
       workspace = async () =>
         activeId ? ((await membership(db, activeId, user!.id))?.workspace ?? null) : null;
     }
-    if (!entry.summary) throw new AppError("INVALID_REQUEST", { details: { fields: ["summary"] } });
 
-    const now = Date.now();
     // The workspace lookup (a person's active workspace) runs alongside the rate-limit count.
-    const recentQuery = db
-      .select({
-        day: sql<number>`count(*)`,
-        hour: sql<number>`coalesce(sum(${schema.feedback.createdAt} > ${now - HOUR_MS}), 0)`,
-      })
-      .from(schema.feedback)
-      .where(
-        and(
-          eq(schema.feedback.userId, user!.id),
-          gt(schema.feedback.createdAt, new Date(now - 24 * HOUR_MS)),
-        ),
-      );
-    const [[recent], about] = await Promise.all([recentQuery, workspace()]);
-    const hourly = recent.hour >= FEEDBACK_RATE.hour;
-    if (hourly || recent.day >= FEEDBACK_RATE.day) {
-      throw new AppError("RATE_LIMITED", {
-        message: "You've sent a lot of feedback today. Try again later, or email us.",
-        retryAfter: hourly ? 3600 : 86400,
-      });
-    }
-
-    const id = crypto.randomUUID();
-    const sentAt = new Date(now);
-    const { redacted, ...fields } = entry;
-    await db.insert(schema.feedback).values({
-      id,
-      userId: user!.id,
-      workspaceId: about?.id ?? null,
-      createdAt: sentAt,
-      ...fields,
-    });
-
-    // emailOperators never throws; only the client lookup can, and then the email goes without a name.
-    const emailFeedback = async () => {
-      const { clientId } = entry;
-      const clientName = clientId ? await agentClientName(db, clientId).catch(() => null) : null;
-      await emailOperators(c.env, {
-        replyTo: user!.email,
-        template: "feedback",
-        context: {
-          id,
-          ...entry,
-          // A person's message has no category of its own, and wasn't sent by an agent.
-          category: entry.source === "agent" ? entry.category : null,
-          agent: clientId ? { name: clientName } : null,
-          user: { name: user!.name, email: user!.email },
-          workspaceName: about?.name ?? null,
-          sentAt,
-        },
-      });
-    };
-    await inBackground(c, emailFeedback());
-
-    return c.json({ id, redacted }, 201);
+    const id = await saveFeedback(c, db, { user: user! }, entry, workspace());
+    return c.json({ id, redacted: entry.redacted }, 201);
   },
 );
 
-function invalid(error: z.ZodError) {
+/**
+ * Stores feedback and emails it to the team, once its sender is under the rate limit. Returns its
+ * id. Shared with the machine route (`relayrunner feedback`, RelayRunner for Mac's crash reports),
+ * which has no workspace.
+ */
+export async function saveFeedback(
+  c: Pick<Context<AppEnv>, "env" | "executionCtx">,
+  db: Db,
+  { user, machineId }: Sender,
+  entry: Entry,
+  workspace: Promise<Workspace | null> | null,
+) {
+  if (!entry.summary) throw new AppError("INVALID_REQUEST", { details: { fields: ["summary"] } });
+  const now = Date.now();
+  const recentQuery = db
+    .select({
+      day: sql<number>`count(*)`,
+      hour: sql<number>`coalesce(sum(${schema.feedback.createdAt} > ${now - HOUR_MS}), 0)`,
+    })
+    .from(schema.feedback)
+    .where(
+      and(
+        user ? eq(schema.feedback.userId, user.id) : eq(schema.feedback.machineId, machineId),
+        gt(schema.feedback.createdAt, new Date(now - 24 * HOUR_MS)),
+      ),
+    );
+  const [[recent], about] = await Promise.all([recentQuery, workspace]);
+  const hourly = recent.hour >= FEEDBACK_RATE.hour;
+  if (hourly || recent.day >= FEEDBACK_RATE.day) {
+    throw new AppError("RATE_LIMITED", {
+      message: "You've sent a lot of feedback today. Try again later, or email us.",
+      retryAfter: hourly ? 3600 : 86400,
+    });
+  }
+
+  const id = crypto.randomUUID();
+  const sentAt = new Date(now);
+  const { redacted: _, machine, ...fields } = entry;
+  await db.insert(schema.feedback).values({
+    id,
+    userId: user?.id ?? null,
+    workspaceId: about?.id ?? null,
+    // Left out when there's none, so dashboard and agent feedback still save in the minutes before
+    // the machine_id migration runs after a deploy.
+    ...(machineId && { machineId }),
+    createdAt: sentAt,
+    ...fields,
+  });
+
+  // emailOperators never throws; only the client lookup can, and then the email goes without a name.
+  const emailFeedback = async () => {
+    const { clientId } = entry;
+    const clientName = clientId ? await agentClientName(db, clientId).catch(() => null) : null;
+    await emailOperators(c.env, {
+      replyTo: user?.email,
+      template: "feedback",
+      context: {
+        id,
+        ...entry,
+        // Only agents and machines pick a category; a person's message has none.
+        category: entry.source === "dashboard" ? null : entry.category,
+        agent: clientId ? { name: clientName } : null,
+        machine: machine ?? null,
+        user: user && { name: user.name, email: user.email },
+        workspaceName: about?.name ?? null,
+        sentAt,
+      },
+    });
+  };
+  await inBackground(c, emailFeedback());
+  return id;
+}
+
+export function invalid(error: z.ZodError) {
   const fields = [...new Set(error.issues.map((issue) => issue.path.join(".")))];
   return new AppError("INVALID_REQUEST", { details: { fields } });
 }

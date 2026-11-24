@@ -89,6 +89,7 @@ export function Flag({
 /**
  * A `beforeLoad` for a page that's only there while flag `key` is on: anyone else lands on
  * Runners, as if the page didn't exist. For routes under the workspace layout.
+ * @public
  */
 export function requireFlagRoute(key: FlagKey) {
   return ({ context }: { context: { flags: Flags } }) => {

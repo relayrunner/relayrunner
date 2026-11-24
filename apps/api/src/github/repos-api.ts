@@ -22,6 +22,8 @@ export async function createCheckRun(
     conclusion: "success" | "failure";
     title: string;
     summary: string;
+    // Our own id for the check, to find it again with checkRunsNamed.
+    externalId?: string;
   },
 ) {
   const body = await sendJson<{ html_url?: string | null }>(
@@ -34,9 +36,19 @@ export async function createCheckRun(
       status: "completed",
       conclusion: check.conclusion,
       output: { title: check.title, summary: check.summary },
+      ...(check.externalId ? { external_id: check.externalId } : {}),
     },
   );
   return { url: body.html_url ?? null };
+}
+
+/** The latest check runs with this name on a commit. */
+export async function checkRunsNamed(token: string, repo: string, sha: string, name: string) {
+  const query = new URLSearchParams({ check_name: name, filter: "latest", per_page: "100" });
+  const body = await getJson<{
+    check_runs: { id: number; conclusion: string | null; external_id: string | null }[];
+  }>(token, `/repos/${repo}/commits/${sha}/check-runs?${query}`);
+  return body.check_runs;
 }
 
 // A check run's result. GitHub takes at most 50 annotations per request.

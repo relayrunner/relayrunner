@@ -29,6 +29,7 @@ import {
 } from "@/lib/route-repo";
 import type { RunnerGroupBlock, RunnerGroupCheck } from "@/lib/router-setup";
 import { cn } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const INIT_COMMAND = "npx relayrunner init";
 
@@ -585,9 +586,7 @@ function RepoOption({
         )}
       />
       <span className="min-w-0 truncate font-mono text-[12.5px]">{repo.name}</span>
-      {repo.private === false && (
-        <GlobeIcon aria-label="Public" className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
+      <PublicRepoMark repository={repo.name} className="ml-0" />
       {blocked && (
         <TriangleAlertIcon
           aria-label="Not in the runner group"

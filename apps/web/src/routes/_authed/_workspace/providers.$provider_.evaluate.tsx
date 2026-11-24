@@ -31,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { requireFlagRoute } from "@/lib/flags";
 import { errorText } from "@/lib/api";
 import {
   ACTIVE_STATES,
@@ -68,8 +67,7 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider_/e
   validateSearch: (search: Record<string, unknown>): EvaluateSearch => ({
     id: typeof search.id === "string" && search.id ? search.id : undefined,
   }),
-  beforeLoad: ({ params, context }) => {
-    requireFlagRoute("provider-evaluations")({ context });
+  beforeLoad: ({ params }) => {
     if (!isKnownProvider(params.provider) || evaluationSizes(params.provider).length === 0)
       throw notFound();
   },

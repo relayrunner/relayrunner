@@ -6,6 +6,7 @@ import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
+import { PublicRepoMark } from "@/components/public-repo";
 import { HISTORY_TABS as TABS, PageTabs, viewOf } from "@/components/page-tabs";
 import {
   providerStyle,
@@ -339,7 +340,12 @@ const RunRow = memo(function RunRow({
   const superseded = run.supersededBy ? "Superseded by a newer run" : undefined;
   const meta = [
     run.title ? run.workflow : null,
-    showRepository ? run.repository : null,
+    showRepository && (
+      <>
+        {run.repository}
+        <PublicRepoMark repository={run.repository} />
+      </>
+    ),
     triggerText(run),
     run.branch,
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
@@ -389,7 +395,14 @@ const RunRow = memo(function RunRow({
           </span>
           <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
             <CommitBy actor={run.actor} sha={run.sha} className="shrink-0" />
-            <span className="truncate">{meta.join(" · ")}</span>
+            <span className="truncate">
+              {meta.map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 && " · "}
+                  {part}
+                </Fragment>
+              ))}
+            </span>
           </span>
         </span>
         <RanOn keys={run.environments} environments={environments} />

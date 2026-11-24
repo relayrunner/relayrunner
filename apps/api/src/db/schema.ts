@@ -526,7 +526,7 @@ export const jobTiming = sqliteTable(
     ranSteps: integer("ran_steps", { mode: "boolean" }),
     failedStep: text("failed_step"),
     // Each step that ran, as [name, seconds], from the `completed` webhook. Read with
-    // src/reports/step-phases.ts to split a job's time into setup, checkout, installs, cache and work. Null
+    // src/reports/step-phases.ts to split a job's time into setup items and work. Null
     // when GitHub sent no steps.
     steps: text("steps", { mode: "json" }).$type<StepTime[]>(),
     ...timestamps,
@@ -1410,10 +1410,10 @@ export const feedback = sqliteTable(
   "feedback",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    // None for an anonymous crash report from the Mac app, which records only its machine.
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    machineId: text("machine_id").references(() => machine.id, { onDelete: "set null" }),
     grantId: text("grant_id"),
     clientId: text("client_id"),
     category: text("category").notNull(),
@@ -1423,12 +1423,15 @@ export const feedback = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
-    source: text("source", { enum: ["agent", "dashboard"] })
+    source: text("source", { enum: ["agent", "dashboard", "machine"] })
       .notNull()
       .default("agent"),
     page: text("page"),
   },
-  (table) => [index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
+  (table) => [
+    index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt),
+    index("feedback_machine_id_created_at_idx").on(table.machineId, table.createdAt),
+  ],
 );
 
 // Runner prices operators record, on top of the base list in @relayrunner/providers

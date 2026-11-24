@@ -4,7 +4,7 @@
 // once the feature is released for everyone.
 //
 // Each flag is a boolean in the Flagship app, and reads as off when Flagship can't answer.
-export const FLAG_KEYS = ["provider-evaluations"] as const satisfies readonly string[];
+export const FLAG_KEYS = [] as const satisfies readonly string[];
 
 export type FlagKey = (typeof FLAG_KEYS)[number];
 

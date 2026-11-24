@@ -15,6 +15,8 @@ enum AppSettings {
     static let welcomed = "welcomed"
     static let welcomeMoved = "welcomeMoved"
     static let pausedUntil = "pausedUntil"
+    static let crashesCheckedAt = "crashesCheckedAt"
+    static let crashReportsOff = "crashReportsOff"
   }
 
   private static var defaults: UserDefaults { .standard }
@@ -63,6 +65,18 @@ enum AppSettings {
   static var pausedUntil: Date? {
     get { defaults.object(forKey: Key.pausedUntil) as? Date }
     set { defaults.set(newValue, forKey: Key.pausedUntil) }
+  }
+
+  /// When the app last looked for crash reports, so each crash is offered once.
+  static var crashesCheckedAt: Date? {
+    get { defaults.object(forKey: Key.crashesCheckedAt) as? Date }
+    set { defaults.set(newValue, forKey: Key.crashesCheckedAt) }
+  }
+
+  /// Set by "Don't ask again" after a crash, or in Settings.
+  static var crashReportsOff: Bool {
+    get { defaults.bool(forKey: Key.crashReportsOff) }
+    set { defaults.set(newValue, forKey: Key.crashReportsOff) }
   }
 
   /// A login item, kept by macOS rather than in defaults. Reads back what macOS settled on.

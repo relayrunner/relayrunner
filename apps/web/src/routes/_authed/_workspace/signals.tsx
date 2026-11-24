@@ -15,6 +15,7 @@ import { ExternalLink, LINK, RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
 import { StatusIcon } from "@/components/status-icon";
+import { PublicRepoMark } from "@/components/public-repo";
 import { SECTION_HEADING } from "@/components/ui/data-table";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -562,6 +563,7 @@ function SignalCard({ signal, manyRepos }: { signal: Signal; manyRepos: boolean 
                   >
                     {repository}
                   </button>
+                  <PublicRepoMark repository={repository} />
                 </TableCell>
               </TableRow>
             )}
@@ -780,6 +782,13 @@ function BreakdownName({
     );
   }
   if (by === "trigger") return triggerName(row.name);
+  if (by === "repository")
+    return (
+      <>
+        {row.name}
+        <PublicRepoMark repository={row.name} />
+      </>
+    );
   return row.name;
 }
 

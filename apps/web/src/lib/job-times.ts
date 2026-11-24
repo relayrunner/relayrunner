@@ -8,7 +8,7 @@ import type {
 import { api } from "@/lib/api";
 import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
-import type { Phase } from "./job-phases.ts";
+import type { Part } from "./job-phases.ts";
 
 // GET /api/job-times: the Performance page's report. The dashboard calls each workflow row
 // a WorkflowRow and the report a JobTimesReport.
@@ -58,8 +58,8 @@ export type JobRun = {
   completedAt: number;
 };
 
-/** A step of the job's average successful run, sorted into a phase by its name. */
-export type RunStep = { name: string; phase: Phase; ms: number };
+/** A step of a job's average run; `cache` marks setup the job has a cache step for. */
+export type RunStep = { name: string; part: Part; ms: number; cache?: true };
 
 /**
  * The ranges a report from single jobs offers: as far back as the API keeps them (62 days), so

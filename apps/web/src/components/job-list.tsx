@@ -42,6 +42,7 @@ import { rangeSearch, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { rangePhrase } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 // The range and filters live in the History page's URL.
@@ -215,7 +216,12 @@ function JobCell({ job }: { job: Row }) {
           <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
             {job.workflow ?? "Unnamed workflow"}
           </RunLink>
-          {showRepository && ` · ${job.repository}`}
+          {showRepository && (
+            <>
+              {` · ${job.repository}`}
+              <PublicRepoMark repository={job.repository} />
+            </>
+          )}
         </span>
         <CommitBy actor={job.actor} sha={job.sha} repository={job.repository} />
       </span>

@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if env["RELAYRUNNER_WELCOME"] == nil && env["RELAYRUNNER_MENU"] == nil { Connection.shared.resumeIfWanted() }
       if env["RELAYRUNNER_MENU"] != nil { DispatchQueue.main.async { MenuBar.shared.open() } }
       Welcome.shared.showIfNew()
+      CrashReports.shared.checkOnLaunch()
     }
   }
 

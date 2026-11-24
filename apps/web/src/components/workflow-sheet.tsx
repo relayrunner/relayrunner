@@ -26,6 +26,7 @@ import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import { type WorkflowRef, workflowParam } from "@/lib/workflow-ref";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const RECENT = 20;
 
@@ -60,7 +61,10 @@ export function WorkflowSheet({ workflow, range }: { workflow: WorkflowRef; rang
         <div className="grid grid-cols-[minmax(0,1fr)] gap-6 px-5 py-5 sm:px-6">
           <header className="grid gap-1 pr-8">
             <SheetTitle className="break-words">{workflow.workflow}</SheetTitle>
-            <SheetDescription>{workflow.repository}</SheetDescription>
+            <SheetDescription>
+              {workflow.repository}
+              <PublicRepoMark repository={workflow.repository} />
+            </SheetDescription>
           </header>
           <TimeRangePicker {...WORKFLOW_RANGES} value={range} onChange={setRange} />
           {failed ? (

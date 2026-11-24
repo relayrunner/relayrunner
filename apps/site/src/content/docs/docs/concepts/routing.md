@@ -91,7 +91,7 @@ The relay fails straight away with one line that names why each provider couldn'
 
 > No runner available: no self-hosted machine is online and idle; `github` isn't set on this relay.
 
-The relay's log and the run's summary page show the same line, with a link to the dashboard page that fixes it. The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback so it doesn't happen again: give the relay a `github` label and keep GitHub-hosted in the runner order.
+The relay's log and the run's summary page show the same line, with a link to the dashboard page that fixes it, and a **RelayRunner: couldn't route** check on the commit puts the reason in the pull request's checks list. The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback so it doesn't happen again: give the relay a `github` label and keep GitHub-hosted in the runner order.
 
 ## When a machine goes away mid-job
 

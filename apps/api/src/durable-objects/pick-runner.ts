@@ -34,11 +34,24 @@ import {
   sameLogin,
   type SkippedStep,
 } from "../routing/routing.ts";
-import { jobStepLogs, noRunnerLogs, type StepLog, uploadJobLogs } from "../reports/job-logs.ts";
+import {
+  type FixLink,
+  jobStepLogs,
+  noRunnerLogs,
+  type StepLog,
+  uploadJobLogs,
+} from "../reports/job-logs.ts";
 import { jobSteps, nativeFreeCheck, nativeVerdict } from "../checks/native-checks.ts";
 import { recordRepoCheck } from "../checks/free-checks.ts";
 import { annotate, traced } from "../tracing.ts";
 import { dashboardUrl } from "../email.ts";
+import {
+  clearNoRouteChecks,
+  hadUnroutableAttempt,
+  noRouteCheckRun,
+  type RunAttempt,
+  routeCheckTarget,
+} from "../routing/route-check.ts";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
@@ -271,24 +284,29 @@ export class PickRunner extends DurableObject<Env> {
           );
           // Fail fast without a runner: the job that needs the relay doesn't start. Its log and the
           // run's summary say why, since no step of its own ran to print anything.
-          const logs =
-            pick.runner === null
-              ? await sendJobLogs(
-                  job,
-                  noRunnerLogs(
-                    jobSteps(job.message.steps),
-                    pick.reason,
-                    fixPage(this.env, "skipped" in pick ? pick.skipped : []),
-                  ),
-                  startedAt,
-                )
-              : undefined;
+          let fix: FixLink | undefined;
+          let logs: string | undefined;
+          if (pick.runner === null) {
+            fix = fixPage(this.env, "skipped" in pick ? pick.skipped : []);
+            const steps = noRunnerLogs(jobSteps(job.message.steps), pick.reason, fix);
+            logs = await sendJobLogs(job, steps, startedAt);
+          }
           await client.complete(
             job,
             pick.runner ? "succeeded" : "failed",
             pick.runner ? { outputs: { runner: pick.runner } } : { error: pick.reason },
           );
           outcome = { result: pick.runner ? "routed" : "no_runner", ...pick, logs };
+          // The pull request's checks list says why too, and a re-run that routes clears it. It runs
+          // after the pick is done, and a failure only loses the check.
+          const target = routeCheckTarget(job.message.contextData);
+          if (target)
+            this.ctx.waitUntil(
+              updateRouteCheck(this.env, token, target, pick.runner === null ? pick : null, {
+                fix,
+                repositoryId: record?.repositoryId ?? null,
+              }).catch((error) => logCleanupError("route check", work, error)),
+            );
           // For the Activity page. The relay is already answered, so a failure here only loses the
           // explanation.
           if (record)
@@ -637,8 +655,24 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
   ]);
 }
 
+/** Posts the failed route check, or clears an earlier attempt's once the run routes. */
+async function updateRouteCheck(
+  env: Env,
+  token: string,
+  run: RunAttempt,
+  failed: { reason: string } | null,
+  { fix, repositoryId }: { fix?: FixLink; repositoryId: number | null },
+) {
+  if (failed) await createCheckRun(token, run.repo, noRouteCheckRun(run, failed.reason, fix));
+  else if (
+    repositoryId !== null &&
+    (await hadUnroutableAttempt(createDb(env.DB), { ...run, repositoryId }))
+  )
+    await clearNoRouteChecks(token, run);
+}
+
 /** The dashboard page that fixes a pick with no runner, or none when the walk didn't run. */
-function fixPage(env: Env, skipped: SkippedStep[]) {
+function fixPage(env: Env, skipped: SkippedStep[]): FixLink | undefined {
   if (!skipped.length) return undefined;
   const page = noRunnerPage(skipped);
   return { name: PAGE_NAMES[page], url: `${dashboardUrl(env)}/${page}` };

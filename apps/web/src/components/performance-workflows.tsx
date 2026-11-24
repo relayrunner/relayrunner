@@ -19,6 +19,7 @@ import {
 } from "@/lib/job-times";
 import { type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 /** Runners that need no provider's name to read: GitHub's images, machines, containers. */
 const NAMED_BY_LABEL = new Set(["github", "machine", "self-hosted", "container", "other"]);
@@ -241,7 +242,13 @@ function WorkflowCell({ row }: { row: Row }) {
         {row.workflow ?? "Unnamed workflow"}
       </Link>
       <span className="block max-w-56 truncate text-xs text-muted-foreground">
-        {showRepository && `${row.repository} · `}
+        {showRepository && (
+          <>
+            {row.repository}
+            <PublicRepoMark repository={row.repository} />
+            {" · "}
+          </>
+        )}
         {plural(row.jobs.length, "job")}
       </span>
     </>

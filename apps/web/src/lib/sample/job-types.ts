@@ -1,6 +1,6 @@
 // CI minutes by job type for the dev preview (lib/sample/answers.ts), like GET
 // /api/job-times/types.
-import type { PhaseTimes } from "../job-phases.ts";
+import type { PartTimes, SetupItem } from "../job-phases.ts";
 import { DAY_MS, type JobType } from "../job-times.ts";
 import { hasTrend } from "./shared.ts";
 import { startOfDay } from "../time-zone.ts";
@@ -45,22 +45,36 @@ export function sampleJobTypeTimes(days: number): JobTypeTimes {
       priorMs: compare ? Math.round(ms * (0.75 + random() * 0.5)) : null,
       byDay,
       stepped: Math.round(runs * 0.8),
-      phases: samplePhases(type, ms * 0.8, random),
+      ...sampleParts(type, ms * 0.8, random),
     };
   });
   jobs.sort((a, b) => b.ms - a.ms);
   return { days, start, ai: true, compare, jobs };
 }
 
-// Dev preview: a made-up split of `ms` of step time, the shares by type.
-function samplePhases(type: JobType | null, ms: number, random: () => number): PhaseTimes {
-  const work = type === "lint" || type === "other" ? 0.35 : type === "e2e" ? 0.7 : 0.55;
-  const shares = { setup: 0.12, checkout: 0.05, dependencies: 0.15, cache: 0.08, cleanup: 0.02 };
-  const rest = Object.values(shares).reduce((sum, each) => sum + each, 0);
-  const phases: PhaseTimes = { work: Math.round(ms * work) };
-  for (const [phase, share] of Object.entries(shares))
-    phases[phase as keyof typeof shares] = Math.round(
+// Dev preview: a made-up split of `ms` of step time by part, the work share by type.
+function sampleParts(type: JobType | null, ms: number, random: () => number) {
+  const work = type === "lint" || type === "other" ? 0.35 : type === "e2e" ? 0.45 : 0.55;
+  const setup = {
+    runner: 0.08,
+    checkout: 0.06,
+    tools: 0.12,
+    packages: 0.3,
+    cache: 0.08,
+    ...(type === "e2e" ? { browsers: 0.4, system: 0.2 } : {}),
+    ...(type === "build" || type === "deploy" ? { images: 0.25 } : {}),
+  };
+  const rest = Object.values(setup).reduce((sum, each) => sum + each, 0);
+  const parts: PartTimes = {
+    [type === "build" ? "build" : type === "test" || type === "e2e" ? "test" : "other"]: Math.round(
+      ms * work,
+    ),
+  };
+  for (const [item, share] of Object.entries(setup))
+    parts[item as keyof typeof setup] = Math.round(
       ((ms * (1 - work) * share) / rest) * (0.7 + random() * 0.6),
     );
-  return phases;
+  // Half the jobs cache their packages.
+  const cached: SetupItem[] = random() < 0.5 ? ["packages"] : [];
+  return { parts, cached };
 }

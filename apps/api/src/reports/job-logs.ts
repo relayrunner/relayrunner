@@ -68,6 +68,12 @@ export function jobStepLogs(
   });
 }
 
+/** The dashboard page that fixes a failed pick, as a link. */
+export interface FixLink {
+  name: string;
+  url: string;
+}
+
 /**
  * A relay's steps when no runner fits: the reason in its log and on the run's summary page, with a
  * link to the dashboard page that fixes it (`fix`) when there is one.
@@ -75,7 +81,7 @@ export function jobStepLogs(
 export function noRunnerLogs(
   steps: { id?: string; name: string }[],
   reason: string,
-  fix?: { name: string; url: string },
+  fix?: FixLink,
 ): StepLog[] {
   const summary = [
     "### This job couldn't be routed",

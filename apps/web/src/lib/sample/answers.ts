@@ -196,6 +196,7 @@ const ANSWERS: [RegExp, Answer][] = [
   ],
   [/^\/workspaces\/[^/]+\/route-outcomes$/, () => sampleRouteOutcomes()],
   [/^\/workspaces\/[^/]+\/router-setup$/, () => sampleRouterSetup()],
+  [/^\/workspaces\/[^/]+\/public-repos$/, () => ({ repositories: ["acme/docs"] })],
   [/^\/workspaces\/[^/]+\/runner-group-check$/, () => ({ check: sampleRunnerGroupCheck() })],
   [/^\/workspaces\/[^/]+\/auto-jobs$/, () => sampleAutoJobs()],
   [/^\/workspaces\/[^/]+\/retry-settings$/, () => DEFAULT_RETRY_SETTINGS],

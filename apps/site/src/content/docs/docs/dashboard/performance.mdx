@@ -37,9 +37,11 @@ Where your CI time goes by what each job does: tests, builds, lint, end-to-end t
 
 Jobs the model hasn't read yet, or wasn't sure about, count as **Not sorted**. Time spent waiting for a runner isn't counted. If AI is off for your workspace, the tab asks you to turn it on in Settings.
 
-### Inside the jobs
+### Setup, build and test
 
-GitHub sends the start and end of each step when a job finishes, and the dashboard sorts each step into a phase by its name: **Setup** (the runner and `setup-*` actions), **Checkout**, **Installs** (such as `npm ci` or `pip install`), **Cache** (restoring and saving it), **Work** (the job's own steps) and **Cleanup**. **Overhead** is the share of step time outside Work. Pick a type to see its minutes in each phase.
+GitHub sends the start and end of each step when a job finishes, and the dashboard sorts each step by its name. **Setup** is what every run does to get the machine ready: starting the runner, checkout, tools such as `setup-node`, packages (`npm ci`, `pip install`), system packages (`apt-get install`), browsers (`playwright install`), container images and cache steps. The rest is the job's own work: **Build**, **Test**, or **Other work** when a step's name doesn't say and the job's type doesn't either. Each type gets a bar in minutes; hover it to see what's inside.
+
+Setup with a cache step that names what it holds, such as "Cache Playwright browsers", or `setup-node` with caching on, shows solid. A cache step means a cache is set up, not that it hit. Everything else reads as **No cache we can see**, though a runner can also cache in ways step names don't show.
 
 Open a job on the **Jobs** tab to see its average successful run step by step.
 

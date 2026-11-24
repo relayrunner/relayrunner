@@ -27,6 +27,7 @@ import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
 import { minutes } from "@/lib/usage";
 import { cn, count, niceMax, percent } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const MACHINE = "machine:";
 
@@ -464,7 +465,11 @@ function RecentJobRow({
           <span className="min-w-0">
             <span className="block underline-offset-4 group-hover:underline">{job.name}</span>
             <span className="flex flex-wrap items-center gap-x-2.5 text-xs text-muted-foreground">
-              <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
+              <span>
+                {job.workflow && `${job.workflow} · `}
+                {job.repository}
+                <PublicRepoMark repository={job.repository} />
+              </span>
               <CommitBy actor={job.actor} sha={job.sha} />
             </span>
             {/* Phones have no room for the time columns, so the times go under the job. */}

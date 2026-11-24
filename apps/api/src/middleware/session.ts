@@ -40,7 +40,7 @@ export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 // The request's waitUntil, or undefined where Hono has no ExecutionContext (app.request in tests).
-export function waitUntil(c: Context<AppEnv>) {
+export function waitUntil(c: Pick<Context, "executionCtx">) {
   try {
     const ctx = c.executionCtx;
     return (promise: Promise<unknown>) => ctx.waitUntil(promise);
@@ -50,7 +50,7 @@ export function waitUntil(c: Context<AppEnv>) {
 }
 
 // Runs `promise` after the response where there's a waitUntil, else waits for it (tests).
-export async function inBackground(c: Context<AppEnv>, promise: Promise<unknown>) {
+export async function inBackground(c: Pick<Context, "executionCtx">, promise: Promise<unknown>) {
   const defer = waitUntil(c);
   if (defer) defer(promise);
   else await promise;

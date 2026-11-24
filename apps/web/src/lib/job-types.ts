@@ -1,5 +1,12 @@
 import { api } from "@/lib/api";
-import { addPhases, type PhaseTimes } from "./job-phases.ts";
+import {
+  addInside,
+  addParts,
+  emptyInside,
+  type Inside,
+  type PartTimes,
+  type SetupItem,
+} from "./job-phases.ts";
 import { DAY_MS, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
 import { zoneOffset } from "./time-zone.ts";
 import { reportQuery, type TimeRange } from "./time-range.ts";
@@ -17,9 +24,11 @@ export type JobTypeTime = {
   priorMs: number | null;
   /** Run time on each day of the window, oldest first. */
   byDay: number[];
-  /** Runs that reported their steps, and those steps' time by phase. */
+  /** Runs that reported their steps, and those steps' time by part. */
   stepped: number;
-  phases: PhaseTimes;
+  parts: PartTimes;
+  /** The setup the job has a cache step for. */
+  cached: SetupItem[];
 };
 
 export type JobTypeTimes = {
@@ -67,14 +76,14 @@ export type TypeTotal = {
   /** Its jobs with runs, the most time first. */
   jobs: JobTypeTime[];
   stepped: number;
-  phases: PhaseTimes;
+  inside: Inside;
 };
 
 export type TypeSummary = {
   ms: number;
   runs: number;
   stepped: number;
-  phases: PhaseTimes;
+  inside: Inside;
   /** Types with time in the window, in TYPE_ORDER. */
   types: TypeTotal[];
   /** Each day's local midnight, its run time by type and in all. */
@@ -101,14 +110,14 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
         priorMs: report.compare ? 0 : null,
         jobs: [],
         stepped: 0,
-        phases: {},
+        inside: emptyInside(),
       };
       totals.set(key, total);
     }
     total.ms += job.ms;
     total.runs += job.runs;
     total.stepped += job.stepped;
-    addPhases(total.phases, job.phases);
+    addParts(total.inside, job.parts, job.cached);
     if (total.priorMs !== null) total.priorMs += job.priorMs ?? 0;
     if (job.runs > 0) total.jobs.push(job);
     job.byDay.forEach((ms, i) => {
@@ -126,7 +135,7 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
     ms: types.reduce((sum, type) => sum + type.ms, 0),
     runs: types.reduce((sum, type) => sum + type.runs, 0),
     stepped: types.reduce((sum, type) => sum + type.stepped, 0),
-    phases: types.reduce((sum, type) => addPhases(sum, type.phases), {} as PhaseTimes),
+    inside: types.reduce((sum, type) => addInside(sum, type.inside), emptyInside()),
     types,
     days,
   };
