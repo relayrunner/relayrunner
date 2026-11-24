@@ -12,6 +12,7 @@ import {
   SPEND_APP_INSTALL_URL,
   unavailableText,
 } from "@/lib/actions-usage";
+import { QuotaMeter } from "@/components/quota-meter";
 import { timeAgo } from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
@@ -131,22 +132,12 @@ export function ActionsMinutes({
         </span>
       </div>
       {quota !== null && usage.status === "ok" && (
-        <div
-          role="meter"
-          aria-label="Included Actions minutes used this month"
-          aria-valuemin={0}
-          aria-valuemax={quota}
-          aria-valuenow={Math.round(usage.usedMinutes)}
-          className="h-1.5 overflow-hidden rounded-full bg-raised-2"
-        >
-          <div
-            className={cn(
-              "h-full rounded-full",
-              over ? "bg-destructive" : share >= 0.8 ? "bg-run" : "bg-go",
-            )}
-            style={{ width: `${Math.min(100, Math.max(share * 100, usage.usedMinutes ? 1 : 0))}%` }}
-          />
-        </div>
+        <QuotaMeter
+          label="Included Actions minutes used this month"
+          used={usage.usedMinutes}
+          quota={quota}
+          over={over}
+        />
       )}
       {unavailable && (
         <p className="text-xs text-muted-foreground">

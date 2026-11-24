@@ -9,6 +9,7 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { FreeMinutesMeter } from "@/components/free-minutes-meter";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -424,7 +425,6 @@ function FreeMinutes({
   minutes: FreeMinutesCount | null;
 }) {
   const label = RUNNER_LABELS[provider];
-  const count = (n: number) => n.toLocaleString("en-US");
   const router = (text: string) => (
     <Link to="/router" className="text-go hover:text-go-hover">
       {text}
@@ -437,23 +437,11 @@ function FreeMinutes({
     </p>
   ) : null;
   if (!counted(minutes)) return held;
-  const used = Math.round(minutes.usedMinutes);
-  const quota = minutes.quotaMinutes;
-  // Blacksmith counts free minutes as 2-vCPU minutes, so a 4-vCPU minute uses two. Its own page
-  // stops at the quota and shows runner minutes, which don't double: say how the count is made.
-  // Groundbox reports its own count.
-  const unit = provider === "blacksmith" ? "2-vCPU minutes" : "minutes";
   return (
     <>
-      <p>
-        {used >= quota
-          ? `All ${count(quota)} free minutes used this month (${count(used)} ${unit}).`
-          : provider === "blacksmith"
-            ? `${count(used)} of ${count(quota)} free minutes used this month, in 2-vCPU minutes.`
-            : `${count(used)} of ${count(quota)} free minutes used this month.`}{" "}
-        <span className="text-muted-foreground">
-          Set a limit on the {label} step in the {router("Router")}.
-        </span>
+      <FreeMinutesMeter provider={provider} minutes={minutes} />
+      <p className="text-muted-foreground">
+        Set a limit on the {label} step in the {router("Router")}.
       </p>
       {held}
     </>

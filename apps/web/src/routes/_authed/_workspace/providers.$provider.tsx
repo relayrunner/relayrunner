@@ -1,9 +1,11 @@
 import { dayMs, providerPlans, type RatePrices } from "@relayrunner/providers";
+import { isFreeMinutesProvider } from "@relayrunner/runner-order";
 import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon, FlaskConicalIcon } from "lucide-react";
 import { useState } from "react";
 import { IncludedMinutes } from "@/components/actions-minutes";
+import { ProviderFreeMinutes } from "@/components/free-minutes-meter";
 import { CodeBlock } from "@/components/code-block";
 import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
@@ -200,6 +202,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
       )}
 
       {provider === "github" && <IncludedMinutes />}
+      {isFreeMinutesProvider(provider) && <ProviderFreeMinutes provider={provider} />}
 
       <ProviderPlans provider={provider} />
 
