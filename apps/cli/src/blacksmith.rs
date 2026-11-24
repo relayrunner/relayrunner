@@ -251,9 +251,24 @@ fn mint(blacksmith: &Path) -> Result<Minted, Error> {
         .env("BLACKSMITH_DISABLE_AUTO_UPDATE", "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| failed(format!("Couldn't run {} ({e}).", blacksmith.display())))?;
+    // Blacksmith says which organization the token is for on stderr, so that passes through as
+    // it comes (it may prompt there) and is read once it ends.
+    let stderr = child.stderr.take().map(|mut stderr| {
+        std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            let mut buffer = [0u8; 4096];
+            while let Ok(n @ 1..) = stderr.read(&mut buffer) {
+                let mut out = std::io::stderr();
+                let _ = out.write_all(&buffer[..n]);
+                let _ = out.flush();
+                seen.extend_from_slice(&buffer[..n]);
+            }
+            String::from_utf8_lossy(&seen).into_owned()
+        })
+    });
     let mut minted = Minted::default();
     if let Some(stdout) = child.stdout.take() {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -263,6 +278,11 @@ fn mint(blacksmith: &Path) -> Result<Minted, Error> {
         }
     }
     let status = child.wait().map_err(|e| failed(e.to_string()))?;
+    if let Some(said) = stderr.and_then(|thread| thread.join().ok()) {
+        for line in said.lines() {
+            minted.read(line);
+        }
+    }
     if !status.success() || minted.token.is_none() {
         return Err(failed(
             "Blacksmith didn't create an org token. Only an admin of the Blacksmith organization can create one.".into(),
@@ -454,6 +474,25 @@ mod tests {
         assert!(Args::parse(&strings(&["disconnect"])).is_err());
         assert!(Args::parse(&strings(&["connect", "--workspace"])).is_err());
         assert!(Args::parse(&strings(&["connect", "--nope"])).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_the_org_blacksmith_names_on_stderr() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("rr-blacksmith-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("blacksmith");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\necho 'Org token minted for acme. It will not be shown again.' >&2\necho '1234|abcdefghijkl'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let minted = mint(&fake).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(minted.organization.as_deref(), Some("acme"));
+        assert_eq!(minted.token.as_deref(), Some("1234|abcdefghijkl"));
     }
 
     #[test]
