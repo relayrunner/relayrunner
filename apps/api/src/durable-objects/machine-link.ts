@@ -446,16 +446,6 @@ export class MachineLink extends DurableObject<Env> {
         scope,
       },
     });
-    log.info("machine.run_sent", "run sent", {
-      routeId: route.id,
-      machineId: route.machineId,
-      repo: route.repo,
-      runId: route.runId,
-      jobId: route.jobId,
-      installationId: route.installationId,
-      runnerId: jit.runnerId,
-      runnerLabels: jit.labels,
-    });
     return "sent";
   }
 

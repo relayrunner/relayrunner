@@ -314,13 +314,9 @@ export async function pollInstallation(
       now,
       { plan: plan.status === "fulfilled" ? plan.value : undefined },
     );
-    // A refusal is the account's setup, not a fault: the dashboard says how to fix it, and the poll
-    // backs off (REFUSED_RETRY_MS). Only unexpected failures log as errors.
-    if (refused)
-      log.info("provider.actions_billing_not_shared", "actions billing not shared", {
-        installationId: installation.id,
-      });
-    else logFailure(installation.id, usage.reason);
+    // A refusal is the account's setup, not a fault: it's recorded above, the dashboard says how
+    // to fix it, and the poll backs off (REFUSED_RETRY_MS). Only unexpected failures log.
+    if (!refused) logFailure(installation.id, usage.reason);
     return;
   }
 

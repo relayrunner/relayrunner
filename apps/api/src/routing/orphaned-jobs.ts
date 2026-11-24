@@ -125,6 +125,8 @@ export async function sweepOrphanedJobs(env: Env, now = Date.now()) {
       }
     });
   }
-  log.info("sweep.orphaned_jobs", "orphaned jobs swept", { queued: queued.length, ...counts });
+  // Most sweeps end nothing; only one that did is worth a line.
+  if (counts.ended || counts.failed)
+    log.info("sweep.orphaned_jobs", "orphaned jobs swept", { queued: queued.length, ...counts });
   return counts;
 }

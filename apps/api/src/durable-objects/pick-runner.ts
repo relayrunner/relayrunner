@@ -159,10 +159,9 @@ export class PickRunner extends DurableObject<Env> {
       ]);
       // A replacement runner first makes sure its job still needs one.
       if (attempt > 1 && (await this.jobStatus(token, work)) !== "queued") {
-        log.info("pick.not_needed", "pick not needed", {
-          jobId: work.jobId,
-          repo: work.repo,
-          attempt,
+        log.info("pick.finished", "pick finished", {
+          result: "not_needed",
+          durationMs: Date.now() - startedAt,
         });
         return;
       }
@@ -348,12 +347,14 @@ export class PickRunner extends DurableObject<Env> {
       "relayrunner.pick.result": String(outcome.result),
       "relayrunner.runner": typeof outcome.runner === "string" ? outcome.runner : undefined,
     });
-    // The pick's wide event: one per pick runner, with how it ended.
+    const next = token ? await this.rearmIfQueued(work, attempt, token) : undefined;
+    // The pick's wide event: one per pick runner, with how it ended and whether a replacement
+    // runner follows (`next`).
     (outcome.result === "error" ? log.error : log.info)("pick.finished", "pick finished", {
       ...outcome,
+      next,
       durationMs: Date.now() - startedAt,
     });
-    if (token) await this.rearmIfQueued(work, attempt, token);
   }
 
   // The job's status: from its webhooks once they say it started, else from GitHub.
@@ -368,7 +369,11 @@ export class PickRunner extends DurableObject<Env> {
   // will come for it, so start a replacement. Usually the job's own webhook has already said it
   // started. When it hasn't, the replacement starts after RECHECK_AFTER_MS and checks again first,
   // by which time the webhook has usually arrived, so GitHub is rarely asked.
-  private async rearmIfQueued(work: PickWork, attempt: number, token: string) {
+  private async rearmIfQueued(
+    work: PickWork,
+    attempt: number,
+    token: string,
+  ): Promise<"rearm" | "done" | "give_up" | undefined> {
     let status: string | null;
     try {
       // After the last attempt nothing checks again, so GitHub decides whether to give up.
@@ -383,18 +388,14 @@ export class PickRunner extends DurableObject<Env> {
     // Null before the last attempt: no webhook has said it started yet.
     const next =
       status === null && attempt < MAX_ATTEMPTS ? "rearm" : afterAttempt(status, attempt);
-    if (next === "done") return;
+    if (next === "done") return next;
     if (next === "give_up") {
       log.warn("pick.gave_up", "pick gave up", { jobId: work.jobId, repo: work.repo, attempt });
-      return;
+      return next;
     }
     await this.ctx.storage.put({ work, attempt: attempt + 1 });
     await this.ctx.storage.setAlarm(Date.now() + RECHECK_AFTER_MS);
-    log.info("pick.rearmed", "pick re-armed", {
-      jobId: work.jobId,
-      repo: work.repo,
-      attempt: attempt + 1,
-    });
+    return next;
   }
 }
 

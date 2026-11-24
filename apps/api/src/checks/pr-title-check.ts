@@ -61,11 +61,13 @@ export async function checkPullRequestTitle(env: Env, message: PullRequestMessag
       },
       check,
     );
-  log.info("checks.pr_title_checked", "pr title checked", {
-    deliveryId: message.deliveryId,
-    repository: repo,
-    pullRequest: message.pullRequest.number,
-    config: config.kind === "none" ? null : config.path,
-    conclusion: check?.conclusion ?? "off",
-  });
+  // Only where the repo has the check: most don't, and "off" says nothing.
+  if (check)
+    log.info("checks.pr_title_checked", "pr title checked", {
+      deliveryId: message.deliveryId,
+      repo,
+      pullRequest: message.pullRequest.number,
+      config: config.kind === "none" ? null : config.path,
+      conclusion: check.conclusion,
+    });
 }

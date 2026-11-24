@@ -59,7 +59,7 @@ export class LintRunner extends DurableObject<Env> {
     const changed = this.changed(work, token);
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
-    if (config.kind !== "config" || !config.lint) return logStep("not configured", work, {});
+    if (config.kind !== "config" || !config.lint) return;
     const results = await this.run(
       work,
       { checks: token },
@@ -309,11 +309,7 @@ const resultsLog = (results: LintResult[]) => ({
   })),
 });
 
-function logStep(
-  step: "not configured" | "error" | "finished",
-  work: LintTarget,
-  fields: Record<string, unknown>,
-) {
+function logStep(step: "error" | "finished", work: LintTarget, fields: Record<string, unknown>) {
   (step === "error" ? log.error : log.info)("lint.step", `lint runner ${step}`, {
     step: step.replace(" ", "_"),
     repo: work.repo,
