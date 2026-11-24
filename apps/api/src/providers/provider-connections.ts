@@ -328,8 +328,9 @@ export async function managedWorkspaces(db: Db, userId: string): Promise<Managed
 
 /**
  * Which workspace a connection from the CLI goes to: the one it names (by id, slug or name), else
- * the only one installed on the token's GitHub organization. Without an organization, the user's
- * only workspace. Null when that's none or more than one, for the CLI to ask.
+ * the only one installed on the token's GitHub organization, else the only one whose slug or name
+ * is the organization. Without an organization, the user's only workspace. Null when that's none
+ * or more than one, for the CLI to ask.
  */
 export function chooseWorkspace(
   workspaces: ManagedWorkspace[],
@@ -345,8 +346,12 @@ export function chooseWorkspace(
       null
     );
   }
-  const candidates = organization
-    ? workspaces.filter((w) => w.accountLogin && sameLogin(w.accountLogin, organization))
-    : workspaces;
-  return candidates.length === 1 ? candidates[0]! : null;
+  if (!organization) return workspaces.length === 1 ? workspaces[0]! : null;
+  const only = (matches: ManagedWorkspace[]) => (matches.length === 1 ? matches[0]! : null);
+  return (
+    only(workspaces.filter((w) => w.accountLogin && sameLogin(w.accountLogin, organization))) ??
+    only(
+      workspaces.filter((w) => sameLogin(w.slug, organization) || sameLogin(w.name, organization)),
+    )
+  );
 }

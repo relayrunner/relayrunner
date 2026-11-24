@@ -136,7 +136,7 @@ Connects your Blacksmith organization so Settings › Providers shows its real u
 
 The command runs `blacksmith org-token create`, which opens your browser for you to approve as an admin of the Blacksmith organization. It sends only the token it prints to RelayRunner, encrypted at rest, and never signs in to Blacksmith or reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin` (`--yes` skips the question), checked against the SHA-256 Blacksmith publishes.
 
-In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, or the one you name when you have more than one. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
+In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, else the one with its name, or the one you name or pick when that isn't clear. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
 
 ## `feedback`
 

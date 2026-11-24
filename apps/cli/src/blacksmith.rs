@@ -331,8 +331,21 @@ fn send(credentials: &Credentials, minted: &Minted, workspace: Option<&str>) -> 
     }
 }
 
-/// Asks which workspace to connect it to, by id. None when nobody can answer.
-fn pick(workspaces: &[Value]) -> Option<String> {
+/// The workspace whose slug or name is the Blacksmith organization, to start the list on.
+fn named_like(workspaces: &[Value], organization: Option<&str>) -> Option<usize> {
+    let organization = organization?;
+    workspaces.iter().position(|w| {
+        ["slug", "name"].iter().any(|key| {
+            w[key]
+                .as_str()
+                .is_some_and(|value| value.eq_ignore_ascii_case(organization))
+        })
+    })
+}
+
+/// Asks which workspace to connect it to, by id, starting on the one named like the
+/// organization. None when nobody can answer.
+fn pick(workspaces: &[Value], organization: Option<&str>) -> Option<String> {
     if !ui::can_ask() || workspaces.is_empty() {
         return None;
     }
@@ -346,7 +359,7 @@ fn pick(workspaces: &[Value]) -> Option<String> {
     let index = ui::select(
         "Which workspace should show its Blacksmith usage?",
         &choices,
-        0,
+        named_like(workspaces, organization).unwrap_or(0),
     )?;
     workspaces[index]["id"].as_str().map(str::to_string)
 }
@@ -375,7 +388,7 @@ pub fn command(credentials: &Credentials, rest: &[String]) -> Result<(), Error> 
         match send(credentials, &minted, workspace.as_deref()) {
             Sent::Connected(body) => break body,
             Sent::Failed(error) => return Err(unused(error)),
-            Sent::Unclear(workspaces) => match pick(&workspaces) {
+            Sent::Unclear(workspaces) => match pick(&workspaces, minted.organization.as_deref()) {
                 Some(id) if workspace.is_none() => workspace = Some(id),
                 _ => {
                     let slugs: Vec<&str> = workspaces
@@ -441,6 +454,19 @@ mod tests {
         assert!(Args::parse(&strings(&["disconnect"])).is_err());
         assert!(Args::parse(&strings(&["connect", "--workspace"])).is_err());
         assert!(Args::parse(&strings(&["connect", "--nope"])).is_err());
+    }
+
+    #[test]
+    fn starts_the_list_on_the_workspace_named_like_the_organization() {
+        let workspaces = vec![
+            json!({ "id": "1", "name": "Other", "slug": "other" }),
+            json!({ "id": "2", "name": "Acme CI", "slug": "acme" }),
+            json!({ "id": "3", "name": "acme-labs", "slug": "acme-labs" }),
+        ];
+        assert_eq!(named_like(&workspaces, Some("ACME")), Some(1));
+        assert_eq!(named_like(&workspaces, Some("acme-labs")), Some(2));
+        assert_eq!(named_like(&workspaces, Some("nope")), None);
+        assert_eq!(named_like(&workspaces, None), None);
     }
 
     #[test]

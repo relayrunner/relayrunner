@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { listConnections } from "./provider-connections.ts";
+import { chooseWorkspace, listConnections } from "./provider-connections.ts";
 import {
   purgeOldProviderUsage,
   saveUsage,
@@ -67,6 +67,48 @@ async function owner() {
 
 const connect = (cookie: string, provider: string, body: unknown) =>
   testing.call(env, `/providers/${provider}/connection`, cookie, body, "PUT");
+
+describe("choosing the workspace for a CLI connection", () => {
+  const workspace = (slug: string, accountLogin: string | null) => ({
+    id: `id-${slug}`,
+    name: slug,
+    slug,
+    accountLogin,
+  });
+  const installed = workspace("acme-ci", "acme");
+  const named = workspace("acme", null);
+  const other = workspace("other", "other");
+
+  test("takes the one installed on the organization", () => {
+    expect(chooseWorkspace([installed, other], "ACME", undefined)).toBe(installed);
+  });
+
+  test("else the one named like the organization", () => {
+    expect(chooseWorkspace([named, other], "acme", undefined)).toBe(named);
+    expect(chooseWorkspace([{ ...named, slug: "acme-2" }, other], "Acme", undefined)?.id).toBe(
+      named.id,
+    );
+    // Two installed on it: the one named like it.
+    const alsoInstalled = { ...installed, id: "id-acme", name: "acme", slug: "acme" };
+    expect(chooseWorkspace([installed, alsoInstalled], "acme", undefined)).toBe(alsoInstalled);
+  });
+
+  test("asks when none or several fit", () => {
+    expect(chooseWorkspace([other, workspace("third", null)], "acme", undefined)).toBeNull();
+    expect(
+      chooseWorkspace(
+        [installed, { ...installed, id: "id-2", slug: "acme-cd" }],
+        "acme",
+        undefined,
+      ),
+    ).toBeNull();
+    expect(chooseWorkspace([named, other], undefined, undefined)).toBeNull();
+  });
+
+  test("a named workspace wins over the organization", () => {
+    expect(chooseWorkspace([installed, other], "acme", "other")).toBe(other);
+  });
+});
 
 describe("provider tokens", () => {
   test("seal and open round-trip, and a token can't be opened for another workspace", async () => {
