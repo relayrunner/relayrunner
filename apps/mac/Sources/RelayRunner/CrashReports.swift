@@ -45,13 +45,18 @@ final class CrashReports {
       "Send this report to help us fix it? It goes with your RelayRunner account and holds only what's below: no names, repos or logs.\(times)"
     // Built once, so what's sent is exactly what was shown.
     let text = report.text
-    alert.accessoryView = Self.preview(text)
+    let preview = Self.preview(text)
+    alert.accessoryView = preview
     alert.addButton(withTitle: "Send Report")
     alert.addButton(withTitle: "Don't Send")
     alert.showsSuppressionButton = true
     alert.suppressionButton?.title = "Don't ask again"
     // The button has the focus, so the report box doesn't scroll to its insertion point.
     alert.window.initialFirstResponder = alert.buttons.first
+    // The alert sizes the box as it shows, which leaves it scrolled partway down; once it's up, the
+    // start of the report goes back in view.
+    preview.documentView?.perform(
+      #selector(NSResponder.scrollToBeginningOfDocument(_:)), with: nil, afterDelay: 0.05, inModes: [.modalPanel])
     NSApp.activate(ignoringOtherApps: true)
     let send = alert.runModal() == .alertFirstButtonReturn
     if alert.suppressionButton?.state == .on { AppSettings.crashReportsOff = true }
