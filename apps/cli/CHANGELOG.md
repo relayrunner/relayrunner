@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.20.1
+
+### Patch Changes
+
+- 9f2b67d: `relayrunner blacksmith connect` reads which organization Blacksmith made the token for again, so it connects the workspace on that organization without asking. When it still has to ask, the list starts on the workspace named like the organization.
+
 ## 0.20.0
 
 ### Minor Changes
