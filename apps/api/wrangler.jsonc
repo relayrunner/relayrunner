@@ -23,8 +23,16 @@
   // the TypeScript source.
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": true },
-    "traces": { "enabled": true },
+    // Each signal also goes to Grafana Cloud over OTLP (docs/observability.md). `persist` keeps
+    // Cloudflare's own copy, so the Workers dashboard and Issues work as before. The destinations
+    // are account settings: create them before deploying this, or the deploy fails.
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+      "destinations": ["grafana-logs"],
+    },
+    "traces": { "enabled": true, "persist": true, "destinations": ["grafana-traces"] },
     "issues": { "enabled": true },
   },
   "upload_source_maps": true,

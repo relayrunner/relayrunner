@@ -82,20 +82,15 @@ sum by (result) (count_over_time({service_name="relayrunner-api"} | json | event
 
 Only `service_name` (and the level) are stream labels. Ids stay in the line, so filter on them after `| json` rather than grouping by them.
 
-## Export to an OTLP backend
+## Grafana Cloud
 
-1. In the Cloudflare dashboard, go to **Observability** > **Destinations** and add one destination for traces and one for logs, with the backend's OTLP endpoints and auth header. Cloudflare sends OTLP over HTTP with JSON, not protobuf.
-2. List the destination names in each Worker's `wrangler.jsonc`:
+The API exports its logs and traces to RelayRunner's Grafana Cloud stack over OTLP, alongside Workers Observability, which keeps its own copy (`persist: true`). Logs land in Loki, and traces in Tempo.
 
-   ```jsonc
-   "observability": {
-     "enabled": true,
-     "logs": { "enabled": true, "invocation_logs": true, "destinations": ["grafana-logs"] },
-     "traces": { "enabled": true, "destinations": ["grafana-traces"] },
-     "issues": { "enabled": true },
-   },
-   ```
+### Export
 
-3. Deploy. Data takes a few minutes to show up.
+1. In the Cloudflare dashboard, go to **Observability** > **Destinations** and add `grafana-logs` and `grafana-traces`, with the stack's OTLP endpoints (`<otlp gateway>/v1/logs` and `/v1/traces`) and an `Authorization: Basic <base64 of instanceId:token>` header. The token is a Grafana Cloud access policy token with `logs:write` and `traces:write`. Cloudflare sends OTLP over HTTP with JSON, not protobuf.
+2. `apps/api/wrangler.jsonc` names both destinations, so they have to exist before it deploys.
 
-The auth header lives in the destination, never in the repo. Exports go out alongside Workers Observability, which keeps working. Add `"persist": false` to stop storing a signal in Cloudflare once the backend has replaced it. Every request is traced today. If volume outgrows the backend's plan, set `traces.head_sampling_rate` (for example `0.1`).
+The token lives in the destination, never in the repo. Every request is traced today. If volume outgrows the plan, set `traces.head_sampling_rate` (for example `0.1`).
+
+Logs from the API have `service_name="relayrunner-api"`. Query them by selecting the stream with `{service_name="relayrunner-api"}` and read the line's fields after `| json`.
