@@ -159,16 +159,15 @@ export function resolveAutoInputs(
   });
 }
 
-/** The order with `first`'s steps moved to the top, the rest as they were. */
+/**
+ * The order with `first`'s first step moved to the top, the rest as they were. A provider that
+ * comes back later (Blacksmith's free minutes, then GitHub, then paid Blacksmith) keeps its later
+ * steps where they are, so trying it first doesn't jump its paid step ahead of the fallbacks.
+ */
 export function preferFirst(order: RunnerOrder, first: RunnerKey | null | undefined): RunnerOrder {
-  if (!first) return order;
-  return {
-    ...order,
-    steps: [
-      ...order.steps.filter((step) => step.key === first),
-      ...order.steps.filter((step) => step.key !== first),
-    ],
-  };
+  const at = first ? order.steps.findIndex((step) => step.key === first) : -1;
+  if (at <= 0) return order;
+  return { ...order, steps: [order.steps[at]!, ...order.steps.toSpliced(at, 1)] };
 }
 
 /** Why an `auto` provider skipped a job: "GitHub-hosted has no runner with 8 vCPU or more". */

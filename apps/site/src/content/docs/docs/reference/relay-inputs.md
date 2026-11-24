@@ -68,7 +68,7 @@ jobs:
 
 - **The size** is the one you picked for the job on the Router page, or the workspace's **Default size** under **Settings** there. It starts at 2 vCPU. To pick one, find the workflow under **Workflows** and click its auto jobs. For a repo that isn't routed yet, pick sizes in **Route a repo** on the same page; they apply from the first run.
 - **A provider without that size** uses its next size up. If it has nothing that big, the job skips it, and the Activity page says why. GitHub-hosted has standard runners up to 2 vCPU.
-- **Try first**, next to the size, sends one job to a provider before the rest of your runner order.
+- **Try first**, next to the size, sends one job to a provider before the rest of your runner order. When the provider is in the order more than once, only its first step moves up, and its later steps stay where they are.
 - A workflow whose relays all name their labels shows as **Pinned** under Workflows. Its sizes stay in the file.
 - Auto sizes are for Linux x64. For macOS, Windows or Arm, write the label.
 

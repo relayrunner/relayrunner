@@ -6,6 +6,7 @@ import {
   readRunnerOrder,
   relayInputs,
   resolveAutoInputs,
+  type RunnerOrder,
   runnerOrderSchema,
 } from "./index.ts";
 
@@ -142,5 +143,24 @@ describe("auto relays", () => {
       "github",
     ]);
     expect(preferFirst(order, null)).toBe(order);
+    expect(preferFirst(order, "machine")).toBe(order);
+    expect(preferFirst(order, "namespace")).toBe(order);
+  });
+
+  test("preferFirst moves only a repeated provider's first step", () => {
+    const order: RunnerOrder = {
+      steps: [
+        { key: "machine" },
+        { key: "blacksmith", limit: { percent: 100 } },
+        { key: "github" },
+        { key: "blacksmith" },
+      ],
+    };
+    expect(preferFirst(order, "blacksmith").steps).toEqual([
+      { key: "blacksmith", limit: { percent: 100 } },
+      { key: "machine" },
+      { key: "github" },
+      { key: "blacksmith" },
+    ]);
   });
 });
