@@ -1,23 +1,30 @@
 ---
-// Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
 import CloseBox from "../components/CloseBox.astro";
 import LandingRelay from "../components/LandingRelay.astro";
-import RoutingFlow from "../components/RoutingFlow.astro";
+import MacAppPreview from "../components/MacAppPreview.astro";
 import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
-import MacAppPreview from "../components/MacAppPreview.astro";
 import Screenshot from "../components/Screenshot.astro";
 import SiteHeader from "../components/SiteHeader.astro";
-import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { setupPrompt } from "../lib/agent-setup";
-import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
+import { examplePrice, KNOWN_PROVIDERS, logoOf, PRICES_AS_OF, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
 const site = Astro.site!.origin;
-// Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
-const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
-  (id) => !["blacksmith", "github", "cloudflare"].includes(id),
-);
+// The runner list: your own hardware first, then every provider with a runs-on label and its list
+// price for a minute (Cloudflare is RelayRunner's own runner, so it has no row).
+const OWN = "Your hardware";
+const RUNNERS = [
+  { name: "Your machines", logo: "/providers/machines.svg", label: "npx relayrunner connect", price: OWN, priced: false },
+  { name: "Self-hosted runners", logo: "/providers/self-hosted.svg", label: "self-hosted", price: OWN, priced: false },
+  ...KNOWN_PROVIDERS.filter((id) => id !== "cloudflare").map((id) => ({
+    name: id === "github" ? "GitHub-hosted" : PROVIDERS[id].name,
+    logo: logoOf(id)!,
+    label: PROVIDERS[id].example ?? PROVIDERS[id].labels,
+    price: id === "github" ? "Included minutes" : examplePrice(id),
+    priced: true,
+  })),
+];
 // Structured data for search engines and agents: the project and what it is. Keywords use terms
 // that appear on the page.
 const structuredData = {
@@ -70,50 +77,45 @@ const structuredData = {
 
     <main id="main">
       <!-- Hero -->
-      <section class="hero wrap" id="top">
-        <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
-        <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
-        <h1>One router for <span class="hl">every CI&nbsp;runner</span></h1>
-        <p class="lede">
-          Change runners with zero code changes. Each GitHub Actions job goes to the first free
-          runner in your order.
-        </p>
-        <div class="hero-actions">
-          <a class="btn-go btn-lg" href="https://app.relayrunner.dev">Get started with GitHub</a>
-          <button class="cmd" type="button" data-copy-inline="npx relayrunner connect">
-            <span aria-hidden="true">$</span> <code>npx relayrunner connect</code>
-            <span class="visually-hidden">Copy command</span>
-          </button>
+      <section class="hero hero-split wrap" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
+          <h1>One router for every CI&nbsp;runner</h1>
+          <p class="lede">
+            Change runners with zero code changes. Each GitHub Actions job goes to the first free
+            runner in your order.
+          </p>
+          <div class="hero-actions">
+            <a class="btn-go btn-lg" href="https://app.relayrunner.dev">Get started with GitHub</a>
+            <button class="cmd" type="button" data-copy-inline="npx relayrunner connect">
+              <span aria-hidden="true">$</span> <code>npx relayrunner connect</code>
+              <span class="visually-hidden">Copy command</span>
+            </button>
+          </div>
+          <p class="hero-note">
+            Or <button
+              class="link-btn"
+              type="button"
+              data-copy-inline={setupPrompt(Astro.site!)}
+              data-copied-label="copied the instruction"
+            >
+              <code>copy one line</code>
+            </button>
+            into Claude Code, Codex or Cursor and your agent does the setup.
+          </p>
         </div>
-        <p class="hero-note">
-          Or <button
-            class="link-btn"
-            type="button"
-            data-copy-inline={setupPrompt(Astro.site!)}
-            data-copied-label="copied the instruction"
-          >
-            <code>copy one line</code>
-          </button>
-          into Claude Code, Codex or Cursor and your agent does the setup.
-        </p>
+        <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
       </section>
 
-      <RoutingFlow />
-
-      <!-- Routing demo -->
-      <section class="wrap" aria-label="Routing demo">
-        <div class="stage">
-          <div class="stage-side">
-            <div class="term">
-              <div class="term-bar">~/acme-api</div>
-              <div class="term-body">
-                <div><span class="mute">$</span> npx relayrunner connect</div>
-                <div class="go-text">✓ Online. Waiting for jobs.</div>
-                <div><span class="mute">$</span> git push</div>
-                <div class="mute">→ ci / test · PR #<span data-pr>482</span></div>
-              </div>
+      <!-- Runner order: the routing demo -->
+      <section class="track" aria-label="Routing demo">
+        <div class="wrap track-grid" data-relay-content>
+          <div class="track-side">
+            <div class="track-feed">
+              <div><span class="mute">$</span> git push</div>
+              <div class="mute">→ ci / test · PR #<span data-pr>482</span></div>
             </div>
-            <div class="next-card" aria-live="polite">
+            <div class="track-next" aria-live="polite">
               <b class="label">Next job goes to</b>
               <span class="next-name"
                 ><img
@@ -187,242 +189,155 @@ const structuredData = {
       </section>
 
       <!-- Your machine -->
-      <section class="section wrap feature" id="connect">
-        <div class="feature-copy">
-          <p class="kicker">Your machines</p>
-          <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
-          <p class="body">
-            Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
-            taking jobs. Close the lid and jobs go to the next runner in your order. Share it with your
-            team or keep it private.
-          </p>
-          <p class="body">
-            On a Mac, the menu bar app does the same with one switch, with nothing to keep open in a
-            terminal.
-          </p>
-          <a class="feature-link" href="/download">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" /></svg>
-            Download for Mac
-          </a>
-        </div>
-        <div class="connect-panel">
-          <div class="term" aria-hidden="true">
-            <div class="term-bar">~/acme-api</div>
-            <div class="term-body">
-              <div><span class="mute">$</span> npx relayrunner connect</div>
-              <div class="go-text">✓ Ada's MacBook Pro is online</div>
-              <div class="mute">→ ci / test · running here</div>
-              <div class="mute">→ ci / typecheck · done in 48s</div>
-            </div>
+      <section class="section wrap" id="connect">
+        <div class="split-head">
+          <h2>Turn any computer into a runner with one command</h2>
+          <div>
+            <p class="body">
+              Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it
+              starts taking jobs. Close the lid and jobs go to the next runner in your order. Share
+              it with your team or keep it private.
+            </p>
+            <p class="body">
+              On a Mac, the menu bar app does the same with one switch, with nothing to keep open in
+              a terminal.
+            </p>
+            <a class="feature-link" href="/download">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" /></svg>
+              Download for Mac
+            </a>
           </div>
-          <MacAppPreview menuOnly />
         </div>
+        <MacAppPreview />
       </section>
 
       <!-- Providers -->
       <section class="section wrap" id="providers" aria-labelledby="providers-h">
         <div class="split-head">
-          <div>
-            <p class="kicker">Providers</p>
-            <h2 id="providers-h">
-              Route jobs to the runners <span class="hl">you already have.</span>
-            </h2>
-          </div>
+          <h2 id="providers-h">Route jobs to the runners you already have</h2>
           <p class="body">
             Each provider is a step in your runner order. Add, reorder or remove them in the
             dashboard.
           </p>
         </div>
-        <ul class="provider-grid">
-          <li class="provider-card">
-            <img src="/providers/machines.svg" alt="" width="48" height="48" />
-            <h3>Your machines</h3>
-            <p>
-              Mac and Linux computers you connect with one command.
-            </p>
-            <code class="provider-cmd">npx relayrunner connect</code>
-          </li>
-          <li class="provider-card">
-            <img src="/providers/self-hosted.svg" alt="" width="48" height="48" />
-            <h3>Self-hosted runners</h3>
-            <p>The runners already registered in your GitHub org. Nothing to change.</p>
-          </li>
-          <li class="provider-card">
-            <img src="/providers/blacksmith.svg" alt="" width="48" height="48" />
-            <h3>Blacksmith</h3>
-            <p>Connect your Blacksmith account and place it anywhere in your order.</p>
-          </li>
-          <li class="provider-card">
-            <img src="/providers/github.svg" alt="" width="48" height="48" />
-            <h3>GitHub-hosted</h3>
-            <p>
-              The minutes included in your plan, with a cap so you don't pay overage.
-            </p>
-          </li>
-        </ul>
-        <ul class="logo-row" aria-label="More providers">
+        <ul class="runner-list">
           {
-            MORE_PROVIDERS.map((id) => (
+            RUNNERS.map((runner) => (
               <li>
-                <ProviderLogo id={id} size={26} />
-                {PROVIDERS[id].name}
+                <img src={runner.logo} alt="" width="28" height="28" loading="lazy" />
+                <b>{runner.name}</b>
+                <code>{runner.label}</code>
+                <span title={runner.priced ? PRICES_AS_OF : undefined}>{runner.price}</span>
               </li>
             ))
           }
         </ul>
       </section>
 
-      <!-- Switch -->
-      <section class="section wrap feature" id="how">
-        <div class="feature-copy">
-          <p class="kicker">Switch</p>
-          <h2>Change where jobs run <span class="hl">in seconds.</span></h2>
-          <p class="body">
-            Try a new provider, move work onto your machines, or send everything back to GitHub.
-            You change the order in the dashboard, without a commit or pull request, and it applies
-            to the next job.
-          </p>
-        </div>
-        <div class="panel" aria-hidden="true">
-          <div class="mini-lanes">
-            <div class="mini-lane">
-              <code>1</code><img src="/providers/machines.svg" alt="" width="28" height="28" /><b
-                >Self-hosted</b
-              ><span>3 machines · 1 runner</span>
-            </div>
-            <div class="mini-lane moving">
-              <code>2</code><img src="/providers/blacksmith.svg" alt="" width="28" height="28" /><b
-                >Blacksmith</b
-              ><span class="go">moved up</span>
-            </div>
-            <div class="mini-lane">
-              <code>3</code><img src="/providers/github.svg" alt="" width="28" height="28" /><b
-                >GitHub-hosted</b
-              ><span>fallback</span>
+      <!-- Minutes, compare, optimized checks -->
+      <section class="section wrap" id="how">
+        <div class="ledger">
+          <div class="ledger-row">
+            <h3>Stay inside your included minutes</h3>
+            <p>
+              Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you
+              reach it, jobs go to the next runner in your order.
+            </p>
+            <div class="meter-card" aria-hidden="true">
+              <div class="meter-head">
+                <b
+                  ><img src="/providers/github.svg" alt="" width="28" height="28" />GitHub-hosted</b
+                >
+                <code>capped at 80%</code>
+              </div>
+              <div class="meter">
+                <div class="meter-fill" data-meter></div>
+                <div class="meter-cap"></div>
+              </div>
+              <div class="meter-foot">
+                <span><b class="run">2,220</b> of 3,000 included minutes</span>
+              </div>
             </div>
           </div>
-          <p class="panel-note">Saved. <b>Next job:</b> Blacksmith, if no machine is free.</p>
-        </div>
-      </section>
-
-      <!-- Minutes -->
-      <section class="section wrap feature feature-flip">
-        <div class="panel" aria-hidden="true">
-          <div class="meter-card">
-            <div class="meter-head">
-              <b><img src="/providers/github.svg" alt="" width="28" height="28" />GitHub-hosted</b>
-              <code>capped at 80%</code>
-            </div>
-            <div class="meter">
-              <div class="meter-fill" data-meter></div>
-              <div class="meter-cap"></div>
-            </div>
-            <div class="meter-foot">
-              <span><b class="run">2,220</b> of 3,000 included minutes</span>
-            </div>
-          </div>
-          <p class="panel-note">
-            Past the limit, jobs fall through to <b>Self-hosted</b>, then <b>Blacksmith</b>.
-          </p>
-        </div>
-        <div class="feature-copy">
-          <p class="kicker">Minutes</p>
-          <h2>Stay inside your <span class="hl">included minutes.</span></h2>
-          <p class="body">
-            Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you reach
-            it, jobs go to the next runner in your order.
-          </p>
-        </div>
-      </section>
-
-      <!-- See -->
-      <section class="section wrap feature">
-        <div class="feature-copy">
-          <p class="kicker">Compare</p>
-          <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
-          <p class="body">
-            Every job shows where it ran and why. See how long the same job takes on each runner,
-            and how much you use each provider.
-          </p>
-        </div>
-        <div class="panel" aria-hidden="true">
-          <div class="times">
-            <div class="times-row times-head">
-              <span>Job</span>
-              <span
-                ><img src="/providers/machines.svg" alt="" width="20" height="20" />Machine</span
-              >
-              <span
-                ><img
-                  src="/providers/blacksmith.svg"
-                  alt=""
-                  width="20"
-                  height="20"
-                />Blacksmith</span
-              >
-              <span><img src="/providers/github.svg" alt="" width="20" height="20" />GitHub</span>
-            </div>
-            <div class="times-row">
-              <b>ci / test</b><code>1m 52s</code><code>2m 10s</code><code>3m 41s</code>
-            </div>
-            <div class="times-row">
-              <b>ci / typecheck</b><code>0m 48s</code><code>1m 05s</code><code>1m 24s</code>
-            </div>
-            <div class="times-row">
-              <b>ci / build</b><code>2m 30s</code><code>2m 02s</code><code>4m 12s</code>
+          <div class="ledger-row">
+            <h3>Compare providers on your own jobs</h3>
+            <p>
+              Every job shows where it ran and why. See how long the same job takes on each runner,
+              and how much you use each provider.
+            </p>
+            <div class="times" aria-hidden="true">
+              <div class="times-row times-head">
+                <span>Job</span>
+                <span
+                  ><img src="/providers/machines.svg" alt="" width="20" height="20" />Machine</span
+                >
+                <span
+                  ><img
+                    src="/providers/blacksmith.svg"
+                    alt=""
+                    width="20"
+                    height="20"
+                  />Blacksmith</span
+                >
+                <span><img src="/providers/github.svg" alt="" width="20" height="20" />GitHub</span>
+              </div>
+              <div class="times-row">
+                <b>ci / test</b><code>1m 52s</code><code>2m 10s</code><code>3m 41s</code>
+              </div>
+              <div class="times-row">
+                <b>ci / typecheck</b><code>0m 48s</code><code>1m 05s</code><code>1m 24s</code>
+              </div>
+              <div class="times-row">
+                <b>ci / build</b><code>2m 30s</code><code>2m 02s</code><code>4m 12s</code>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <!-- Optimized checks -->
-      <section class="section wrap feature feature-flip" id="checks">
-        <div class="panel" aria-hidden="true">
-          <ul class="checks">
-            <li>
-              <i class="dot go-dot"></i><b>PR title</b><span>feat(api): add provider pages</span
-              ><code>0 min billed</code>
-            </li>
-            <li>
-              <i class="dot go-dot"></i><b>oxlint</b><span>0 new findings</span
-              ><code>0 min billed</code>
-            </li>
-            <li>
-              <i class="dot run-dot"></i><b>actionlint</b><span>1 finding</span
-              ><code>0 min billed</code>
-            </li>
-          </ul>
-        </div>
-        <div class="feature-copy">
-          <p class="kicker">Optimized checks <span class="kicker-note">Preview</span></p>
-          <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
-          <p class="body">
-            PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a
-            hosted runner bills each one as a full minute. Run them as optimized checks
-            instead: they need no runner, post results to your pull request and use no minutes.
-          </p>
+          <div class="ledger-row" id="checks">
+            <h3>Run simple checks without using minutes <span class="kicker-note">Preview</span></h3>
+            <p>
+              PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a
+              hosted runner bills each one as a full minute. Run them as optimized checks instead:
+              they need no runner, post results to your pull request and use no minutes.
+            </p>
+            <ul class="checks" aria-hidden="true">
+              <li>
+                <i class="dot go-dot"></i><b>PR title</b><span>feat(api): add provider pages</span
+                ><code>0 min billed</code>
+              </li>
+              <li>
+                <i class="dot go-dot"></i><b>oxlint</b><span>0 new findings</span
+                ><code>0 min billed</code>
+              </li>
+              <li>
+                <i class="dot run-dot"></i><b>actionlint</b><span>1 finding</span
+                ><code>0 min billed</code>
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
 
       <!-- Dashboard -->
-      <section class="section wrap" aria-labelledby="dashboard-h">
-        <p class="kicker">Dashboard</p>
-        <h2 id="dashboard-h">See every runner and queued job <span class="hl">in one place.</span></h2>
-        <p class="body">
-          The Runners page shows what's running and waiting right now, how busy each runner is, and
-          anything that needs you, like a machine that went offline with a job waiting.
-        </p>
-        <Screenshot
-          name="runners"
-          alt="The Runners page: running, idle and offline counts, a Needs attention list, jobs running now and queued, and each self-hosted runner."
-        />
+      <section class="band" aria-labelledby="dashboard-h">
+        <div class="wrap">
+          <div class="split-head">
+            <h2 id="dashboard-h">See every runner and queued job in one place</h2>
+            <p class="body">
+              The Runners page shows what's running and waiting right now, how busy each runner is,
+              and anything that needs you, like a machine that went offline with a job waiting.
+            </p>
+          </div>
+          <Screenshot
+            name="runners"
+            alt="The Runners page: running, idle and offline counts, a Needs attention list, jobs running now and queued, and each self-hosted runner."
+          />
+        </div>
       </section>
 
       <!-- Safety -->
-      <section class="section wrap" id="safety" aria-labelledby="safety-h">
-        <p class="kicker">Security</p>
-        <h2 id="safety-h">Safe defaults for CI on <span class="hl">your own machines.</span></h2>
-        <ul class="safety-grid">
+      <section class="section wrap safety" id="safety" aria-labelledby="safety-h">
+        <h2 id="safety-h">Safe defaults for CI on your own machines</h2>
+        <ul class="safety-list">
           <li>
             <h3>Hosted runners stay as the fallback</h3>
             <p>If your machine is offline, the job runs on the next runner in your order.</p>
