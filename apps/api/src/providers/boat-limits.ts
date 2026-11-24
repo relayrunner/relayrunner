@@ -17,6 +17,7 @@ import { errorMessage } from "../errors.ts";
 import { boatLimits, type StartsLeft } from "../provider-billing/boat.ts";
 import { ProviderAuthError } from "../provider-billing/index.ts";
 import { openToken } from "./provider-tokens.ts";
+import { log } from "../log.ts";
 
 // The windows whose full cap pauses a job, shortest first.
 export const PAUSING_WINDOWS: readonly StartWindow[] = ["hour", "day"];
@@ -42,9 +43,7 @@ export async function readBoatStarts(
     const token = await openToken(env, workspaceId, "boat", connection.token);
     return await boatLimits({ token, options: {}, fetch: fetcher });
   } catch (error) {
-    console.warn(
-      JSON.stringify({ msg: "boat limits unreadable", workspaceId, error: errorMessage(error) }),
-    );
+    log.warn("provider.boat_limits_unreadable", "boat limits unreadable", { workspaceId, error });
     if (error instanceof ProviderAuthError)
       // Settings › Providers then says the key stopped working.
       await db

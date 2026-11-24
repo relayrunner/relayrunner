@@ -4,6 +4,7 @@ import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
 import { isOperator } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
+import { log } from "../log.ts";
 
 // Every /api/admin/* route sits behind Cloudflare Access (docs/cloudflare-access.md); app.ts mounts
 // this once for the whole prefix. This Worker's own workers.dev URL is public, so it checks the
@@ -24,14 +25,17 @@ export const requireOperator = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-// Who did it, for audit logs: a person's email or a service token's Client ID.
+// Who did it, for audit logs: a person's Access user id (never their email) or a service token's
+// Client ID.
 export function who(identity: AccessIdentity) {
-  return identity.kind === "user" ? identity.email : identity.clientId;
+  return identity.kind === "user" ? identity.sub : identity.clientId;
 }
 
 /** Logs an operator's change with who made it, for the audit trail in Workers Logs. */
 export function audit(c: Context<AppEnv>, msg: string, detail: object) {
-  console.log(
-    JSON.stringify({ msg, by: c.var.user!.email, access: who(c.var.accessIdentity), ...detail }),
-  );
+  log.info("admin.change", msg, {
+    byUserId: c.var.user!.id,
+    accessId: who(c.var.accessIdentity),
+    ...detail,
+  });
 }

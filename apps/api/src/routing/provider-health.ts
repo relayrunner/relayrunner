@@ -15,7 +15,7 @@ import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import type { Unhealthy } from "./routing.ts";
-import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 // This many jobs in a row not picked up trips a runner type.
 export const TRIP_AFTER = 3;
@@ -202,10 +202,7 @@ export async function sweepProviderHealth(env: Env, now = Date.now()) {
   );
   for (const result of results)
     if (result.status === "rejected")
-      console.warn(
-        JSON.stringify({
-          msg: "provider health update failed",
-          error: errorMessage(result.reason),
-        }),
-      );
+      log.warn("provider.health_update_failed", "provider health update failed", {
+        error: result.reason,
+      });
 }

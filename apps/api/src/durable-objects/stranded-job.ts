@@ -19,7 +19,7 @@ import {
   type StrandedReason,
 } from "../routing/stranded-jobs.ts";
 import { traced } from "../tracing.ts";
-import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 export interface StrandedWork {
   routeId: string;
@@ -61,15 +61,9 @@ export class StrandedJob extends DurableObject<Env> {
       );
     } catch (error) {
       result = "error";
-      console.error(
-        JSON.stringify({
-          msg: "relayrunner stranded job not ended",
-          ...work,
-          error: errorMessage(error),
-        }),
-      );
+      log.error("stranded.not_ended", "stranded job not ended", { ...work, error });
     }
-    console.log(JSON.stringify({ msg: "relayrunner stranded job", ...work, result }));
+    log.info("stranded.ended", "stranded job", { ...work, result });
   }
 }
 
@@ -113,12 +107,9 @@ async function endJob(env: Env, work: StrandedWork) {
 }
 
 function logCleanup(step: string, work: StrandedWork, error: unknown) {
-  console.warn(
-    JSON.stringify({
-      msg: "relayrunner stranded cleanup failed",
-      step,
-      routeId: work.routeId,
-      error: errorMessage(error),
-    }),
-  );
+  log.warn("stranded.cleanup_failed", "stranded cleanup failed", {
+    step,
+    routeId: work.routeId,
+    error,
+  });
 }

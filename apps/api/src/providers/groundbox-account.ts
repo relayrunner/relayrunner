@@ -19,6 +19,7 @@ import type { MinutesUsage } from "../routing/minutes-rule.ts";
 import { type GroundboxAccount, groundboxAccount } from "../provider-billing/groundbox.ts";
 import { ProviderAuthError } from "../provider-billing/index.ts";
 import { openToken } from "./provider-tokens.ts";
+import { log } from "../log.ts";
 
 /** How long a reading is reused. Free minutes only move as jobs finish, so a minute is close enough. */
 export const ACCOUNT_TTL_MS = 60_000;
@@ -53,13 +54,10 @@ export async function readGroundboxAccount(
     const account = await groundboxAccount({ token, options: {}, fetch: fetcher });
     return { ok: true, account, readAt: now.getTime() };
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "groundbox account unreadable",
-        workspaceId,
-        error: errorMessage(error),
-      }),
-    );
+    log.warn("provider.groundbox_unreadable", "groundbox account unreadable", {
+      workspaceId,
+      error,
+    });
     if (error instanceof ProviderAuthError) {
       // Settings › Providers then says the key stopped working.
       await db

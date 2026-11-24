@@ -48,6 +48,7 @@ import {
   plannedSizesSchema,
   setAutoJob,
 } from "../routing/auto-jobs.ts";
+import { log } from "../log.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted, and changes one only
@@ -213,13 +214,10 @@ export const workspaceRoutes = new Hono<AppEnv>()
       const token = await appInstallationToken(c.env, row.installationId);
       return c.json({ installed: providersOfAppSlugs(await orgAppSlugs(token, row.login)) });
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          msg: "provider apps read failed",
-          installationId: row.installationId,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("github.apps_unavailable", "provider apps read failed", {
+        installationId: row.installationId,
+        error,
+      });
       return c.json({ installed: null });
     }
   })
@@ -305,13 +303,10 @@ export const workspaceRoutes = new Hono<AppEnv>()
     try {
       return c.json({ check: await runnerGroupCheck(c.env, c.var.db, row) });
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          msg: "runner group check failed",
-          installationId: row.id,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("github.runner_group_check_failed", "runner group check failed", {
+        installationId: row.id,
+        error,
+      });
       return c.json({ check: null });
     }
   })

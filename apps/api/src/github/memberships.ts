@@ -11,6 +11,7 @@ import {
   workspaceIdForInstallation,
 } from "./installations.ts";
 import { addHomelessMachines, removeUserMachinesFromWorkspace } from "../machines/machines.ts";
+import { log } from "../log.ts";
 
 // Workspace membership comes from GitHub (#317): you're a member of every workspace whose
 // installation your GitHub sign-in can see in GET /user/installations. That list is synced into
@@ -57,13 +58,10 @@ export async function syncMembershipsFromGitHub(
   try {
     installations = await listUserInstallations(token);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        msg: "membership sync skipped: GitHub installations unreadable",
-        userId,
-        status: error instanceof GitHubError ? error.status : null,
-        error: error instanceof Error ? error.message : String(error),
-      }),
+    log.error(
+      "github.membership_sync_skipped",
+      "membership sync skipped: GitHub installations unreadable",
+      { userId, status: error instanceof GitHubError ? error.status : null, error },
     );
     return null;
   }

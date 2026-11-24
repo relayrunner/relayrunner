@@ -4,6 +4,7 @@ import { FLAG_KEYS, type FlagKey, type Flags } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 import type { AppEnv } from "./app.ts";
 import { isOperator } from "./auth/roles.ts";
+import { log } from "./log.ts";
 
 // Feature flags from Cloudflare Flagship, through the FLAGS binding (wrangler.jsonc). The keys
 // live in @relayrunner/api-types (FLAG_KEYS), and docs/feature-flags.md covers adding and retiring
@@ -70,7 +71,7 @@ async function evaluate(c: Context<AppEnv>, key: string) {
     return await flags.getBooleanValue(key, false, flagContext(c));
   } catch (error) {
     // The binding returns the default for known failures; anything else stays off too.
-    console.warn(`flag ${key}: evaluation failed`, error);
+    log.warn("flags.evaluation_failed", "flag evaluation failed", { flag: key, error });
     return false;
   }
 }

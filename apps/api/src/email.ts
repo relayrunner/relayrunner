@@ -22,6 +22,7 @@ import type { Env } from "./env.ts";
 import { createDb } from "./db/index.ts";
 import type { DistributiveOmit } from "./machines/machines.ts";
 import { isNotificationType, operatorRecipients, wantsEmail } from "./notifications.ts";
+import { log } from "./log.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
 // binding's allowed_sender_addresses in wrangler.jsonc.
@@ -135,15 +136,14 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
   try {
     rendered = render(env, args);
   } catch (error) {
-    console.error(
-      JSON.stringify({ msg: "email not rendered", template: args.template, error: message(error) }),
-    );
+    log.error("email.not_rendered", "email not rendered", {
+      template: args.template,
+      error: message(error),
+    });
     return;
   }
   if (!env.EMAIL) {
-    console.warn(
-      JSON.stringify({ msg: "email not sent: no EMAIL binding", template: args.template }),
-    );
+    log.warn("email.no_binding", "email not sent: no EMAIL binding", { template: args.template });
     return;
   }
   try {
@@ -156,11 +156,12 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
       text,
       html,
     });
-    console.log(JSON.stringify({ msg: "email sent", template: args.template }));
+    log.info("email.sent", "email sent", { template: args.template });
   } catch (error) {
-    console.error(
-      JSON.stringify({ msg: "email send failed", template: args.template, error: message(error) }),
-    );
+    log.error("email.send_failed", "email send failed", {
+      template: args.template,
+      error: message(error),
+    });
   }
 }
 
@@ -179,9 +180,7 @@ type OperatorEmail = Extract<
  */
 export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEmail, "to">) {
   if (!env.EMAIL) {
-    console.warn(
-      JSON.stringify({ msg: "email not sent: no EMAIL binding", template: args.template }),
-    );
+    log.warn("email.no_binding", "email not sent: no EMAIL binding", { template: args.template });
     return;
   }
   const inbox = args.template === "feedback" ? env.FEEDBACK_EMAIL : env.OPERATOR_ALERT_EMAIL;
@@ -189,9 +188,10 @@ export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEm
   try {
     for (const to of await operatorRecipients(createDb(env.DB), args.template)) recipients.add(to);
   } catch (error) {
-    console.error(
-      JSON.stringify({ msg: "operators not read", template: args.template, error: message(error) }),
-    );
+    log.error("email.operators_not_read", "operators not read", {
+      template: args.template,
+      error: message(error),
+    });
   }
   await Promise.all([...recipients].map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
 }

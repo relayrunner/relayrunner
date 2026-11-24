@@ -33,7 +33,6 @@ import {
   type Route,
 } from "../routing/routing.ts";
 import { jobStillQueued, LOST_GRACE_MS } from "../routing/stranded-jobs.ts";
-import { errorMessage } from "../errors.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
   CLOSE,
@@ -49,6 +48,7 @@ import {
   type MachineStatus,
   type SessionState,
 } from "./machine-session.ts";
+import { log } from "../log.ts";
 
 // "wrong_place": the machine reconnected without the place the job was routed to (placeNow).
 export type RunResult = "sent" | "already_sent" | "offline" | "wrong_place";
@@ -125,13 +125,10 @@ export class MachineLink extends DurableObject<Env> {
     if (takenFrom && from)
       this.ctx.waitUntil(
         this.reportTakeover(machineId, takenFrom, from, now).catch((error: unknown) =>
-          console.error(
-            JSON.stringify({
-              msg: "machine takeover not reported",
-              machineId,
-              error: String(error),
-            }),
-          ),
+          log.error("machine.takeover_not_reported", "machine takeover not reported", {
+            machineId,
+            error,
+          }),
         ),
       );
     return new Response(null, { status: 101, webSocket: client });
@@ -279,13 +276,7 @@ export class MachineLink extends DurableObject<Env> {
     } catch (error) {
       const checkAt = now + LOST_GRACE_MS;
       await this.ctx.storage.put<SentRoute>(key, { ...route, checkAt });
-      console.warn(
-        JSON.stringify({
-          msg: "relayrunner sent job not checked",
-          routeId,
-          error: errorMessage(error),
-        }),
-      );
+      log.warn("machine.sent_job_not_checked", "sent job not checked", { routeId, error });
       return checkAt;
     }
   }
@@ -315,14 +306,11 @@ export class MachineLink extends DurableObject<Env> {
     }
     await deleteRunner(await getToken(), runner.scope, runner.id);
     await this.ctx.storage.delete([key, HOLD_KEY + routeId]);
-    console.warn(
-      JSON.stringify({
-        msg: "relayrunner job never reached its runner",
-        routeId,
-        jobId,
-        runnerGone: Boolean(sent.runnerGone),
-      }),
-    );
+    log.warn("machine.job_not_reached_runner", "job never reached its runner", {
+      routeId,
+      jobId,
+      runnerGone: Boolean(sent.runnerGone),
+    });
     await this.env.ROUTER.getByName(sent.workspaceId).requeueSent(routeId, jobId, runner.machineId);
   }
 
@@ -408,14 +396,11 @@ export class MachineLink extends DurableObject<Env> {
             jobId: route.jobId,
             machineId: route.machineId,
           }).catch((error) => {
-            console.error(
-              JSON.stringify({
-                msg: "relayrunner run job not read",
-                routeId: route.id,
-                jobId: route.jobId,
-                error: errorMessage(error),
-              }),
-            );
+            log.error("machine.run_job_not_read", "run job not read", {
+              routeId: route.id,
+              jobId: route.jobId,
+              error,
+            });
             return undefined;
           });
     let jit, scope;
@@ -461,19 +446,16 @@ export class MachineLink extends DurableObject<Env> {
         scope,
       },
     });
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner run sent",
-        routeId: route.id,
-        machineId: route.machineId,
-        repo: route.repo,
-        runId: route.runId,
-        jobId: route.jobId,
-        installationId: route.installationId,
-        runnerId: jit.runnerId,
-        runnerLabels: jit.labels,
-      }),
-    );
+    log.info("machine.run_sent", "run sent", {
+      routeId: route.id,
+      machineId: route.machineId,
+      repo: route.repo,
+      runId: route.runId,
+      jobId: route.jobId,
+      installationId: route.installationId,
+      runnerId: jit.runnerId,
+      runnerLabels: jit.labels,
+    });
     return "sent";
   }
 
@@ -552,16 +534,13 @@ export class MachineLink extends DurableObject<Env> {
   private async onJob(machineId: string, job: JobMessage) {
     const key = SENT_KEY + job.routeId;
     const sent = await this.ctx.storage.get<SentRoute>(key);
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner machine job",
-        machineId,
-        routeId: job.routeId,
-        state: job.state,
-        message: job.message,
-        known: Boolean(sent),
-      }),
-    );
+    log.info("machine.job", "machine job", {
+      machineId,
+      routeId: job.routeId,
+      state: job.state,
+      message: job.message,
+      known: Boolean(sent),
+    });
     await this.ctx.storage.delete(HOLD_KEY + job.routeId);
     if (!sent) return;
     const jobId = await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
@@ -600,13 +579,10 @@ export class MachineLink extends DurableObject<Env> {
     now: RequestOrigin,
     at: number,
   ) {
-    console.warn(
-      JSON.stringify({
-        msg: "machine connection taken over from another address",
-        machineId,
-        was,
-        now,
-      }),
+    log.warn(
+      "machine.connection_taken_over",
+      "machine connection taken over from another address",
+      { machineId, was, now },
     );
     const db = createDb(this.env.DB);
     const [row] = await db

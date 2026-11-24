@@ -16,6 +16,7 @@ import {
 } from "../ingest/dead-letters.ts";
 import { who } from "../middleware/admin.ts";
 import { AppError } from "@relayrunner/errors";
+import { log } from "../log.ts";
 
 // The most a bulk replay sends at once. Fix the cause first, then replay a slice.
 export const MAX_BULK_REPLAY = 100;
@@ -61,29 +62,23 @@ export const adminWebhookRoutes = new Hono<AppEnv>()
         replayed.push(letter.id);
       }
     }
-    console.log(
-      JSON.stringify({
-        msg: "webhook dead letters replayed",
-        by: who(c.var.accessIdentity),
-        filter,
-        count: replayed.length,
-      }),
-    );
+    log.info("admin.dead_letters_replayed", "webhook dead letters replayed", {
+      accessId: who(c.var.accessIdentity),
+      filter,
+      count: replayed.length,
+    });
     return c.json({ replayed, more: matching.length > MAX_BULK_REPLAY });
   })
   .post("/dead-letters/:id/replay", async (c) => {
     const id = c.req.param("id");
     const letter = await replayDeadLetter(c.env.DEAD_LETTERS, c.env.WEBHOOK_QUEUE, id);
     if (!letter) throw new AppError("NOT_FOUND");
-    console.log(
-      JSON.stringify({
-        msg: "webhook dead letter replayed",
-        by: who(c.var.accessIdentity),
-        id,
-        deliveryId: letter.deliveryId,
-        event: letter.event,
-      }),
-    );
+    log.info("admin.dead_letter_replayed", "webhook dead letter replayed", {
+      accessId: who(c.var.accessIdentity),
+      id,
+      deliveryId: letter.deliveryId,
+      event: letter.event,
+    });
     return c.json({ replayed: letter });
   })
   .delete("/dead-letters/:id", async (c) => {
@@ -91,8 +86,9 @@ export const adminWebhookRoutes = new Hono<AppEnv>()
     if (!(await discardDeadLetter(c.env.DEAD_LETTERS, id))) {
       throw new AppError("NOT_FOUND");
     }
-    console.log(
-      JSON.stringify({ msg: "webhook dead letter discarded", by: who(c.var.accessIdentity), id }),
-    );
+    log.info("admin.dead_letter_discarded", "webhook dead letter discarded", {
+      accessId: who(c.var.accessIdentity),
+      id,
+    });
     return c.json({ discarded: id });
   });

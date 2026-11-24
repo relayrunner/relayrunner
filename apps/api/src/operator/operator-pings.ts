@@ -16,6 +16,7 @@ import { type Db, createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { SETTLE_MS, workspaceStickiness } from "../routing/stickiness.ts";
+import { log } from "../log.ts";
 
 export const PING_WINDOW_MS = 15 * 60 * 1000;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
@@ -342,12 +343,7 @@ export async function sendOperatorPings(
       await postToWebhook(url, text, fetcher);
       sent += 1;
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          msg: "operator ping not sent",
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("operator.ping_not_sent", "operator ping not sent", { error });
     }
   }
   return sent;

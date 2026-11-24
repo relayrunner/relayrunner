@@ -8,6 +8,7 @@ import type { Env } from "../env.ts";
 import { DAY_MS } from "../time.ts";
 import { openToken } from "../providers/provider-tokens.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 // The associated data the headers are sealed with (src/providers/provider-tokens.ts), so they can't be moved
 // onto a provider connection or another workspace.
@@ -188,7 +189,7 @@ export async function exportingFor(db: Db, installationId: number | null) {
   try {
     return (await exportingInstallations.load(db)).get(installationId);
   } catch (error) {
-    console.warn(JSON.stringify({ msg: "couldn't read exports", error: errorMessage(error) }));
+    log.warn("telemetry.exports_unreadable", "couldn't read exports", { error });
     return undefined;
   }
 }

@@ -14,6 +14,7 @@
  * carry why it failed. The lifecycle rule cleans up any left behind.
  */
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
+import { log } from "../log.ts";
 
 export const RETENTION_DAYS = 30;
 const DEFAULT_PAGE_SIZE = 50;
@@ -87,13 +88,10 @@ export async function recordLastError(
       httpMetadata: { contentType: "application/json" },
     });
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "webhook last error not recorded",
-        deliveryId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.warn("webhook.last_error_not_recorded", "webhook last error not recorded", {
+      deliveryId,
+      error,
+    });
   }
 }
 

@@ -11,6 +11,7 @@ import { githubBusy } from "../github/github-busy.ts";
 import { installSignIn } from "../github/install-sign-in.ts";
 import { syncMembershipsFromGitHub } from "../github/memberships.ts";
 import type { Env } from "../env.ts";
+import { log } from "../log.ts";
 
 // Preview dashboards (Workers Builds `wrangler preview`) reach this Worker through their own API
 // service binding, so requests arrive with the preview host. PREVIEW_ORIGINS lists their origin
@@ -120,7 +121,10 @@ export function createAuth(
         if (!session) return;
         await background(
           syncMembershipsFromGitHub(auth, createDb(env.DB), session.user.id).catch((error) =>
-            console.error("membership sync on workspace list failed", error),
+            log.error("github.membership_sync_failed", "membership sync failed", {
+              trigger: "workspace_list",
+              error,
+            }),
           ),
         );
       }),
@@ -131,7 +135,12 @@ export function createAuth(
         if (signedIn) {
           await syncMembershipsFromGitHub(auth, createDb(env.DB), signedIn.user.id, {
             force: true,
-          }).catch((error) => console.error("membership sync on sign-in failed", error));
+          }).catch((error) =>
+            log.error("github.membership_sync_failed", "membership sync failed", {
+              trigger: "sign_in",
+              error,
+            }),
+          );
         }
         if (ctx.path === "/device/code") {
           // Remember where the CLI asked from, for the approval page (src/machines/device-origin.ts).

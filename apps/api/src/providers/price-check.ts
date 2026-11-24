@@ -18,6 +18,7 @@ import { emailOperators } from "../email.ts";
 import type { Env } from "../env.ts";
 import { readPriceBook } from "./prices.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -127,13 +128,10 @@ export async function checkPrices(
       result.error !== null &&
       !lastChecks.some((check) => check.provider === result.provider && check.error),
   );
-  console.log(
-    JSON.stringify({
-      msg: "price check",
-      found: found.length,
-      failed: results.filter((r) => r.error).map(({ provider, error }) => ({ provider, error })),
-    }),
-  );
+  log.info("provider.price_check", "price check", {
+    found: found.length,
+    failed: results.filter((r) => r.error).map(({ provider, error }) => ({ provider, error })),
+  });
   if (found.length || failures.length) {
     await emailOperators(env, {
       template: "price-check",

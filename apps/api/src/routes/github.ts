@@ -22,6 +22,7 @@ import { syncMemberships } from "../github/memberships.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { AppError } from "@relayrunner/errors";
+import { log } from "../log.ts";
 
 // GitHub App installations, each of which is a workspace (#316).
 //
@@ -203,13 +204,10 @@ export const githubRoutes = new Hono<AppEnv>()
       // A spent limit says so. Otherwise a suspended installation can't get a token, or GitHub is
       // down; either way the page just says it couldn't read the usage.
       if (error instanceof AppError) throw error;
-      console.error(
-        JSON.stringify({
-          msg: "github rate limit read failed",
-          installationId,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("github.rate_limit_read_failed", "github rate limit read failed", {
+        installationId,
+        error,
+      });
       throw new AppError("GITHUB_UNAVAILABLE");
     }
   });

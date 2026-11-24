@@ -27,6 +27,7 @@ import {
 } from "../checks/lint-check.ts";
 import { loadRepoConfig } from "../checks/repo-config.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 // ½ vCPU, 4 GiB, like the container runners: the smallest size the durable_object scheduling
 // policy offers that fits Node and the linters.
@@ -58,7 +59,7 @@ export class LintRunner extends DurableObject<Env> {
     const changed = this.changed(work, token);
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
-    if (config.kind !== "config" || !config.lint) return log("not configured", work, {});
+    if (config.kind !== "config" || !config.lint) return logStep("not configured", work, {});
     const results = await this.run(
       work,
       { checks: token },
@@ -77,7 +78,7 @@ export class LintRunner extends DurableObject<Env> {
         conclusion: lintJobResult(results).ok ? "success" : "failure",
         url: null,
       }).catch((error) =>
-        log("error", work, { error: `saving not recorded: ${errorMessage(error)}` }),
+        logStep("error", work, { error: `saving not recorded: ${errorMessage(error)}` }),
       );
   }
 
@@ -148,7 +149,7 @@ export class LintRunner extends DurableObject<Env> {
       const files = await pullRequestFiles(token, work.repo, work.pullRequest);
       return files && changedLines(files);
     } catch (error) {
-      log("error", work, { error: `changed lines not read: ${errorMessage(error)}` });
+      logStep("error", work, { error: `changed lines not read: ${errorMessage(error)}` });
       return null;
     }
   }
@@ -186,7 +187,10 @@ export class LintRunner extends DurableObject<Env> {
       Promise.all(
         [...checkRuns].map(([tool, id]) =>
           completeCheckRun(token!, work.repo, id, output(tool)).catch((error) =>
-            log("error", work, { tool, error: `check run not finished: ${errorMessage(error)}` }),
+            logStep("error", work, {
+              tool,
+              error: `check run not finished: ${errorMessage(error)}`,
+            }),
           ),
         ),
       );
@@ -200,7 +204,7 @@ export class LintRunner extends DurableObject<Env> {
           ? ". Give the job `permissions: contents: read`."
           : "";
       const reason = errorMessage(error) + hint;
-      log("error", work, { error: reason, durationMs: Date.now() - startedAt, ...timing });
+      logStep("error", work, { error: reason, durationMs: Date.now() - startedAt, ...timing });
       await finish(() => lintUnavailableOutput(reason));
       return { error: reason };
     } finally {
@@ -215,7 +219,7 @@ export class LintRunner extends DurableObject<Env> {
         ? lintCheckOutput(result, context)
         : lintUnavailableOutput("the container skipped it");
     });
-    log("finished", work, {
+    logStep("finished", work, {
       durationMs: Date.now() - startedAt,
       ...timing,
       ...resultsLog(results),
@@ -305,14 +309,16 @@ const resultsLog = (results: LintResult[]) => ({
   })),
 });
 
-function log(event: string, work: LintTarget, fields: Record<string, unknown>) {
-  (event === "error" ? console.error : console.log)(
-    JSON.stringify({
-      msg: `lint runner ${event}`,
-      repo: work.repo,
-      headSha: work.headSha,
-      installationId: work.installationId,
-      ...fields,
-    }),
-  );
+function logStep(
+  step: "not configured" | "error" | "finished",
+  work: LintTarget,
+  fields: Record<string, unknown>,
+) {
+  (step === "error" ? log.error : log.info)("lint.step", `lint runner ${step}`, {
+    step: step.replace(" ", "_"),
+    repo: work.repo,
+    headSha: work.headSha,
+    installationId: work.installationId,
+    ...fields,
+  });
 }

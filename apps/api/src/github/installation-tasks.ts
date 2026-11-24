@@ -18,9 +18,9 @@ import { createDb } from "../db/index.ts";
 import { syncPullRequestPaths } from "../checks/pull-request-paths.ts";
 import { rollUpSignals } from "../reports/signals.ts";
 import { classifyJobTypes } from "../ai/job-type.ts";
-import { errorMessage } from "../errors.ts";
 import { type Outcome, recordOutcomes } from "../operator/health-issues.ts";
 import { importRunHistory } from "../ingest/run-history.ts";
+import { log } from "../log.ts";
 
 export function runInstallationTask(env: Env, task: InstallationTask): Promise<void> {
   switch (task.kind) {
@@ -41,20 +41,15 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
 async function signals(env: Env, installationId: number) {
   const db = createDb(env.DB);
   await syncPullRequestPaths(env, db, installationId).catch((error) =>
-    console.warn(
-      JSON.stringify({
-        msg: "pull request files failed",
-        installationId,
-        error: errorMessage(error),
-      }),
-    ),
+    log.warn("installation_task.pr_files_failed", "pull request files failed", {
+      installationId,
+      error,
+    }),
   );
   await rollUpSignals(db, installationId);
   // Only while AI is on for the workspace, and never holding the signals back.
   await classifyJobTypes(env, installationId).catch((error) =>
-    console.warn(
-      JSON.stringify({ msg: "job types failed", installationId, error: errorMessage(error) }),
-    ),
+    log.warn("installation_task.job_types_failed", "job types failed", { installationId, error }),
   );
 }
 
@@ -76,14 +71,11 @@ export async function handleInstallationTaskBatch(
         if (key) outcomes.push({ key, kind: "task" });
       } catch (error) {
         if (key) outcomes.push({ key, kind: "task", error });
-        console.warn(
-          JSON.stringify({
-            msg: "installation task failed; retrying",
-            kind: msg.body.kind,
-            attempts: msg.attempts,
-            error: errorMessage(error),
-          }),
-        );
+        log.warn("installation_task.retrying", "installation task failed; retrying", {
+          kind: msg.body.kind,
+          attempts: msg.attempts,
+          error,
+        });
         msg.retry({ delaySeconds: 60 });
       }
     }),

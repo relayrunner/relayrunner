@@ -1251,7 +1251,25 @@ export class Router extends DurableObject<Env> {
       triggeredBy: starters.get(jobKey(key))?.triggeredBy ?? null,
       runAttempt,
     };
+    const startedAt = Date.now();
     const answered = await this.pickMachine(job, rerun);
+    const logRerun = (result: "routed" | "waiting" | "no_runner") =>
+      baseLog[result === "no_runner" ? "warn" : "info"]("routing.decision", `re-run ${result}`, {
+        workspaceId: job.workspaceId,
+        installationId,
+        repo: fullName,
+        runId: queued.runId,
+        jobId: queued.jobId,
+        runAttempt,
+        rerun: true,
+        result,
+        step: "machine",
+        runnerKind: "machine",
+        routeId,
+        reason: result === "routed" ? undefined : "no_machine",
+        private: job.private,
+        decideMs: Date.now() - startedAt,
+      });
     // Every machine that fits is full, or offline or paused (one may be back soon: a deploy drops
     // every machine's socket for a moment): the re-run waits in line on its label, like a new
     // pick. drain ends it once no machine that fits has been online for NO_MACHINE_GIVE_UP_MS.
@@ -1279,9 +1297,14 @@ export class Router extends DurableObject<Env> {
       });
       if (!queuedNow) return null;
       await this.wakeIn(WAIT_POLL_MS);
+      logRerun("waiting");
       return "waiting";
     }
-    if (typeof answered !== "string") return null;
+    if (typeof answered !== "string") {
+      logRerun("no_runner");
+      return null;
+    }
+    logRerun("routed");
     return (await this.ctx.storage.get<Route>(ROUTE_KEY + routeId)) ?? null;
   }
 

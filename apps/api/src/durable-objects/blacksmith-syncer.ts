@@ -6,6 +6,7 @@ import {
 } from "@relayrunner/blacksmith-cli/protocol";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 // 1/16 vCPU, 256 MiB: the CLI only waits on Blacksmith's API.
 const INSTANCE = "lite";
@@ -48,11 +49,11 @@ export class BlacksmithSyncer extends DurableObject<Env> {
         signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
       });
       const body = (await response.json()) as CliResponse;
-      log(request, startedAt, body.ok ? {} : { reason: body.reason });
+      logRun(request, startedAt, body.ok ? {} : { reason: body.reason });
       return body;
     } catch (error) {
       const message = errorMessage(error);
-      log(request, startedAt, { reason: "error", error: message });
+      logRun(request, startedAt, { reason: "error", error: message });
       return { ok: false, reason: "error", message: `the Blacksmith container failed: ${message}` };
     } finally {
       if (container.running) await container.destroy().catch(() => undefined);
@@ -74,16 +75,13 @@ async function waitForHealth(port: Fetcher) {
 }
 
 // Never the token: only what ran, for whom, and how it went.
-function log(request: CliRequest, startedAt: number, fields: Record<string, unknown>) {
-  (fields.reason ? console.warn : console.log)(
-    JSON.stringify({
-      msg: "blacksmith cli run",
-      kind: request.kind,
-      organization: request.organization,
-      durationMs: Date.now() - startedAt,
-      ...fields,
-    }),
-  );
+function logRun(request: CliRequest, startedAt: number, fields: Record<string, unknown>) {
+  (fields.reason ? log.warn : log.info)("provider.blacksmith_cli_run", "blacksmith cli run", {
+    kind: request.kind,
+    organization: request.organization,
+    durationMs: Date.now() - startedAt,
+    ...fields,
+  });
 }
 
 /** Runs the Blacksmith CLI for a workspace; undefined where the binding isn't set up (tests). */

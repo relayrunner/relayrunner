@@ -46,6 +46,7 @@ import { changeActor } from "../../auth/changes.ts";
 import { enrollRoutes } from "./enroll.ts";
 import { machineTokenRoutes } from "./machine-token.ts";
 import { pauseResponse, SharingBody } from "./shared.ts";
+import { log } from "../../log.ts";
 
 const AddToWorkspaceBody = z.object({
   machineIds: z.array(z.string().min(1)).min(1).max(50),
@@ -429,13 +430,10 @@ export const machineRoutes = new Hono<AppEnv>()
               ),
           };
         } catch (error) {
-          console.warn(
-            JSON.stringify({
-              msg: "github runners unavailable",
-              installationId: installation.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
+          log.warn("github.runners_unavailable", "github runners unavailable", {
+            installationId: installation.id,
+            error,
+          });
           return {
             installationId: installation.id,
             org: installation.org,

@@ -13,6 +13,7 @@ import cliPackage from "../../../cli/package.json" with { type: "json" };
 import { type RunnerRelease, runnerUpdate } from "./runner-releases.ts";
 import type { MachineSharing } from "@relayrunner/activity";
 import { isolatedLabels, machineLabels } from "../routing/routing.ts";
+import { log } from "../log.ts";
 
 // Machine tokens: what `relayrunner connect` holds after enrolling, and sends on the MachineLink
 // WebSocket upgrade. Only their SHA-256 is stored, so a leaked database can't impersonate a
@@ -699,12 +700,9 @@ export async function removeRoutingLabel(env: Env, db: Db, machine: Machine) {
     const token = await appInstallationToken(env, machine.installationId);
     await removeRunnerLabel(token, scope, machine.githubRunnerId, machine.routingLabel);
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "routing label not removed",
-        machineId: machine.id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.warn("machine.routing_label_not_removed", "routing label not removed", {
+      machineId: machine.id,
+      error,
+    });
   }
 }

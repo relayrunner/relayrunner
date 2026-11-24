@@ -15,6 +15,7 @@ import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import { esc, postToWebhook } from "./operator-pings.ts";
 import { DAY_MS } from "../time.ts";
+import { log } from "../log.ts";
 
 /**
  * Failures in a row before anyone hears: three runs of a cron task; both tries of a queued task in
@@ -70,9 +71,7 @@ export async function recordOutcomes(db: Db, outcomes: Outcome[], now = new Date
       : []),
   ];
   await inOneBatch(db, statements).catch((error) =>
-    console.error(
-      JSON.stringify({ msg: "health issues not recorded", error: errorMessage(error) }),
-    ),
+    log.error("operator.health_issues_not_recorded", "health issues not recorded", { error }),
   );
 }
 
@@ -204,12 +203,12 @@ export function alertLine(alert: HealthAlert) {
 export async function sendHealthAlerts(env: Env, now = new Date(), fetcher: typeof fetch = fetch) {
   const alerts = await takeHealthAlerts(createDb(env.DB), now);
   if (!alerts.length) return alerts;
-  console.error(JSON.stringify({ msg: "health alerts", alerts }));
+  log.error("operator.health_alerts", "health alerts", { alerts });
   const lines = alerts.map(alertLine);
   if (env.OPERATOR_SLACK_WEBHOOK_URL) {
     const text = lines.map((line) => esc(line)).join("\n");
     await postToWebhook(env.OPERATOR_SLACK_WEBHOOK_URL, text, fetcher).catch((error) =>
-      console.error(JSON.stringify({ msg: "health alert not posted", error: errorMessage(error) })),
+      log.error("operator.health_alert_not_posted", "health alert not posted", { error }),
     );
   }
   const failing = alerts.filter((alert) => alert.state === "failing").length;

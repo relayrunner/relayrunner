@@ -43,6 +43,7 @@ import { loadPriceBook } from "../providers/prices.ts";
 import { hostedRunner } from "../ingest/runner-waits.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;
 import type { JobContext } from "../routing/routing.ts";
+import { log } from "../log.ts";
 
 const table = schema.evaluation;
 
@@ -315,7 +316,7 @@ export async function cancelEvaluation(env: Env, db: Db, workspaceId: string, id
   if (row.runId) {
     const token = await appInstallationToken(env, row.installationId);
     const error = await cancelRun(token, row.repositoryFullName, row.runId);
-    if (error) console.warn(JSON.stringify({ msg: "evaluation cancel failed", id, error }));
+    if (error) log.warn("evaluation.cancel_failed", "evaluation cancel failed", { id, error });
   }
 }
 

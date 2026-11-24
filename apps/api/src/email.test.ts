@@ -51,7 +51,7 @@ describe("sendEmail", () => {
     expect(warn).toHaveBeenCalled();
     expect(JSON.parse(error.mock.calls[0]![0] as string)).toMatchObject({
       msg: "email send failed",
-      error: "sender not verified",
+      error: { message: "sender not verified" },
     });
     warn.mockRestore();
     error.mockRestore();

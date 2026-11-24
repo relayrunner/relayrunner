@@ -8,6 +8,7 @@ import { countDeadLettersSince } from "./dead-letters.ts";
 import { emailOperators } from "../email.ts";
 import type { Env } from "../env.ts";
 import { postToWebhook } from "../operator/operator-pings.ts";
+import { log } from "../log.ts";
 
 export const DEFAULT_ALERT_THRESHOLD = 10;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -27,19 +28,18 @@ export async function checkDeadLetterGrowth(
   const threshold = alertThreshold(env);
   if (count < threshold) return { count, alerted: false };
   const text = `RelayRunner: ${count} GitHub webhook deliveries were dead-lettered in the past hour (alert at ${threshold}). Inspect and replay them at /admin/webhooks in the dashboard.`;
-  console.error(
-    JSON.stringify({ msg: "webhook dead letters rising", count, threshold, windowMinutes: 60 }),
-  );
+  log.error("webhook.dead_letters_rising", "webhook dead letters rising", {
+    count,
+    threshold,
+    windowMinutes: 60,
+  });
   if (env.DEAD_LETTER_ALERT_WEBHOOK_URL) {
     try {
       await postToWebhook(env.DEAD_LETTER_ALERT_WEBHOOK_URL, text, fetcher);
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          msg: "webhook dead letter alert not sent",
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      log.error("webhook.dead_letter_alert_not_sent", "webhook dead letter alert not sent", {
+        error,
+      });
     }
   }
   await emailOperators(env, { template: "dead-letter-alert", context: { count, threshold } });

@@ -10,6 +10,7 @@ import { postFreeCheck } from "./free-checks.ts";
 import { appInstallationToken } from "../github/github-app.ts";
 import { checkConventionalTitle } from "./native-checks.ts";
 import { loadRepoConfig, type ConfigResult } from "./repo-config.ts";
+import { log } from "../log.ts";
 
 export const PR_TITLE_CHECK_NAME = "PR title";
 
@@ -60,14 +61,11 @@ export async function checkPullRequestTitle(env: Env, message: PullRequestMessag
       },
       check,
     );
-  console.log(
-    JSON.stringify({
-      msg: "relayrunner pr title checked",
-      deliveryId: message.deliveryId,
-      repository: repo,
-      pullRequest: message.pullRequest.number,
-      config: config.kind === "none" ? null : config.path,
-      conclusion: check?.conclusion ?? "off",
-    }),
-  );
+  log.info("checks.pr_title_checked", "pr title checked", {
+    deliveryId: message.deliveryId,
+    repository: repo,
+    pullRequest: message.pullRequest.number,
+    config: config.kind === "none" ? null : config.path,
+    conclusion: check?.conclusion ?? "off",
+  });
 }

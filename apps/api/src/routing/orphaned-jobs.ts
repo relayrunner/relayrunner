@@ -7,11 +7,11 @@
 import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { errorMessage } from "../errors.ts";
 import { workspaceIdForInstallation } from "../github/installations.ts";
 import { pickedLabel } from "./route-decisions.ts";
 import { routeIdFromLabels, routeLabel } from "./routing.ts";
 import { strandedJobName } from "./stranded-jobs.ts";
+import { log } from "../log.ts";
 
 // How long a routed job may stay queued before the sweep looks at it. A job its machine is about
 // to take is still the Router's (Router.holds), so this only has to outlast the queued webhook's
@@ -95,15 +95,12 @@ export async function sweepOrphanedJobs(env: Env, now = Date.now()) {
     });
     // Already started by an earlier sweep or by the Router: nothing new.
     if (!started) return "skipped";
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner orphaned job ended",
-        jobId: job.id,
-        runId: job.runId,
-        repo: job.repo,
-        routeId,
-      }),
-    );
+    log.info("sweep.orphaned_job_ended", "orphaned job ended", {
+      jobId: job.id,
+      runId: job.runId,
+      repo: job.repo,
+      routeId,
+    });
     return "ended";
   };
 
@@ -121,18 +118,13 @@ export async function sweepOrphanedJobs(env: Env, now = Date.now()) {
       else {
         // One job failing (its Router or D1 hiccups) shouldn't stop the others.
         counts.failed++;
-        console.warn(
-          JSON.stringify({
-            msg: "relayrunner orphaned job not swept",
-            jobId: queued[i + j]!.id,
-            error: errorMessage(result.reason),
-          }),
-        );
+        log.warn("sweep.orphaned_job_failed", "orphaned job not swept", {
+          jobId: queued[i + j]!.id,
+          error: result.reason,
+        });
       }
     });
   }
-  console.log(
-    JSON.stringify({ msg: "relayrunner orphaned jobs swept", queued: queued.length, ...counts }),
-  );
+  log.info("sweep.orphaned_jobs", "orphaned jobs swept", { queued: queued.length, ...counts });
   return counts;
 }

@@ -1,4 +1,5 @@
 // A minimal client for GitHub's self-hosted runner protocol, which has no public spec. It uses only
+import { log } from "../log.ts";
 // fetch and WebCrypto so it runs in a Durable Object. Ported from the PR #21 spike (apps/gateway),
 // which tested it against github.com in November 2026; see that README for what it found.
 
@@ -242,13 +243,10 @@ export class RunnerClient {
     if (message.messageType !== "RunnerJobRequest") {
       // Anything else (e.g. a broker migration) is dropped. Log its type, never its body, so a new
       // message from GitHub doesn't leave the runner idle with no trace.
-      console.warn(
-        JSON.stringify({
-          msg: "runner poll message dropped",
-          messageType: message.messageType,
-          runner: this.jit.runner.AgentName,
-        }),
-      );
+      log.warn("runner.poll_message_dropped", "runner poll message dropped", {
+        messageType: message.messageType,
+        runner: this.jit.runner.AgentName,
+      });
       return null;
     }
     if (message.iv) throw new Error("Encrypted job messages are not supported.");

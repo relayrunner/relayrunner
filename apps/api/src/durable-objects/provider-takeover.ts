@@ -32,6 +32,7 @@ import {
   waitForJob,
 } from "../routing/runner-protocol.ts";
 import { traced } from "../tracing.ts";
+import { log } from "../log.ts";
 
 export interface TakeoverWork {
   jobId: number;
@@ -69,7 +70,13 @@ export class ProviderTakeover extends DurableObject<Env> {
     const work = await this.ctx.storage.get<TakeoverWork>("work");
     const phase = await this.ctx.storage.get<Phase>("phase");
     if (!work || !phase) return;
-    const log = { jobId: work.jobId, repo: work.repo, runId: work.runId, key: work.key };
+    const ids = {
+      workspaceId: work.workspaceId,
+      jobId: work.jobId,
+      repo: work.repo,
+      runId: work.runId,
+      provider: work.key,
+    };
     let result: string;
     try {
       result = await traced(
@@ -79,16 +86,9 @@ export class ProviderTakeover extends DurableObject<Env> {
       );
     } catch (error) {
       result = "error";
-      console.error(
-        JSON.stringify({
-          msg: "relayrunner takeover failed",
-          phase,
-          ...log,
-          error: errorMessage(error),
-        }),
-      );
+      log.error("takeover.failed", "takeover failed", { phase, ...ids, error });
     }
-    console.log(JSON.stringify({ msg: "relayrunner takeover", phase, ...log, result }));
+    log.info("takeover.checked", "takeover checked", { phase, ...ids, result });
   }
 
   private async takeover(work: TakeoverWork) {
@@ -231,12 +231,9 @@ async function endJob(env: Env, token: string, work: TakeoverWork) {
 }
 
 function logCleanup(step: string, work: TakeoverWork, error: unknown) {
-  console.warn(
-    JSON.stringify({
-      msg: "relayrunner takeover cleanup failed",
-      step,
-      jobId: work.jobId,
-      error: errorMessage(error),
-    }),
-  );
+  log.warn("takeover.cleanup_failed", "takeover cleanup failed", {
+    step,
+    jobId: work.jobId,
+    error,
+  });
 }

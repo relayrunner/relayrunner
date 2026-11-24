@@ -19,6 +19,7 @@ import {
   mainAppJwt,
 } from "./github-app.ts";
 import { upsertInstallation } from "./installations.ts";
+import { log } from "../log.ts";
 
 /** An App installation on an enterprise, in the shape upsertInstallation takes. Null otherwise. */
 export function enterpriseInstallation(installation: AppInstallation): GitHubInstallation | null {
@@ -56,13 +57,10 @@ export async function recordEnterpriseInstallation(env: Env, db: Db, installatio
   try {
     installation = await getAppInstallation(await mainAppJwt(env), installationId);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        msg: "enterprise installation read failed",
-        installationId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error("github.enterprise_read_failed", "enterprise installation read failed", {
+      installationId,
+      error,
+    });
     return null;
   }
   const enterprise = installation && enterpriseInstallation(installation);

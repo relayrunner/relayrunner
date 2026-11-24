@@ -30,6 +30,7 @@ import { BASELINE_DAYS, BASELINE_RUNS, type EvaluationWorkflow } from "../report
 import { workflowRunValues } from "../reports/runs.ts";
 import { DAY_MS } from "../time.ts";
 import { jobTimingValues } from "./job-timings.ts";
+import { log } from "../log.ts";
 
 const table = schema.runHistoryImport;
 
@@ -84,13 +85,7 @@ export async function importRunHistory(env: Env, installationId: number, now = D
     const runs = await importRuns(env, db, installationId, now);
     await setState(db, installationId, { state: "done", runs, finishedAt: new Date() });
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "run history import failed",
-        installationId,
-        error: errorMessage(error),
-      }),
-    );
+    log.warn("github.run_history_failed", "run history import failed", { installationId, error });
     await setState(db, installationId, {
       state: "failed",
       error: errorMessage(error).slice(0, 500),

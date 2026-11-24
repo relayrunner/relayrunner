@@ -60,6 +60,7 @@ import {
   RUN_STALE_MS,
   WAIT_FOR_JOB_MS,
 } from "../routing/pick-attempts.ts";
+import { log, withLogContext } from "../log.ts";
 
 export interface PickWork {
   jobId: number;
@@ -120,15 +121,24 @@ export class PickRunner extends DurableObject<Env> {
     await this.ctx.storage.delete("work");
     await this.ctx.storage.put("runningSince", Date.now());
     try {
-      await traced(
-        "pick.run",
+      await withLogContext(
         {
-          "github.job_id": work.jobId,
-          "github.installation_id": work.installationId,
-          "github.repository": work.repo,
-          "relayrunner.pick.attempt": attempt,
+          jobId: work.jobId,
+          installationId: work.installationId,
+          repo: work.repo,
+          attempt,
         },
-        () => this.run(work, attempt),
+        () =>
+          traced(
+            "pick.run",
+            {
+              "github.job_id": work.jobId,
+              "github.installation_id": work.installationId,
+              "github.repository": work.repo,
+              "relayrunner.pick.attempt": attempt,
+            },
+            () => this.run(work, attempt),
+          ),
       );
     } finally {
       await this.ctx.storage.delete("runningSince");
@@ -149,14 +159,11 @@ export class PickRunner extends DurableObject<Env> {
       ]);
       // A replacement runner first makes sure its job still needs one.
       if (attempt > 1 && (await this.jobStatus(token, work)) !== "queued") {
-        console.log(
-          JSON.stringify({
-            msg: "relayrunner pick not needed",
-            jobId: work.jobId,
-            repo: work.repo,
-            attempt,
-          }),
-        );
+        log.info("pick.not_needed", "pick not needed", {
+          jobId: work.jobId,
+          repo: work.repo,
+          attempt,
+        });
         return;
       }
       // The runner registers on the job's own repo, so no org runner group can keep the job from
@@ -189,15 +196,12 @@ export class PickRunner extends DurableObject<Env> {
         if (!(error instanceof PickBlocked)) throw error;
         // Nothing will come for the job: use up its attempts so the sweep doesn't rescue it.
         await this.ctx.storage.put("attempt", MAX_ATTEMPTS);
-        console.warn(
-          JSON.stringify({
-            msg: "relayrunner pick blocked",
-            jobId: work.jobId,
-            repo: work.repo,
-            attempt,
-            reason: error.reason,
-          }),
-        );
+        log.warn("pick.blocked", "pick blocked", {
+          jobId: work.jobId,
+          repo: work.repo,
+          attempt,
+          reason: error.reason,
+        });
         await reportBlocked(this.env, token!, work, error.reason);
         return null;
       });
@@ -220,10 +224,17 @@ export class PickRunner extends DurableObject<Env> {
           // A lint step runs in its own LintRunner, one per job.
           // It reads the commit with the job's own token, which is passed along and never stored.
           lint: async (target, tools, paths) => {
-            const { result, log, lines } = await this.env.LINT_RUNNER.getByName(
-              `job:${work.jobId}`,
-            ).lintJob(target, tools, paths, job.githubToken);
-            lintLog = log;
+            const {
+              result,
+              log: lint,
+              lines,
+            } = await this.env.LINT_RUNNER.getByName(`job:${work.jobId}`).lintJob(
+              target,
+              tools,
+              paths,
+              job.githubToken,
+            );
+            lintLog = lint;
             stepLines = lines ?? [];
             return result;
           },
@@ -266,13 +277,10 @@ export class PickRunner extends DurableObject<Env> {
           if (saving)
             await recordRepoCheck(createDb(this.env.DB), saving.repository, saving.check).catch(
               (error) =>
-                console.error(
-                  JSON.stringify({
-                    msg: "relayrunner native check saving not recorded",
-                    jobId: work.jobId,
-                    error: error instanceof Error ? error.message : String(error),
-                  }),
-                ),
+                log.error("pick.check_saving_not_recorded", "native check saving not recorded", {
+                  jobId: work.jobId,
+                  error,
+                }),
             );
         } else {
           const { record, ...pick } = await pickRunner(
@@ -315,13 +323,7 @@ export class PickRunner extends DurableObject<Env> {
               jobName: job.message.jobDisplayName || null,
               pickJobId: job.message.jobId || null,
             }).catch((error) =>
-              console.error(
-                JSON.stringify({
-                  msg: "relayrunner pick not recorded",
-                  jobId: work.jobId,
-                  error: error instanceof Error ? error.message : String(error),
-                }),
-              ),
+              log.error("pick.not_recorded", "pick not recorded", { jobId: work.jobId, error }),
             );
         }
         outcome = { ...outcome, claimedJob: job.message.jobDisplayName, runnerLabels: jit.labels };
@@ -346,18 +348,11 @@ export class PickRunner extends DurableObject<Env> {
       "relayrunner.pick.result": String(outcome.result),
       "relayrunner.runner": typeof outcome.runner === "string" ? outcome.runner : undefined,
     });
-    const log = outcome.result === "error" ? console.error : console.log;
-    log(
-      JSON.stringify({
-        msg: "relayrunner pick finished",
-        jobId: work.jobId,
-        repo: work.repo,
-        installationId: work.installationId,
-        attempt,
-        ...outcome,
-        durationMs: Date.now() - startedAt,
-      }),
-    );
+    // The pick's wide event: one per pick runner, with how it ended.
+    (outcome.result === "error" ? log.error : log.info)("pick.finished", "pick finished", {
+      ...outcome,
+      durationMs: Date.now() - startedAt,
+    });
     if (token) await this.rearmIfQueued(work, attempt, token);
   }
 
@@ -390,39 +385,26 @@ export class PickRunner extends DurableObject<Env> {
       status === null && attempt < MAX_ATTEMPTS ? "rearm" : afterAttempt(status, attempt);
     if (next === "done") return;
     if (next === "give_up") {
-      console.warn(
-        JSON.stringify({
-          msg: "relayrunner pick gave up",
-          jobId: work.jobId,
-          repo: work.repo,
-          attempt,
-        }),
-      );
+      log.warn("pick.gave_up", "pick gave up", { jobId: work.jobId, repo: work.repo, attempt });
       return;
     }
     await this.ctx.storage.put({ work, attempt: attempt + 1 });
     await this.ctx.storage.setAlarm(Date.now() + RECHECK_AFTER_MS);
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner pick re-armed",
-        jobId: work.jobId,
-        repo: work.repo,
-        attempt: attempt + 1,
-      }),
-    );
+    log.info("pick.rearmed", "pick re-armed", {
+      jobId: work.jobId,
+      repo: work.repo,
+      attempt: attempt + 1,
+    });
   }
 }
 
 function logCleanupError(step: string, work: PickWork, error: unknown) {
-  console.warn(
-    JSON.stringify({
-      msg: "relayrunner pick cleanup failed",
-      step,
-      jobId: work.jobId,
-      repo: work.repo,
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
+  log.warn("pick.cleanup_failed", "pick cleanup failed", {
+    step,
+    jobId: work.jobId,
+    repo: work.repo,
+    error,
+  });
 }
 
 type PickInfo = Omit<PickRecord, "jobName" | "pickJobId">;
@@ -482,16 +464,13 @@ async function pickRunner(
   // order says. It keeps no route decision, so it stays out of the Router's numbers and retries.
   const evaluation = await evaluationRunner(db, repo.id, context);
   if (evaluation) {
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner evaluation pick",
-        evaluationId: evaluation.evaluationId,
-        repo: context.repo,
-        runId: context.runId,
-        runAttempt: context.runAttempt,
-        label: evaluation.label,
-      }),
-    );
+    log.info("pick.evaluation", "evaluation pick", {
+      evaluationId: evaluation.evaluationId,
+      repo: context.repo,
+      runId: context.runId,
+      runAttempt: context.runAttempt,
+      label: evaluation.label,
+    });
     return {
       runner: evaluation.label,
       step: evaluation.provider,
@@ -569,15 +548,12 @@ async function resolveTriggeredBy(token: string, context: JobContext): Promise<J
     if (actor && sameLogin(actor.login, triggeredBy.login))
       return { ...context, triggeredBy: actor };
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "relayrunner pick triggering actor not found",
-        repo: context.repo,
-        runId: context.runId,
-        runAttempt: context.runAttempt,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.warn("pick.actor_not_found", "pick triggering actor not found", {
+      repo: context.repo,
+      runId: context.runId,
+      runAttempt: context.runAttempt,
+      error,
+    });
   }
   return context;
 }

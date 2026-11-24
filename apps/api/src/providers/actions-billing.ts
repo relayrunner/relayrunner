@@ -51,6 +51,7 @@ import {
 } from "../github/billing-api.ts";
 import { GitHubAccessError } from "../github/github-api.ts";
 import { appInstallationToken } from "../github/github-app.ts";
+import { log } from "../log.ts";
 
 /**
  * Included Actions minutes per plan. GitHub counts them in Linux 2-core minutes; other runners use
@@ -316,9 +317,9 @@ export async function pollInstallation(
     // A refusal is the account's setup, not a fault: the dashboard says how to fix it, and the poll
     // backs off (REFUSED_RETRY_MS). Only unexpected failures log as errors.
     if (refused)
-      console.log(
-        JSON.stringify({ msg: "actions billing not shared", installationId: installation.id }),
-      );
+      log.info("provider.actions_billing_not_shared", "actions billing not shared", {
+        installationId: installation.id,
+      });
     else logFailure(installation.id, usage.reason);
     return;
   }
@@ -539,13 +540,10 @@ async function recordFailure(
 }
 
 function logFailure(installationId: number, error: unknown) {
-  console.error(
-    JSON.stringify({
-      msg: "actions usage poll failed",
-      installationId,
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
+  log.error("provider.actions_usage_failed", "actions usage poll failed", {
+    installationId,
+    error,
+  });
 }
 
 /** One installation's usage this cycle, or null when there's no such installation. */

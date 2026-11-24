@@ -30,6 +30,7 @@ import { routeIdFromLabels } from "./routing.ts";
 import { strandedJob } from "./stranded-jobs.ts";
 import { failedStep } from "../ingest/job-timings.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -111,7 +112,7 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
     routedRun(db, repository.id, run.id, run.runAttempt),
   ]);
   if (!workspace || !routed) return;
-  const log = { repository: repository.fullName, runId: run.id, runAttempt: run.runAttempt };
+  const ids = { repo: repository.fullName, runId: run.id, runAttempt: run.runAttempt };
 
   // Retries can be on for the repo even when the workspace leaves them off, so read its file.
   const token = await appInstallationToken(env, installationId);
@@ -138,11 +139,11 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
     repository.fullName,
     jobs,
     await findRunnerFailure(db, token, workspace.id, repository.fullName, jobs),
-    log,
+    ids,
   );
   if (!found) return;
   if (!(await underCaps(db, workspace.id, repository.id, run.id, settings.max))) {
-    console.log(JSON.stringify({ msg: "retry skipped: cap reached", ...log }));
+    log.info("retry.cap_reached", "retry skipped: cap reached", ids);
     return;
   }
 
@@ -181,16 +182,15 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
     .update(table)
     .set({ status: error ? "failed" : "requested", error })
     .where(eq(table.id, record.id));
-  console.log(
-    JSON.stringify({
-      msg: error ? "retry refused" : "retry requested",
-      ...log,
-      jobId: found.job.id,
-      kind: found.kind,
-      runner: settings.runner,
-      error,
-    }),
-  );
+  log.info("retry.requested", error ? "retry refused" : "retry requested", {
+    ...ids,
+    workspaceId: workspace.id,
+    jobId: found.job.id,
+    kind: found.kind,
+    runner: settings.runner,
+    result: error ? "refused" : "requested",
+    error: error ?? undefined,
+  });
   if (error) return;
   await recordEvent(db, {
     workspaceId: workspace.id,
@@ -331,13 +331,10 @@ async function findRunnerFailure(
         if (strandedJob(messages)) return "runner_start";
         return lostRunner(messages) ? "runner_lost" : null;
       } catch (error) {
-        console.warn(
-          JSON.stringify({
-            msg: "job annotations unavailable",
-            jobId: job.id,
-            error: errorMessage(error),
-          }),
-        );
+        log.warn("retry.annotations_unavailable", "job annotations unavailable", {
+          jobId: job.id,
+          error,
+        });
         return null;
       }
     }),
@@ -363,7 +360,7 @@ async function decideWithAi(
   repo: string,
   jobs: FailedJob[],
   found: Found,
-  log: object,
+  ids: object,
 ): Promise<Found> {
   if (found && found.kind !== "runner_start") return found;
   if (!(await aiAccess(db, workspaceId, "retry_decision"))) return found;
@@ -378,16 +375,13 @@ async function decideWithAi(
       ...(await failureDetails(token, repo, job.id)),
     });
     const retry = found ? cause?.rerun !== "fails" : cause?.rerun === "passes";
-    console.log(
-      JSON.stringify({
-        msg: "retry decision",
-        ...log,
-        jobId: job.id,
-        rule: found?.kind ?? null,
-        cause,
-        retry,
-      }),
-    );
+    log.info("retry.decision", "retry decision", {
+      ...ids,
+      jobId: job.id,
+      rule: found?.kind ?? null,
+      cause,
+      retry,
+    });
     if (found) return retry ? found : null;
     if (retry) return { job, kind: "flaky" };
   }

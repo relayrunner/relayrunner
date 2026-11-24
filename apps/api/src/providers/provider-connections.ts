@@ -17,6 +17,7 @@ import { type AdapterContext, ADAPTERS, ProviderAuthError } from "../provider-bi
 import { adapterTools, byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
 import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 const DAY_MS = 86_400_000;
 // The connection list sums this much recent usage.
@@ -248,9 +249,7 @@ export async function connectProvider(
     });
   // The hourly cron syncs it anyway, so a queue hiccup only delays the first numbers.
   await enqueueInstallationTasks(env, [syncTask(workspaceId, provider)]).catch((error) =>
-    console.warn(
-      JSON.stringify({ msg: "couldn't queue provider sync", error: errorMessage(error) }),
-    ),
+    log.warn("provider.sync_not_queued", "couldn't queue provider sync", { error }),
   );
   return { ok: true, connection: await connectionView(db, workspaceId, provider) };
 }
