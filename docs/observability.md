@@ -59,7 +59,7 @@ The API logs through `@relayrunner/log` (`apps/api/src/log.ts`), never `console.
 - `level` is `debug`, `info`, `warn` or `error`, and each goes to its own `console` method, so the Workers Observability level filter works. `LOG_LEVEL` drops lines below it (default `info`).
 - Ids use one set of names: `workspaceId`, `installationId`, `userId`, `machineId`, `repo` (owner/name), `jobId`, `runId`, `routeId`, `deliveryId`, `provider`. Log user ids, never emails, names or logins.
 - Durations are milliseconds and end in `Ms` (`waitMs`, `lagMs`). Fields a chart groups by take a short, fixed set of snake_case values.
-- An `error` field takes anything thrown and is logged as `{ name, message, stack, cause }`.
+- An `error` field takes anything thrown and is logged as `{ name, message, stack, cause }`. Only `error` lines keep the stack. Workers Issues alerts on any line with a stack trace, so use `warn` for a failure the code handles (a retry or a fallback) and `error` for one someone should look at.
 
 Each entry point sets the ids its lines share with `withLogContext`: a request (its Ray ID as `requestId`), a webhook delivery (its delivery id), a routing decision. `annotate` adds the ids it puts on the span (user, workspace, machine) to the log context too. Run `pnpm dev` with `LOG_FORMAT=pretty` (in `.dev.vars.example`) to read lines in the terminal.
 

@@ -8,6 +8,10 @@
  * Fields from the surrounding context (withLogContext: the request, delivery or job being worked
  * on) are added to every line, and an `error` field of any thrown value becomes
  * `{ name, message, stack }`.
+ *
+ * Only error lines carry the stack. Workers Issues reports any line with a stack trace as a
+ * failure, so a warning (a handled failure that retries or falls back) keeps the error's name and
+ * message but not its stack, and stays out of the alerts.
  */
 // The Workers' tsconfigs leave out Node's types; nodejs_compat provides the module at run time.
 // @ts-ignore
@@ -103,7 +107,10 @@ function record(level: Level, event: string, msg: string, conf: LogConfig, field
   };
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) continue;
-    line[key] = key === "error" || value instanceof Error ? serializeError(value) : value;
+    line[key] =
+      key === "error" || value instanceof Error
+        ? serializeError(value, 0, RANK[level] >= RANK.error)
+        : value;
   }
   return line;
 }
@@ -115,15 +122,15 @@ export interface SerializedError {
   cause?: SerializedError;
 }
 
-/** Any thrown value as `{ name, message, stack, cause }`. */
-export function serializeError(error: unknown, depth = 0): SerializedError {
+/** Any thrown value as `{ name, message, stack, cause }`, without the stacks when `withStack` is false. */
+export function serializeError(error: unknown, depth = 0, withStack = true): SerializedError {
   if (!(error instanceof Error)) return { name: "Error", message: String(error) };
   return {
     name: error.name,
     message: error.message,
-    ...(error.stack ? { stack: error.stack } : {}),
+    ...(withStack && error.stack ? { stack: error.stack } : {}),
     ...(error.cause !== undefined && depth < 3
-      ? { cause: serializeError(error.cause, depth + 1) }
+      ? { cause: serializeError(error.cause, depth + 1, withStack) }
       : {}),
   };
 }

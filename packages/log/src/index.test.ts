@@ -86,6 +86,20 @@ describe("createLogger", () => {
     expect(line.cause.stack).toContain("boom");
   });
 
+  it("leaves stacks off warnings so Workers Issues doesn't report them", () => {
+    const warn = lines("warn");
+    const log = createLogger({ service: "api" });
+    log.warn("webhook.processed", "retrying", {
+      error: new Error("outer", { cause: new Error("inner") }),
+    });
+    const [line] = warn();
+    expect(line.error).toEqual({
+      name: "Error",
+      message: "outer",
+      cause: { name: "Error", message: "inner" },
+    });
+  });
+
   it("prints a readable line in pretty format", () => {
     const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     createLogger({ service: "api", format: "pretty" }).info("routing.decision", "job routed", {
