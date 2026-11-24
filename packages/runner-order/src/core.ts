@@ -84,6 +84,22 @@ export const RUNNER_LABELS = byRunnerKey((key) =>
   key === "machine" ? "Self-hosted" : key === "github" ? "GitHub-hosted" : PROVIDERS[key].name,
 );
 
+/** A step's cap, without its quota: "When available", "While under 80%", "While under $100/mo", "No cap". */
+export function ruleText(step: RunnerStep) {
+  if (step.key === "machine") return "When available";
+  if ("limit" in step && step.limit) return `While under ${step.limit.percent}%`;
+  if ("spendLimit" in step && step.spendLimit)
+    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+  return "No cap";
+}
+
+/** One step, with its cap as the Router page words it: "GitHub-hosted (while under 80%)". */
+export function stepText(step: RunnerStep) {
+  const label = RUNNER_LABELS[step.key];
+  const limited = ("limit" in step && step.limit) || ("spendLimit" in step && step.spendLimit);
+  return limited ? `${label} (${ruleText(step).toLowerCase()})` : label;
+}
+
 /** A label each provider's relay input takes, such as `depot-ubuntu-24.04`. */
 export const RUNNER_EXAMPLES = byRunnerKey((key) =>
   key === "machine" ? "self-hosted" : PROVIDERS[key].example!,
