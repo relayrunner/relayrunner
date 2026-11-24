@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.20.0
+
+### Minor Changes
+
+- ad9d8a3: `relayrunner feedback "…"` sends a message to the RelayRunner team with your name and email, so we can reply, or without them with `--anonymous`. `--file` sends a file's text and `--category` marks it as a bug, something confusing or a feature request.
+
 ## 0.19.1
 
 ### Patch Changes
