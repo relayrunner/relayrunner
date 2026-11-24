@@ -105,20 +105,25 @@ export const machineTokenRoutes = new Hono<MachineEnv>()
   })
   // `relayrunner feedback`, which RelayRunner for Mac uses to send a crash report the person saw and
   // chose to send. Stored and emailed as the machine owner's feedback, like the dashboard's, with
-  // the machine named in the email.
+  // the machine named in the email. With `contact: false` it carries no name or email: only the
+  // machine, which the rate limit counts.
   .post("/me/feedback", feedbackBodyLimit, async (c) => {
     const { machine, machineDb: db } = c.var;
     const parsed = MachineFeedbackBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw invalid(parsed.error);
-    const [owner] = await machineOwner(db, machine);
-    if (!owner) throw new AppError("MACHINE_NOT_OWNED");
+    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
+    const [owner] = parsed.data.contact ? await machineOwner(db, machine) : [];
+    if (parsed.data.contact && !owner) throw new AppError("MACHINE_NOT_OWNED");
     const entry = {
       ...sanitizeMessage(parsed.data.message),
       source: "machine" as const,
       category: parsed.data.category,
       machine: { name: machine.name, macAppVersion: machine.macAppVersion },
     };
-    const id = await saveFeedback(c, db, owner, entry, null);
+    const sender = owner
+      ? { user: owner, machineId: machine.id }
+      : { user: null, machineId: machine.id };
+    const id = await saveFeedback(c, db, sender, entry, null);
     return c.json({ id, redacted: entry.redacted }, 201);
   })
   // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244). Only an

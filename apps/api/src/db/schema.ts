@@ -1408,10 +1408,10 @@ export const feedback = sqliteTable(
   "feedback",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    // None for an anonymous crash report from the Mac app, which records only its machine.
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    machineId: text("machine_id").references(() => machine.id, { onDelete: "set null" }),
     grantId: text("grant_id"),
     clientId: text("client_id"),
     category: text("category").notNull(),
@@ -1426,7 +1426,10 @@ export const feedback = sqliteTable(
       .default("agent"),
     page: text("page"),
   },
-  (table) => [index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
+  (table) => [
+    index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt),
+    index("feedback_machine_id_created_at_idx").on(table.machineId, table.createdAt),
+  ],
 );
 
 // Runner prices operators record, on top of the base list in @relayrunner/providers

@@ -1,6 +1,6 @@
 //! `relayrunner feedback`: sends a message to the RelayRunner team with the machine's own token
 //! (POST /api/machines/me/feedback). RelayRunner for Mac sends crash reports through it, after
-//! showing the person what's in them.
+//! showing the person what's in them, with `--anonymous` unless they chose to be contacted.
 
 use crate::api::{self, Reply};
 use crate::credentials::Credentials;
@@ -10,12 +10,14 @@ use serde_json::json;
 struct Args {
     message: String,
     category: String,
+    anonymous: bool,
 }
 
 fn parse(args: &[String]) -> Result<Args, Error> {
     let usage = |m: String| Error::new("USAGE", m);
     let mut message = None;
     let mut category = "other".to_string();
+    let mut anonymous = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
@@ -31,6 +33,7 @@ fn parse(args: &[String]) -> Result<Args, Error> {
         match flag {
             // The gateway checks it, so a category added there works without a new CLI.
             "--category" => category = value("--category")?,
+            "--anonymous" => anonymous = true,
             "--file" => {
                 let path = value("--file")?;
                 let text = std::fs::read_to_string(&path)
@@ -53,13 +56,21 @@ fn parse(args: &[String]) -> Result<Args, Error> {
     let message = message
         .filter(|m| !m.trim().is_empty())
         .ok_or_else(|| usage("Say what to send: relayrunner feedback \"…\"".to_string()))?;
-    Ok(Args { message, category })
+    Ok(Args {
+        message,
+        category,
+        anonymous,
+    })
 }
 
 pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> {
-    let Args { message, category } = parse(args)?;
+    let Args {
+        message,
+        category,
+        anonymous,
+    } = parse(args)?;
     let server = &credentials.server;
-    let body = json!({ "message": message, "category": category });
+    let body = json!({ "message": message, "category": category, "contact": !anonymous });
     let failed =
         |reason: String| Error::new("FEEDBACK_FAILED", format!("Couldn't send it: {reason}."));
     match api::call_as_machine(
@@ -100,6 +111,8 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(parsed.message, "crashed\n\nframes");
         assert_eq!(parsed.category, "bug");
+        assert!(!parsed.anonymous);
+        assert!(parse(&args(&["--anonymous", "hi"])).unwrap().anonymous);
     }
 
     #[test]

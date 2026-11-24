@@ -29,6 +29,8 @@ const DashboardBody = z.object({
 export const MachineFeedbackBody = z.object({
   message: z.string().min(1).max(slack(FEEDBACK_LIMITS.details)),
   category: z.enum(FEEDBACK_CATEGORIES).default("other"),
+  // False sends it without the owner's name or email: stored with only the machine, for the rate limit.
+  contact: z.boolean().default(true),
 });
 /** Feedback bodies are small; anything bigger is refused before it's read. */
 export const feedbackBodyLimit = bodyLimit({
@@ -41,6 +43,14 @@ export const feedbackBodyLimit = bodyLimit({
 const HOUR_MS = 60 * 60 * 1000;
 
 type Workspace = { id: string; name: string };
+
+/**
+ * Who sent it: a person, whose name and email go with it so the team can reply, or only a machine,
+ * for an anonymous report. The rate limit counts whichever it names.
+ */
+export type Sender =
+  | { user: { id: string; name: string; email: string }; machineId?: string }
+  | { user: null; machineId: string };
 
 /** Feedback ready to store, from any source, and how many secret-like values were redacted. */
 export type Entry = {
@@ -102,20 +112,20 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
     }
 
     // The workspace lookup (a person's active workspace) runs alongside the rate-limit count.
-    const id = await saveFeedback(c, db, user!, entry, workspace());
+    const id = await saveFeedback(c, db, { user: user! }, entry, workspace());
     return c.json({ id, redacted: entry.redacted }, 201);
   },
 );
 
 /**
- * Stores feedback for `user` and emails it to the team, once they're under the rate limit. Returns
- * its id. Shared with the machine route (`relayrunner feedback`, RelayRunner for Mac's crash
- * reports), which has no workspace.
+ * Stores feedback and emails it to the team, once its sender is under the rate limit. Returns its
+ * id. Shared with the machine route (`relayrunner feedback`, RelayRunner for Mac's crash reports),
+ * which has no workspace.
  */
 export async function saveFeedback(
   c: Pick<Context<AppEnv>, "env" | "executionCtx">,
   db: Db,
-  user: { id: string; name: string; email: string },
+  { user, machineId }: Sender,
   entry: Entry,
   workspace: Promise<Workspace | null> | null,
 ) {
@@ -129,7 +139,7 @@ export async function saveFeedback(
     .from(schema.feedback)
     .where(
       and(
-        eq(schema.feedback.userId, user.id),
+        user ? eq(schema.feedback.userId, user.id) : eq(schema.feedback.machineId, machineId),
         gt(schema.feedback.createdAt, new Date(now - 24 * HOUR_MS)),
       ),
     );
@@ -147,8 +157,11 @@ export async function saveFeedback(
   const { redacted: _, machine, ...fields } = entry;
   await db.insert(schema.feedback).values({
     id,
-    userId: user.id,
+    userId: user?.id ?? null,
     workspaceId: about?.id ?? null,
+    // Left out when there's none, so dashboard and agent feedback still save in the minutes before
+    // the machine_id migration runs after a deploy.
+    ...(machineId && { machineId }),
     createdAt: sentAt,
     ...fields,
   });
@@ -158,7 +171,7 @@ export async function saveFeedback(
     const { clientId } = entry;
     const clientName = clientId ? await agentClientName(db, clientId).catch(() => null) : null;
     await emailOperators(c.env, {
-      replyTo: user.email,
+      replyTo: user?.email,
       template: "feedback",
       context: {
         id,
@@ -167,7 +180,7 @@ export async function saveFeedback(
         category: entry.source === "dashboard" ? null : entry.category,
         agent: clientId ? { name: clientName } : null,
         machine: machine ?? null,
-        user: { name: user.name, email: user.email },
+        user: user && { name: user.name, email: user.email },
         workspaceName: about?.name ?? null,
         sentAt,
       },

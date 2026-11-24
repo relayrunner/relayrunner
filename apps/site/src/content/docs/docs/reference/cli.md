@@ -143,9 +143,10 @@ In the browser, approve it for the GitHub organization your workspace is on. A t
 ```sh
 relayrunner feedback "The Jobs window doesn't show yesterday's jobs"
 relayrunner feedback --category bug --file report.txt
+relayrunner feedback --anonymous "The menu icon stays faded"
 ```
 
-Sends a message to the RelayRunner team from this machine's account, so we can reply by email. `--category` is `bug`, `confusing`, `feature_request` or `other` (the default). Anything that looks like a token or password is replaced before it's stored. The Mac app sends crash reports this way, after you've seen what's in them.
+Sends a message to the RelayRunner team with your name and email, so we can reply. `--anonymous` sends it without them. `--category` is `bug`, `confusing`, `feature_request` or `other` (the default). Anything that looks like a token or password is replaced before it's stored. The Mac app sends crash reports this way, after you've seen what's in them, and anonymously unless you choose to include your name and email.
 
 ## `firewall`
 

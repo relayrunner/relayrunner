@@ -15,7 +15,8 @@ export function renderFeedbackEmail(ctx: {
   tool?: string | null;
   page?: string | null;
   redacted: number;
-  user: { name: string; email: string };
+  /** Null for an anonymous report, which can't be replied to. */
+  user: { name: string; email: string } | null;
   workspaceName: string | null;
   /** The agent that sent it, when one did. */
   agent: { name: string | null } | null;
@@ -25,7 +26,7 @@ export function renderFeedbackEmail(ctx: {
 }): RenderedEmail {
   const rows: [string, string | null | undefined][] = [
     ["Category", ctx.category],
-    ["From", `${ctx.user.name} <${ctx.user.email}>`],
+    ["From", ctx.user ? `${ctx.user.name} <${ctx.user.email}>` : "anonymous"],
     ["Agent", ctx.agent && (ctx.agent.name ?? "unknown client")],
     [
       "Machine",
@@ -52,7 +53,7 @@ export function renderFeedbackEmail(ctx: {
       `<div style="white-space:pre-wrap;word-break:break-word;">${escapeHtml(details)}</div>`,
     ].join(""),
     text: [...meta.map(([label, value]) => `${label}: ${value}`), "", details].join("\n"),
-    footNoteHtml: `Sent ${sentFrom(ctx)}. Reply to reach the person.`,
+    footNoteHtml: `Sent ${sentFrom(ctx)}. ${ctx.user ? "Reply to reach the person." : "It has no contact details."}`,
   });
 }
 

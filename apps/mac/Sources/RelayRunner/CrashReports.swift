@@ -42,11 +42,18 @@ final class CrashReports {
       report.origin == .app ? "RelayRunner quit unexpectedly" : "RelayRunner's CLI quit unexpectedly"
     let times = count > 1 ? " It crashed \(count) times since it last opened; this is the latest." : ""
     alert.informativeText =
-      "Send this report to help us fix it? It goes with your RelayRunner account and holds only what's below: no names, repos or logs.\(times)"
+      "Send this report to help us fix it? It holds only what's below, with no repos, paths or logs, and goes without your name or email unless you include them.\(times)"
     // Built once, so what's sent is exactly what was shown.
     let text = report.text
     let preview = Self.preview(text)
-    alert.accessoryView = preview
+    // Off unless ticked: a report is anonymous by default.
+    let contact = NSButton(checkboxWithTitle: "Include my name and email so you can follow up", target: nil, action: nil)
+    contact.frame = NSRect(x: 0, y: 0, width: preview.frame.width, height: 20)
+    preview.frame.origin.y = 28
+    let accessory = NSView(frame: NSRect(x: 0, y: 0, width: preview.frame.width, height: preview.frame.maxY))
+    accessory.addSubview(preview)
+    accessory.addSubview(contact)
+    alert.accessoryView = accessory
     alert.addButton(withTitle: "Send Report")
     alert.addButton(withTitle: "Don't Send")
     alert.showsSuppressionButton = true
@@ -60,17 +67,21 @@ final class CrashReports {
     NSApp.activate(ignoringOtherApps: true)
     let send = alert.runModal() == .alertFirstButtonReturn
     if alert.suppressionButton?.state == .on { AppSettings.crashReportsOff = true }
-    if send { Task { await self.send(text) } }
+    if send {
+      let anonymous = contact.state != .on
+      Task { await self.send(text, anonymous: anonymous) }
+    }
   }
 
-  private func send(_ text: String) async {
+  private func send(_ text: String, anonymous: Bool) async {
     let file = FileManager.default.temporaryDirectory
       .appendingPathComponent("relayrunner-crash-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: file) }
     var problem: String?
     do {
       try Data(text.utf8).write(to: file, options: .atomic)
-      let output = try await CLI.run(["feedback", "--category", "bug", "--file", file.path])
+      let output = try await CLI.run(
+        ["feedback", "--category", "bug", "--file", file.path] + (anonymous ? ["--anonymous"] : []))
       if output.status != 0 { problem = output.problem }
     } catch {
       problem = error.localizedDescription

@@ -1481,6 +1481,29 @@ describe("feedback from the machine's own CLI", () => {
     expect(message.text).toContain("Machine: studio");
   });
 
+  test("an anonymous report keeps only the machine, and its email has no contact details", async () => {
+    const { token, machine } = await enroll("cli-feedback-anon", "studio");
+    const send = vi.fn(async () => ({ messageId: "m1" }));
+    const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+
+    const response = await feedback(
+      token,
+      { category: "bug", message: "RelayRunner for Mac 0.6.0 crashed", contact: false },
+      withEmail,
+    );
+    expect(response.status, await response.clone().text()).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?")
+      .bind(id)
+      .first<Record<string, unknown>>();
+    expect(row).toMatchObject({ user_id: null, machine_id: machine.id, source: "machine" });
+
+    const message = (send.mock.calls[0] as unknown[])[0] as { replyTo?: string; text: string };
+    expect(message.replyTo).toBeUndefined();
+    expect(message.text).toContain("From: anonymous");
+    expect(message.text).not.toContain("@");
+  });
+
   test("refuses a bad body, an unknown category and no token", async () => {
     const { token } = await enroll("cli-feedback-bad");
     expect((await feedback(token, { message: "" })).status).toBe(400);

@@ -226,10 +226,11 @@ const COMMANDS: &[Command] = &[
     ),
     (
         "feedback",
-        "Send a message to the RelayRunner team. It goes with this machine's account, so we can reply.",
-        "relayrunner feedback \"MESSAGE\" [--category bug|confusing|feature_request|other] | relayrunner feedback --file PATH",
+        "Send a message to the RelayRunner team. It goes with your name and email, so we can reply, unless you pass --anonymous.",
+        "relayrunner feedback \"MESSAGE\" [--category bug|confusing|feature_request|other] [--anonymous] | relayrunner feedback --file PATH",
         &[
             ("--file PATH", "Send what's in this file instead"),
+            ("--anonymous", "Send it without your name or email"),
             (
                 "--category NAME",
                 "bug, confusing, feature_request or other (default: other)",
