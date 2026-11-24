@@ -13,12 +13,26 @@ final class CrashReports {
   func checkOnLaunch() {
     // A first check looks back a day, so a crash just before updating to this version is offered.
     let since = AppSettings.crashesCheckedAt ?? Date(timeIntervalSinceNow: -86400)
-    AppSettings.crashesCheckedAt = Date()
-    guard !AppSettings.crashReportsOff else { return }
+    let now = Date()
+    guard !AppSettings.crashReportsOff else {
+      AppSettings.crashesCheckedAt = now
+      return
+    }
     let folder = folder
     Task.detached(priority: .utility) {
-      guard let found = CrashReport.latest(in: folder, since: since) else { return }
-      await MainActor.run { CrashReports.shared.offer(found.report, of: found.count) }
+      let found = CrashReport.latest(in: folder, since: since)
+      await MainActor.run {
+        guard let found else {
+          AppSettings.crashesCheckedAt = now
+          return
+        }
+        // The check only counts once the offer shows, so a crash is offered again if the app quits
+        // before then.
+        MenuBar.shared.whenClosed {
+          AppSettings.crashesCheckedAt = now
+          CrashReports.shared.offer(found.report, of: found.count)
+        }
+      }
     }
   }
 

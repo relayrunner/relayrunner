@@ -64,7 +64,27 @@ final class MenuBar: NSObject, NSMenuDelegate {
     header.setFrameSize(NSSize(width: MenuHeader.width, height: header.fittingSize.height))
   }
 
-  func menuWillOpen(_ menu: NSMenu) { fitHeader() }
+  /// Whether the menu is showing. A modal alert can't start while it tracks, so one waits for it.
+  private(set) var isOpen = false
+  private var afterClose: [() -> Void] = []
+
+  func menuWillOpen(_ menu: NSMenu) {
+    isOpen = true
+    fitHeader()
+  }
+
+  func menuDidClose(_ menu: NSMenu) {
+    isOpen = false
+    let waiting = afterClose
+    afterClose = []
+    // After the menu's tracking loop has returned.
+    DispatchQueue.main.async { waiting.forEach { $0() } }
+  }
+
+  /// Runs `action` now, or once the menu closes when it's open.
+  func whenClosed(_ action: @escaping () -> Void) {
+    if isOpen { afterClose.append(action) } else { action() }
+  }
 
   func menuNeedsUpdate(_ menu: NSMenu) {
     let online = connection.phase == .online
