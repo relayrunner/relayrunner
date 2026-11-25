@@ -1,6 +1,7 @@
 ---
 title: Say what a job needs, not where it runs
 date: 2026-11-25
+type: Feature
 description: Relays take os, arch and cpus, so every runner on your Router can take a job, and relayrunner init writes them for you.
 ---
 

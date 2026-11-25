@@ -1,6 +1,7 @@
 ---
 title: Route a repo from the dashboard
 date: 2026-11-19
+type: Feature
 description: Step through your repos on the Router page, pick each repo's jobs and sizes, and hand the change to your coding agent.
 ---
 

@@ -2,10 +2,17 @@
 // `Accept: text/markdown` (worker/index.ts). Keep it in step with index.astro's sections.
 import type { APIRoute } from "astro";
 import { setupPrompt } from "../lib/agent-setup";
+import { CHANGELOG_ID, latestUpdates } from "../lib/changelog";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 
-export const GET: APIRoute = ({ site }) => {
+export const GET: APIRoute = async ({ site }) => {
   const abs = (path: string) => new URL(path, site).href;
+  const updates = (await latestUpdates(6))
+    .map(
+      (update) =>
+        `- ${update.date.toISOString().slice(0, 10)}: [${update.title}](${abs(update.href)}) (${update.type})`,
+    )
+    .join("\n");
   const providers = KNOWN_PROVIDERS.map((id) => PROVIDERS[id].name).join(", ");
   const body = `# RelayRunner: one router for every CI runner
 
@@ -71,6 +78,12 @@ Connect the [MCP server](${abs("/docs/reference/mcp")}) to Claude, Cursor or VS 
 - Public repos don't use your machines: code from a stranger's pull request never runs on your computer.
 - Shared machines follow repo access: a shared machine only takes jobs from repos its owner can read.
 - Jobs fail with a reason: if no runner can take a job, it fails right away and your pull request's checks say why.
+
+## What's new
+
+${updates}
+
+See the [changelog](${abs(`/${CHANGELOG_ID}`)}) for every update and release.
 
 ## Links
 

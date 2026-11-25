@@ -1,6 +1,7 @@
 ---
 title: Agents can change your routing
 date: 2026-11-19
+type: Agents
 description: Let an AI agent change the runner order, job sizes, retries and AI, and pause runners, with every change in Activity.
 ---
 

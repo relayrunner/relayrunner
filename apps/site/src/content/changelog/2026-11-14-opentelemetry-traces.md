@@ -1,6 +1,7 @@
 ---
 title: CI traces in your observability tool
 date: 2026-11-14
+type: Integration
 description: Send every workflow run to Honeycomb, Grafana, Axiom or any OpenTelemetry tool as a trace.
 ---
 

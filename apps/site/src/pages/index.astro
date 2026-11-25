@@ -11,6 +11,7 @@ import LaunchBanner from "../components/LaunchBanner.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { setupPrompt } from "../lib/agent-setup";
+import { CHANGELOG_ID, latestUpdates, type UpdateType } from "../lib/changelog";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
@@ -23,6 +24,21 @@ const TRACE = [
   { name: "Install", time: "38s", from: 8, to: 29, depth: 2 },
   { name: "Run tests", time: "1m 58s", from: 29, to: 95, depth: 2 },
 ];
+// What's new: the latest platform updates from the changelog, each with its type's icon (Lucide).
+const updates = await latestUpdates(6);
+const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const UPDATE_ICONS: Record<UpdateType, string> = {
+  Feature:
+    '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  Integration:
+    '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  Agents:
+    '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  "Mac app":
+    '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  Reliability:
+    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+};
 // Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
 const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
   (id) => !["blacksmith", "github", "cloudflare"].includes(id),
@@ -516,6 +532,30 @@ const structuredData = {
           </li>
         </ul>
         <a class="feature-link" href="/docs/reference/security">Security →</a>
+      </section>
+
+      <!-- What's new -->
+      <section class="section wrap news" id="whats-new" aria-labelledby="news-h">
+        <div>
+          <h2 id="news-h">What's new</h2>
+          <a class="feature-link" href={`/${CHANGELOG_ID}`}>Changelog →</a>
+        </div>
+        <ol class="news-list">
+          {
+            updates.map((update) => (
+              <li>
+                <time datetime={update.date.toISOString().slice(0, 10)}>
+                  {DAY.format(update.date)}
+                </time>
+                <a href={update.href}>{update.title}</a>
+                <span class="news-type">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" set:html={UPDATE_ICONS[update.type]} />
+                  {update.type}
+                </span>
+              </li>
+            ))
+          }
+        </ol>
       </section>
 
       <!-- Close -->
