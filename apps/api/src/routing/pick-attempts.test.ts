@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
+  MAX_TRANSIENT_RETRIES,
   pickJobIdFromRunnerName,
   pickRunnerName,
+  transientRetryDelayMs,
 } from "./pick-attempts.ts";
 
 describe("afterAttempt", () => {
@@ -34,5 +36,20 @@ describe("pick runner names", () => {
     expect(pickJobIdFromRunnerName("relayrunner-container-42")).toBeNull();
     expect(pickJobIdFromRunnerName("Atticuss-MacBook-Pro")).toBeNull();
     expect(pickJobIdFromRunnerName("relayrunner-pick-abc")).toBeNull();
+  });
+});
+
+describe("transient retries", () => {
+  test("back off from 15 seconds up to 2 minutes", () => {
+    expect([1, 2, 3, 4, 5].map(transientRetryDelayMs)).toEqual([
+      15_000, 30_000, 60_000, 120_000, 120_000,
+    ]);
+  });
+
+  test("cover about 20 minutes of a GitHub outage", () => {
+    let total = 0;
+    for (let retry = 1; retry <= MAX_TRANSIENT_RETRIES; retry++)
+      total += transientRetryDelayMs(retry);
+    expect(total).toBeGreaterThanOrEqual(18 * 60_000);
   });
 });

@@ -57,9 +57,11 @@ import {
 import {
   afterAttempt,
   MAX_ATTEMPTS,
+  MAX_TRANSIENT_RETRIES,
   RECHECK_AFTER_MS,
   pickRunnerName,
   RUN_STALE_MS,
+  transientRetryDelayMs,
   WAIT_FOR_JOB_MS,
 } from "../routing/pick-attempts.ts";
 import { log, withLogContext } from "../log.ts";
@@ -120,6 +122,7 @@ export class PickRunner extends DurableObject<Env> {
     const work = await this.ctx.storage.get<PickWork>("work");
     if (!work) return;
     const attempt = (await this.ctx.storage.get<number>("attempt")) ?? 1;
+    const retries = (await this.ctx.storage.get<number>("transientRetries")) ?? 0;
     await this.ctx.storage.delete("work");
     await this.ctx.storage.put("runningSince", Date.now());
     try {
@@ -139,7 +142,7 @@ export class PickRunner extends DurableObject<Env> {
               "github.repository": work.repo,
               "relayrunner.pick.attempt": attempt,
             },
-            () => this.run(work, attempt),
+            () => this.run(work, attempt, retries),
           ),
       );
     } finally {
@@ -147,7 +150,8 @@ export class PickRunner extends DurableObject<Env> {
     }
   }
 
-  private async run(work: PickWork, attempt: number) {
+  // `retries` counts the earlier runners that failed on GitHub's side: they don't use up `attempt`.
+  private async run(work: PickWork, attempt: number, retries = 0) {
     const startedAt = Date.now();
     let outcome: Record<string, unknown> = { result: "no-job" };
     let token: string | undefined;
@@ -160,7 +164,7 @@ export class PickRunner extends DurableObject<Env> {
         installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo),
       ]);
       // A replacement runner first makes sure its job still needs one.
-      if (attempt > 1 && (await this.jobStatus(token, work)) !== "queued") {
+      if (attempt + retries > 1 && (await this.jobStatus(token, work)) !== "queued") {
         log.info("pick.finished", "pick finished", {
           result: "not_needed",
           durationMs: Date.now() - startedAt,
@@ -176,7 +180,7 @@ export class PickRunner extends DurableObject<Env> {
         token,
         work.repo,
         {
-          name: pickRunnerName(work.jobId, attempt),
+          name: pickRunnerName(work.jobId, attempt + retries),
           labels: [RELAYRUNNER_LABEL],
         },
         {
@@ -369,7 +373,12 @@ export class PickRunner extends DurableObject<Env> {
       "relayrunner.pick.result": String(outcome.result),
       "relayrunner.runner": typeof outcome.runner === "string" ? outcome.runner : undefined,
     });
-    const next = token ? await this.rearmIfQueued(work, attempt, token) : undefined;
+    const next =
+      outcome.transient === true && retries < MAX_TRANSIENT_RETRIES
+        ? await this.retryTransient(work, attempt, retries + 1)
+        : token
+          ? await this.rearmIfQueued(work, attempt, token)
+          : undefined;
     // The pick's wide event: one per pick runner, with how it ended and whether a replacement
     // runner follows (`next`).
     // An error is only an error once nothing follows it. A replacement runner (`rearm`) tries the
@@ -377,7 +386,10 @@ export class PickRunner extends DurableObject<Env> {
     // 5xx, D1 overloaded) the sweep picks up a job left waiting. Those are warnings. Giving up on
     // the job is the error.
     const recovers =
-      next === "rearm" || next === "done" || (next !== "give_up" && outcome.transient === true);
+      next === "rearm" ||
+      next === "retry" ||
+      next === "done" ||
+      (next !== "give_up" && outcome.transient === true);
     const level = outcome.result !== "error" ? log.info : recovers ? log.warn : log.error;
     level("pick.finished", "pick finished", {
       ...outcome,
@@ -392,6 +404,14 @@ export class PickRunner extends DurableObject<Env> {
       (await startedJobStatus(createDb(this.env.DB), work.jobId)) ??
       workflowJobStatus(token, work.repo, work.jobId)
     );
+  }
+
+  // GitHub failed (a 5xx, during an incident) before a runner could wait for the job: try again
+  // with backoff, on the same attempt. The next runner checks the job still needs one first.
+  private async retryTransient(work: PickWork, attempt: number, retries: number) {
+    await this.ctx.storage.put({ work, attempt, transientRetries: retries });
+    await this.ctx.storage.setAlarm(Date.now() + transientRetryDelayMs(retries));
+    return "retry" as const;
   }
 
   // The runner may have taken another job, or none: if its own job is still queued, nothing else
