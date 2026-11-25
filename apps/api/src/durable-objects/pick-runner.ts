@@ -20,6 +20,7 @@ import { RELAYRUNNER_LABEL } from "../routing/labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import { isOverloaded } from "../db/retry.ts";
+import { isTransient } from "../transient.ts";
 import { recordPick, type PickRecord } from "../routing/route-decisions.ts";
 import { evaluationRunner } from "../reports/evaluations.ts";
 import { findInstallationAndWorkspace, installationRunnerScope } from "../github/installations.ts";
@@ -174,7 +175,10 @@ export class PickRunner extends DurableObject<Env> {
       const minted = await mintRepoFirst(
         token,
         work.repo,
-        { name: pickRunnerName(work.jobId, attempt), labels: [RELAYRUNNER_LABEL] },
+        {
+          name: pickRunnerName(work.jobId, attempt),
+          labels: [RELAYRUNNER_LABEL],
+        },
         {
           fallbackScope: async () => scope!,
           log: {
@@ -304,7 +308,11 @@ export class PickRunner extends DurableObject<Env> {
             pick.runner ? "succeeded" : "failed",
             pick.runner ? { outputs: { runner: pick.runner } } : { error: pick.reason },
           );
-          outcome = { result: pick.runner ? "routed" : "no_runner", ...pick, logs };
+          outcome = {
+            result: pick.runner ? "routed" : "no_runner",
+            ...pick,
+            logs,
+          };
           // The pull request's checks list says why too, and a re-run that routes clears it. It runs
           // after the pick is done, and a failure only loses the check.
           const target = routeCheckTarget(job.message.contextData);
@@ -323,10 +331,17 @@ export class PickRunner extends DurableObject<Env> {
               jobName: job.message.jobDisplayName || null,
               pickJobId: job.message.jobId || null,
             }).catch((error) =>
-              log.error("pick.not_recorded", "pick not recorded", { jobId: work.jobId, error }),
+              log.error("pick.not_recorded", "pick not recorded", {
+                jobId: work.jobId,
+                error,
+              }),
             );
         }
-        outcome = { ...outcome, claimedJob: job.message.jobDisplayName, runnerLabels: jit.labels };
+        outcome = {
+          ...outcome,
+          claimedJob: job.message.jobDisplayName,
+          runnerLabels: jit.labels,
+        };
         runnerId = undefined; // GitHub removes a JIT runner once its job is done.
       }
     } catch (error) {
@@ -335,6 +350,7 @@ export class PickRunner extends DurableObject<Env> {
         error: error instanceof Error ? error.message : String(error),
         // D1 shedding load for a few seconds; the sweep picks up a job left waiting.
         ...(isOverloaded(error) ? { d1Overloaded: true } : {}),
+        ...(isTransient(error) ? { transient: true } : {}),
       };
     } finally {
       await client?.closeSession().catch((error) => logCleanupError("close session", work, error));
@@ -356,8 +372,13 @@ export class PickRunner extends DurableObject<Env> {
     const next = token ? await this.rearmIfQueued(work, attempt, token) : undefined;
     // The pick's wide event: one per pick runner, with how it ended and whether a replacement
     // runner follows (`next`).
-    const level =
-      outcome.result !== "error" ? log.info : outcome.d1Overloaded ? log.warn : log.error;
+    // An error is only an error once nothing follows it. A replacement runner (`rearm`) tries the
+    // job again and a finished job (`done`) needs nothing more; after a transient failure (GitHub
+    // 5xx, D1 overloaded) the sweep picks up a job left waiting. Those are warnings. Giving up on
+    // the job is the error.
+    const recovers =
+      next === "rearm" || next === "done" || (next !== "give_up" && outcome.transient === true);
+    const level = outcome.result !== "error" ? log.info : recovers ? log.warn : log.error;
     level("pick.finished", "pick finished", {
       ...outcome,
       next,
@@ -398,7 +419,11 @@ export class PickRunner extends DurableObject<Env> {
       status === null && attempt < MAX_ATTEMPTS ? "rearm" : afterAttempt(status, attempt);
     if (next === "done") return next;
     if (next === "give_up") {
-      log.warn("pick.gave_up", "pick gave up", { jobId: work.jobId, repo: work.repo, attempt });
+      log.warn("pick.gave_up", "pick gave up", {
+        jobId: work.jobId,
+        repo: work.repo,
+        attempt,
+      });
       return next;
     }
     await this.ctx.storage.put({ work, attempt: attempt + 1 });
@@ -663,7 +688,11 @@ function fixPage(env: Env, skipped: SkippedStep[]): FixLink | undefined {
   return { name: PAGE_NAMES[page], url: `${dashboardUrl(env)}/${page}` };
 }
 
-const PAGE_NAMES = { usage: "Usage", runners: "Runners", router: "Router" } as const;
+const PAGE_NAMES = {
+  usage: "Usage",
+  runners: "Runners",
+  router: "Router",
+} as const;
 
 // How long a job waits on its logs before it completes without them.
 const JOB_LOGS_TIMEOUT_MS = 5_000;

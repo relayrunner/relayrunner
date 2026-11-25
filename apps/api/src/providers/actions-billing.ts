@@ -52,12 +52,17 @@ import {
 import { GitHubAccessError, GitHubError } from "../github/github-api.ts";
 import { appInstallationToken } from "../github/github-app.ts";
 import { log } from "../log.ts";
+import { isTransient } from "../transient.ts";
 
 /**
  * Included Actions minutes per plan. GitHub counts them in Linux 2-core minutes; other runners use
  * the quota faster, in proportion to their price. Personal accounts use the same names (free, pro).
  */
-export const PLAN_QUOTA_MINUTES: Record<string, number> = { free: 2000, pro: 3000, team: 3000 };
+export const PLAN_QUOTA_MINUTES: Record<string, number> = {
+  free: 2000,
+  pro: 3000,
+  team: 3000,
+};
 
 // Enterprise orgs share their enterprise's pooled quota, which an org-level read can't see. Shown
 // as "not available" until the App is installed on the enterprise too.
@@ -185,7 +190,11 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
     );
   await enqueueInstallationTasks(
     env,
-    accounts.map((account) => ({ kind: "actions-usage", account, at: now.toISOString() })),
+    accounts.map((account) => ({
+      kind: "actions-usage",
+      account,
+      at: now.toISOString(),
+    })),
   );
   await db
     .delete(schema.actionsUsageReading)
@@ -288,7 +297,10 @@ export async function pollInstallation(
   const kind = accountKind(installation.accountType ?? "Organization");
   const enterprise = kind === "enterprise";
   const start = cycleStart(now);
-  const month = { year: start.getUTCFullYear(), month: start.getUTCMonth() + 1 };
+  const month = {
+    year: start.getUTCFullYear(),
+    month: start.getUTCMonth() + 1,
+  };
   const [plan, budgets, usage] = await Promise.allSettled([
     kind === "enterprise" ? "enterprise" : kind === "user" ? userPlan(token) : orgPlan(token, org),
     kind === "enterprise"
@@ -546,11 +558,17 @@ async function recordFailure(
     });
 }
 
+// The poll runs again next cycle, so a GitHub blip or D1 shedding load is a warning. The failure is
+// also recorded on the account, so the dashboard says why its usage is stale.
 function logFailure(installationId: number, error: unknown) {
-  log.error("provider.actions_usage_failed", "actions usage poll failed", {
-    installationId,
-    error,
-  });
+  (isTransient(error) ? log.warn : log.error)(
+    "provider.actions_usage_failed",
+    "actions usage poll failed",
+    {
+      installationId,
+      error,
+    },
+  );
 }
 
 /** One installation's usage this cycle, or null when there's no such installation. */
@@ -792,7 +810,10 @@ export async function refreshWorkspaceUsage(env: Env, workspaceId: string, now =
     ...enterprises.map((enterprise) => ({ ...enterprise, workspaceId: null })),
   ];
   const checked = await db
-    .select({ id: schema.actionsBilling.installationId, at: schema.actionsBilling.checkedAt })
+    .select({
+      id: schema.actionsBilling.installationId,
+      at: schema.actionsBilling.checkedAt,
+    })
     .from(schema.actionsBilling)
     .where(
       inArray(

@@ -65,14 +65,16 @@ async function readJson<T>(method: string, path: string, response: Response): Pr
   } catch {
     throw new GitHubError(
       502,
-      `${method} ${path} answered ${response.status} with an unreadable body (${text.length} bytes)`,
+      `${method} ${pathPattern(path)} answered ${response.status} with an unreadable body (${text.length} bytes)`,
     );
   }
 }
 
 /** GitHub's own words for a refused call, else `fallback`. */
 export async function refusalMessage(response: Response, fallback: string) {
-  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as {
+    message?: unknown;
+  } | null;
   return typeof body?.message === "string" ? body.message : fallback;
 }
 
@@ -183,11 +185,27 @@ function retryAfterSeconds(response: Response): number | undefined {
 
 /** The error for a failed GitHub call: rate limited, refused (403 or 404), or any other. */
 async function githubError(method: string, path: string, response: Response) {
-  const message = `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+  const message = `${method} ${pathPattern(path)} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
   if (isRateLimited(response)) return new GitHubRateLimitError(message, response);
   if (response.status === 403 || response.status === 404)
     return new GitHubAccessError(message, response.status);
   return new GitHubError(response.status, message);
+}
+
+/**
+ * `path` with its owners, repos, users and ids swapped for placeholders, for error messages. Workers
+ * Issues groups errors by message, so one failing endpoint shows as one issue (and one alert), not
+ * one per customer. The line that logs the error carries the repo or installation as fields.
+ */
+export function pathPattern(path: string) {
+  return path
+    .replace(/\?.*$/, "")
+    .replace(/^\/repos\/[^/]+\/[^/]+/, "/repos/:owner/:repo")
+    .replace(
+      /^\/(orgs|users|enterprises)\/[^/]+/,
+      (_, kind: string) => `/${kind}/:${kind.slice(0, -1)}`,
+    )
+    .replace(/\/\d+(?=\/|$)/g, "/:id");
 }
 
 // GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
