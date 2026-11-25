@@ -280,7 +280,10 @@ function RouteRepoSteps({
           onEdit={() => setStage("jobs")}
         >
           <p className="text-[13px] text-muted-foreground">
-            Pick the jobs to route. Each keeps its current runner as the fallback.
+            Pick the jobs to route.{" "}
+            {auto
+              ? "Each asks for its current runner's OS and size, so any runner that fits can take it."
+              : "Each keeps its current runner."}
           </p>
           <div className="grid gap-3">
             {repo.workflows.map((w) => (
