@@ -83,7 +83,6 @@ function EvaluatePage() {
   const { current } = Route.useRouteContext();
   const info = providerInfo(provider);
   usePageTitle(`Evaluate ${info.name}`);
-  const { icon, tile } = providerStyle(provider);
   return (
     <section className="grid max-w-5xl gap-8">
       <Link
@@ -94,28 +93,55 @@ function EvaluatePage() {
         <ArrowLeftIcon aria-hidden className="size-4" />
         {info.name}
       </Link>
-      <header className="flex min-w-0 items-center gap-3.5">
-        <span className={cn(TILE, "size-12 rounded-[10px] [&_svg]:scale-150", tile)}>{icon}</span>
-        <div className="grid min-w-0 gap-1">
-          <h1 className="text-2xl leading-tight font-bold tracking-[-0.01em]">
-            Evaluate {info.name}
-          </h1>
-          <p className="text-muted-foreground">
-            Run one of your workflows on {info.name} {EVALUATION_RUNS} times and compare it with how
-            it runs today. Your Router isn't used or changed.
-          </p>
-        </div>
-      </header>
       {id ? (
         <EvaluationView key={id} id={id} provider={provider} editable={canManage(current.role)} />
       ) : (
-        <Setup
-          provider={provider}
-          workspaceId={current.workspace.id}
-          editable={canManage(current.role)}
-        />
+        <>
+          <EvaluateHeader provider={provider} />
+          <Setup
+            provider={provider}
+            workspaceId={current.workspace.id}
+            editable={canManage(current.role)}
+          />
+        </>
       )}
     </section>
+  );
+}
+
+/**
+ * The page's title. Before an evaluation runs it explains what one does; once it runs, the run's
+ * repo, branch and runner label take that line, with the page's actions beside the title.
+ */
+function EvaluateHeader({
+  provider,
+  report,
+  actions,
+}: {
+  provider: string;
+  report?: EvaluationReport;
+  actions?: ReactNode;
+}) {
+  const { name } = providerInfo(provider);
+  const { icon, tile } = providerStyle(provider);
+  return (
+    <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+      <div className="flex min-w-0 flex-1 items-center gap-3.5">
+        <span className={cn(TILE, "size-12 rounded-[10px] [&_svg]:scale-150", tile)}>{icon}</span>
+        <div className="grid min-w-0 gap-1">
+          <h1 className="text-2xl leading-tight font-bold tracking-[-0.01em]">Evaluate {name}</h1>
+          {report ? (
+            <RunMeta report={report} />
+          ) : (
+            <p className="text-muted-foreground">
+              Run one of your workflows on {name} {EVALUATION_RUNS} times and compare it with how it
+              runs today. Your Router isn't used or changed.
+            </p>
+          )}
+        </div>
+      </div>
+      {actions && <div className="shrink-0">{actions}</div>}
+    </header>
   );
 }
 
@@ -537,34 +563,70 @@ function EvaluationView({
     if (report && !ACTIVE_STATES.includes(report.state)) setPolling(false);
   }, [report]);
   if (!report)
-    return error ? (
-      <p className="text-sm text-destructive">{error}</p>
-    ) : (
-      <p className="text-sm text-muted-foreground">Loading…</p>
+    return (
+      <>
+        <EvaluateHeader provider={provider} />
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
+      </>
     );
   const again = () => setRefresh((n) => n + 1);
+  // Still waiting on a dispatch, the evaluation is part of setup; once it runs there's no going
+  // back through the steps, so they give way to the run's details and what to do next.
+  if (report.state === "waiting")
+    return (
+      <>
+        <EvaluateHeader provider={provider} />
+        <EvaluateStepper at={EVALUATE_STEP.choose} provider={provider} />
+        <NoDispatch report={report} editable={editable} onChange={again} />
+      </>
+    );
   return (
     <>
-      <EvaluateStepper
-        at={report.state === "waiting" ? EVALUATE_STEP.choose : EVALUATE_STEP.run}
-        provider={provider}
-      />
-      {report.state === "waiting" ? (
-        <NoDispatch report={report} editable={editable} onChange={again} />
-      ) : (
-        <Results report={report} editable={editable} onChange={again} />
-      )}
+      <EvaluateHeader provider={provider} report={report} actions={<NextSteps report={report} />} />
+      <Results report={report} editable={editable} onChange={again} />
     </>
+  );
+}
+
+/** What to do once an evaluation has finished or stopped: nothing while it runs. */
+function NextSteps({ report }: { report: EvaluationReport }) {
+  if (ACTIVE_STATES.includes(report.state)) return null;
+  const { name } = providerInfo(report.provider);
+  // Stopped before any run finished: nothing to add to the Router on.
+  const empty =
+    (report.state === "failed" || report.state === "cancelled") &&
+    !report.attempts.some((a) => a.status === "done");
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" asChild>
+        <Link to="/providers/$provider/evaluate" params={{ provider: report.provider }}>
+          <RotateCcwIcon />
+          Evaluate another workflow
+        </Link>
+      </Button>
+      {!empty && (
+        <Button asChild>
+          <Link to="/router">
+            Add {name} to Router
+            <ArrowRightIcon />
+          </Link>
+        </Button>
+      )}
+    </div>
   );
 }
 
 function RunMeta({ report }: { report: EvaluationReport }) {
   const url = runUrl(report);
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
       <span className="flex items-center gap-1.5">
         <WorkflowIcon aria-hidden className="size-4" />
-        <span className="text-foreground">
+        <span>
           {report.repository} · {report.workflow ?? workflowFile(report.workflowPath)}
         </span>
       </span>
@@ -743,27 +805,8 @@ export function Results({
   );
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <RunMeta report={report} />
-        {!active && !preview && (
-          <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link to="/providers/$provider/evaluate" params={{ provider: report.provider }}>
-                <RotateCcwIcon />
-                Evaluate another workflow
-              </Link>
-            </Button>
-            {!empty && (
-              <Button asChild>
-                <Link to="/router">
-                  Add {name} to Router
-                  <ArrowRightIcon />
-                </Link>
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+      {/* The signed-in page shows the run's details in its header (EvaluateHeader). */}
+      {preview && <RunMeta report={report} />}
 
       {!active && <Dated report={report} />}
       {active && (
