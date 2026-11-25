@@ -37,7 +37,7 @@ function MembersPage() {
 
   return (
     <section>
-      <PageHeader title="Members">
+      <PageHeader className="max-w-3xl" title="Members">
         Everyone here shares {workspace.name}'s machines. Owners and admins manage the runner order
         and roles.
       </PageHeader>

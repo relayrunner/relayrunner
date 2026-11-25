@@ -110,7 +110,7 @@ function ProvidersPage() {
 
   return (
     <section>
-      <PageHeader title="Providers">
+      <PageHeader className="max-w-6xl" title="Providers">
         Where your jobs run, and what each place costs. Add a runner cloud by connecting its GitHub
         App, then use its label in <code>runs-on</code>.
       </PageHeader>

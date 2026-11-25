@@ -161,7 +161,7 @@ function SignalsPage() {
 
   return (
     <section>
-      <PageHeader title="Signals">
+      <PageHeader className="max-w-4xl" title="Signals">
         What makes your CI slow, costly or busier than it needs to be, and where. Updated every
         hour. <ExternalLink href={SIGNALS_DOCS}>How signals work</ExternalLink>
       </PageHeader>

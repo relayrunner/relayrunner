@@ -327,6 +327,7 @@ function RunnersPage() {
       {dialog}
       {othersDialog}
       <PageHeader
+        className="max-w-5xl"
         title="Runners"
         action={
           !machinesLoaded || (empty && others.length === 0) ? undefined : (

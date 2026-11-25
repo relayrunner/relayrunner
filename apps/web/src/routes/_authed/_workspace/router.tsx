@@ -117,6 +117,7 @@ function RouterPage() {
   return (
     <section>
       <PageHeader
+        className="max-w-5xl"
         title="Router"
         action={
           <div className="flex items-center gap-2">

@@ -179,6 +179,7 @@ function ActivityRoute() {
   return (
     <section>
       <PageHeader
+        className="max-w-6xl"
         title="Activity"
         action={savings && savings.checks > 0 && <SavingsLink savings={savings} />}
       >
