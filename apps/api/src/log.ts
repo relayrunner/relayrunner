@@ -94,6 +94,7 @@ const API_EVENTS = [
   "retry.cap_reached",
   "retry.decision",
   "runner.poll_message_dropped",
+  "status.read_failed",
   "stranded.cleanup_failed",
   "stranded.ended",
   "stranded.not_ended",

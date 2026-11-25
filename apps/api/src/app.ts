@@ -27,6 +27,7 @@ import { machineRoutes } from "./routes/machines/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { jobTimesRoutes } from "./routes/job-times.ts";
 import { signalRoutes } from "./routes/signals.ts";
+import { statusRoutes } from "./routes/status.ts";
 import { providerRoutes } from "./routes/providers.ts";
 import { evaluationRoutes } from "./routes/evaluations.ts";
 import { runRoutes } from "./routes/runs.ts";
@@ -69,6 +70,7 @@ app.use("*", (c, next) =>
 
 // Public routes. These never touch auth or D1.
 app.route("/health", healthRoutes);
+app.route("/status", statusRoutes);
 // Operator admin: everything under /api/admin checks the Access JWT (docs/cloudflare-access.md).
 // Webhook dead letters need no session or D1, so they work while D1 is down.
 app.use("/admin/*", requireAccess);

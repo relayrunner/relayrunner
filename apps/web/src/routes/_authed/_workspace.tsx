@@ -45,6 +45,7 @@ import { PagePending } from "@/components/page-pending";
 import { HISTORY_TABS, PERFORMANCE_TABS, type Tab } from "@/components/page-tabs";
 import { GithubIcon } from "@/components/provider-logos";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
+import { StatusBanner, StatusLink } from "@/components/service-status";
 import { parseWorkflowParam } from "@/lib/workflow-ref";
 import {
   RUNNER_DEFAULT_RANGE,
@@ -301,6 +302,7 @@ function WorkspaceLayout() {
       {/* The footer follows the page: at the bottom of the window on short pages, after the content
           on long ones. */}
       <main className="flex min-w-0 flex-col">
+        <StatusBanner />
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
           {/* From the click on another workspace until its page has loaded, so the old
@@ -559,6 +561,9 @@ function SidebarFoot({
           <BookOpenIcon aria-hidden className="size-4 shrink-0" />
           <span className="group-data-[collapsed]/sidebar:sr-only">Docs</span>
         </a>
+      </CollapsedTooltip>
+      <CollapsedTooltip label="Status" collapsed={collapsed}>
+        <StatusLink className={cn(navLink, navItem)} />
       </CollapsedTooltip>
     </div>
   );

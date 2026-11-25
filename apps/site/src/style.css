@@ -835,9 +835,33 @@ button {
 .footer-brand a.brand {
   color: var(--ink);
 }
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin-top: 16px;
+  font-size: 14px;
+}
+.footer-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--go);
+}
+.footer-status[data-state="degraded"] .status-dot,
+.footer-status[data-state="maintenance"] .status-dot {
+  background: var(--run);
+}
+.footer-status[data-state="downtime"] .status-dot {
+  background: #e5484d;
+}
+.footer-status:not([data-state="operational"]) {
+  color: var(--ink);
+}
 .footer-x {
   display: inline-flex;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 .footer-x svg {
   width: 18px;
