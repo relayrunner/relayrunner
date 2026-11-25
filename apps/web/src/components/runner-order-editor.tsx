@@ -223,7 +223,7 @@ export function RunnerOrderEditor({
                   className="mt-1 justify-self-start text-muted-foreground"
                 >
                   <PlusIcon aria-hidden />
-                  Add step
+                  Add runner
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
