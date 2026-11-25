@@ -142,7 +142,7 @@ export function StackedBars({
           height={height}
           role="img"
           aria-label={label}
-          className="block"
+          className="block max-w-full"
           onPointerMove={pointAt}
           onPointerDown={pointAt}
           onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}

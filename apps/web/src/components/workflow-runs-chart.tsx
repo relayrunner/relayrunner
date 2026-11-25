@@ -104,6 +104,7 @@ export function WorkflowRunsChart({
     <div ref={ref} className="w-full">
       {width > 0 && (
         <svg
+          className="block max-w-full"
           width={width}
           height={HEIGHT}
           role="img"

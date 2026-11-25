@@ -482,6 +482,7 @@ function Plot({
   return (
     <>
       <svg
+        className="block max-w-full"
         width={width}
         height={HEIGHT}
         role="img"
@@ -491,7 +492,6 @@ function Plot({
         onPointerDown={onPointerMove}
         // A touch leaves as soon as the finger lifts: keep its tip until the next tap.
         onPointerLeave={(event) => event.pointerType !== "touch" && onLeave()}
-        className="block"
       >
         <YAxis ticks={ticks} y={y} width={width} tickText={tickText} />
         {xAxis}

@@ -91,7 +91,7 @@ export function LineChart({
           height={height}
           role="img"
           aria-label={label}
-          className="block"
+          className="block max-w-full"
           onPointerMove={(event) => {
             const left = event.currentTarget.getBoundingClientRect().left;
             const i = Math.floor((event.clientX - left - PAD.left) / slot);
