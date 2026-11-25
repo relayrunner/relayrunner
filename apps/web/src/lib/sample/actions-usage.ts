@@ -24,6 +24,24 @@ export function sampleActionsUsage(): ActionsUsage {
     spendApp: true,
     enterprise: null,
   };
+  if (sample === "ph")
+    return {
+      accounts: [
+        {
+          ...base,
+          installationId: 2,
+          accountLogin: "acme-labs",
+          status: "ok",
+          reason: null,
+          plan: "team",
+          quotaMinutes: 3000,
+          usedMinutes: 1980,
+          netAmount: 0,
+          burnRatePerHour: 54,
+          budget: null,
+        },
+      ],
+    };
   return {
     accounts: [
       {

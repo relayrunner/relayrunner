@@ -21,6 +21,18 @@ export function sampleRunnerOrder(): RunnerOrderResponse {
       order: { steps: [{ key: "machine" }, { key: "boat" }, { key: "github" }] },
       isDefault: false,
     };
+  if (sample === "ph")
+    return {
+      order: {
+        steps: [
+          { key: "machine" },
+          { key: "github", limit: { percent: 80 } },
+          { key: "blacksmith", limit: { percent: 90 } },
+          { key: "boat", spendLimit: { usd: 50 } },
+        ],
+      },
+      isDefault: false,
+    };
   if (sample === "enterprise" || sample === "personal")
     return { order: { steps: [{ key: "machine" }, { key: "github" }] }, isDefault: false };
   return {
@@ -58,7 +70,7 @@ export function sampleRouterFreeMinutes(provider: FreeMinutesProvider): FreeMinu
 /** Depot connected and synced, plus Boat with `?sample=boat`. */
 export function sampleRouterConnections() {
   const { connections } = sampleConnections();
-  if (sampleParam() !== "boat") return { connections };
+  if (sampleParam() !== "boat" && sampleParam() !== "ph") return { connections };
   return {
     connections: connections.map((c) => (c.provider === "boat" ? { ...c, connected: true } : c)),
   };
