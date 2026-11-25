@@ -12,6 +12,7 @@
 <p>
   <a href="https://github.com/apps/relayrunner"><b>Install the GitHub App</b></a> &nbsp;·&nbsp;
   <a href="https://app.relayrunner.dev"><b>Dashboard</b></a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.dev/mac/download"><b>Download for Mac</b></a> &nbsp;·&nbsp;
   <a href="https://relayrunner.dev">Website</a> &nbsp;·&nbsp;
   <a href="https://relayrunner.dev/docs/get-started/quickstart">Quickstart</a> &nbsp;·&nbsp;
   <a href="https://relayrunner.dev/docs">Docs</a>
@@ -37,7 +38,7 @@ It's built for small teams and individuals who don't want to pay for every push,
 ## Get started
 
 1. **[Install the GitHub App](https://github.com/apps/relayrunner)** on an organization or personal account. Each install is its own workspace, and everyone who can see the install on GitHub is a member.
-2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline. On a Mac with Apple silicon, [RelayRunner for Mac](https://relayrunner.dev/docs/get-started/mac-app) does the same from the menu bar ([download](https://relayrunner.dev/mac/download), or `brew install --cask relayrunner/tap/relayrunner`).
+2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline. On a Mac with Apple silicon, [RelayRunner for Mac](#relayrunner-for-mac) does the same from the menu bar.
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 
    ```yaml
@@ -59,6 +60,23 @@ It's built for small teams and individuals who don't want to pay for every push,
    The relay job gets its answer in about a second and bills no minutes. If nothing fits, it fails with the reason instead of leaving the job queued.
 
 Public repositories never run on connected machines, since anyone could run code there through a pull request. The relay workflow and the optimized checks live in [relayrunner/actions](https://github.com/relayrunner/actions).
+
+## RelayRunner for Mac
+
+Turn your Mac into a runner from the menu bar. See what's running, how long it has left and what ran this week.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/mac-dark.png">
+  <img alt="The RelayRunner menu bar menu running a test job with about a minute left, next to the Jobs window listing today's jobs and one job's steps." src=".github/readme/mac-light.png">
+</picture>
+
+**[Download the latest version](https://relayrunner.dev/mac/download)** for Apple silicon and macOS 14 or newer, or install it with Homebrew:
+
+```sh
+brew install --cask relayrunner/tap/relayrunner
+```
+
+It updates itself. See the [Mac app docs](https://relayrunner.dev/docs/get-started/mac-app) for more.
 
 ## The dashboard
 
