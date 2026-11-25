@@ -30,7 +30,7 @@ describe("capText", () => {
     expect(cap({ key: "machine" })).toBe("When available");
     expect(cap({ key: "github", limit: { percent: 80 } })).toBe("Up to 2,400 minutes");
     expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("Up to 2,700 minutes");
-    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("Up to $1,500 a month");
+    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("Up to $1,500/month");
     expect(cap({ key: "boat" })).toBe("No cap");
     // Accounts with different quotas give a range; with no quota at all, the cap is a share.
     const bigger = { ...account, installationId: 2, quotaMinutes: 50_000 };
@@ -49,13 +49,13 @@ describe("handoffText", () => {
       text: "When every machine is busy or offline",
       warn: false,
     });
-    expect(handoff({ key: "github", limit: { percent: 80 } }).text).toBe("Once 2,400 min are used");
+    expect(handoff({ key: "github", limit: { percent: 80 } }).text).toBe(
+      "Once 2,400 minutes are used",
+    );
     expect(handoff({ key: "blacksmith", limit: { percent: 90 } }).text).toBe(
-      "Once 2,700 free min are used",
+      "Once 2,700 minutes are used",
     );
-    expect(handoff({ key: "depot", spendLimit: { usd: 50 } }).text).toBe(
-      "Once $50 is spent this month",
-    );
+    expect(handoff({ key: "depot", spendLimit: { usd: 50 } }).text).toBe("Once $50/month is spent");
   });
 
   test("warns under a step with no cap, Boat included until it's connected", () => {
