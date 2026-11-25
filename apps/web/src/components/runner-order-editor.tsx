@@ -306,6 +306,8 @@ const withIds = (steps: RunnerStep[]): StepItem[] =>
 
 /** What the Self-hosted step covers: runners added from GitHub and machines connected with the CLI. */
 const SELF_HOSTED_NOTE = "Your own runners and CLI-connected machines";
+/** GitHub's and Blacksmith's byline: free supply first, then pay as you go. */
+const INCLUDED_MINUTES_NOTE = "Your plan's minutes, then billed per minute";
 
 function AddItem({
   runner,
@@ -484,7 +486,10 @@ function StepCard({
             {step.key === "machine" && (
               <p className="text-xs text-muted-foreground">{SELF_HOSTED_NOTE}</p>
             )}
-            {step.key !== "machine" && step.key !== "github" && (
+            {(step.key === "github" || step.key === "blacksmith") && (
+              <p className="text-xs text-muted-foreground">{INCLUDED_MINUTES_NOTE}</p>
+            )}
+            {step.key !== "machine" && step.key !== "github" && step.key !== "blacksmith" && (
               <p className="text-xs text-muted-foreground">Sized per job under Workflows</p>
             )}
             {isFreeMinutesProvider(step.key) && !limit && free?.reason === "not_connected" && (
