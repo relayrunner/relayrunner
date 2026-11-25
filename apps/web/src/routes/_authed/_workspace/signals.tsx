@@ -895,15 +895,59 @@ function RunsPanel({
               )}
             </SheetDescription>
           </header>
-          {/* What the signal means, so the runs below read in context. */}
-          <div className="grid gap-2">
-            <p className="text-sm text-muted-foreground">{copy.about}</p>
+          {/* The row day by day when the report has it, else what the signal means, so the runs
+              below read in context. */}
+          <div className="grid gap-3">
+            {found && found !== "failed" && found.perDay?.length ? (
+              <PerDay values={found.perDay} label={`${copy.minutes} per day`} />
+            ) : (
+              <p className="text-sm text-muted-foreground">{copy.about}</p>
+            )}
             <SignalLinks id={row.signal} />
           </div>
           {body}
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// One bar per day, oldest first and ending today, with the total and the day with the most.
+function PerDay({ values, label }: { values: number[]; label: string }) {
+  const most = niceMax(Math.max(...values));
+  const today = Date.now();
+  const dayOf = (index: number) => today - (values.length - 1 - index) * 86_400_000;
+  const peak = values.indexOf(Math.max(...values));
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-baseline justify-between text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground">{count(sum(values))} min in all</span>
+      </div>
+      <div className="flex h-24 items-end gap-[2px]" role="img" aria-label={label}>
+        {values.map((value, index) => (
+          <div
+            key={index}
+            title={`${shortDate(dayOf(index))}: ${count(value)} min`}
+            className="flex h-full min-w-0 flex-1 flex-col justify-end"
+          >
+            <span
+              className={cn("block rounded-t-[2px] bg-run/70", value === 0 && "h-px bg-border")}
+              style={value ? { height: `${(value / most) * 100}%` } : undefined}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+        <span>{shortDate(dayOf(0))}</span>
+        <span>Today</span>
+      </div>
+      {values[peak]! > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Most on {shortDate(dayOf(peak))}, with {count(values[peak]!)} min.
+        </p>
+      )}
+    </div>
   );
 }
 

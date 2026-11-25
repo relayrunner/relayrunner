@@ -111,7 +111,13 @@ export type SignalRun = {
   cost: number;
 };
 
-export type SignalRunsReport = { days: number; runs: SignalRun[]; total: number };
+export type SignalRunsReport = {
+  days: number;
+  runs: SignalRun[];
+  total: number;
+  /** The row's minutes per day over `days`, oldest first and ending today, when known. */
+  perDay?: number[];
+};
 
 /** A signal row, as the runs panel names it. */
 export type SignalRowRef = { signal: SignalId; repository: string; subject: string };

@@ -122,7 +122,15 @@ export function sampleSignalRuns(row: SignalRowRef, days: number): SignalRunsRep
     runMs: (4 + ((n * 5) % 11)) * 60_000 + n * 7_000,
     cost: 0.1 * (n + 1),
   }));
-  return { days: Math.min(days, FILTERED_MAX_DAYS), runs, total: 34 };
+  const span = Math.min(days, FILTERED_MAX_DAYS);
+  // Waits bunch up on busy weekdays and fade at weekends.
+  const perDay = Array.from({ length: span }, (_, day) => {
+    const weekday = (day + 2) % 7 < 5;
+    const minutes = weekday ? 6 + ((day * 7) % 17) + (day % 5 === 0 ? 14 : 0) : (day * 3) % 4;
+    // About 1.3K minutes over 30 days, as the sample's busiest row shows.
+    return Math.round(minutes * 3.4);
+  });
+  return { days: span, runs, total: 34, perDay };
 }
 
 // Sample Breakdown views that add up to the sample totals: 12.7K minutes and $486 over 30 days.
