@@ -42,11 +42,16 @@ export function capText(
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
     if (limitHasNoMinutes(step, free)) return "No minutes to track";
-    const kind = step.key === "github" ? "minutes" : "free minutes";
-    const quota = quotaOf(step, accounts, free);
-    if (quota === null)
-      return `Up to ${step.limit.percent}% of ${step.key === "github" ? "included minutes" : kind}`;
-    return `Up to ${minutes((quota * step.limit.percent) / 100)} ${kind}`;
+    const { percent } = step.limit;
+    // Each GitHub account has its own quota, so with several the cap is a range.
+    const quotas =
+      step.key === "github"
+        ? accounts.filter(hasQuota).map((account) => account.quotaMinutes!)
+        : [quotaOf(step, accounts, free)].filter((quota) => quota !== null);
+    if (quotas.length === 0) return `Up to ${percent}% of minutes`;
+    const low = minutes((Math.min(...quotas) * percent) / 100);
+    const high = minutes((Math.max(...quotas) * percent) / 100);
+    return `Up to ${low === high ? low : `${low}–${high}`} minutes`;
   }
   if ("spendLimit" in step && step.spendLimit)
     return `Up to $${step.spendLimit.usd.toLocaleString("en-US")} a month`;

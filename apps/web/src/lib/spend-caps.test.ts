@@ -29,13 +29,15 @@ describe("capText", () => {
     const cap = (step: RunnerStep) => capText(step, [account], blacksmith);
     expect(cap({ key: "machine" })).toBe("When available");
     expect(cap({ key: "github", limit: { percent: 80 } })).toBe("Up to 2,400 minutes");
-    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("Up to 2,700 free minutes");
+    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("Up to 2,700 minutes");
     expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("Up to $1,500 a month");
     expect(cap({ key: "boat" })).toBe("No cap");
-    // Without exactly one account's quota, the minutes cap is a share.
-    expect(capText({ key: "github", limit: { percent: 80 } }, [])).toBe(
-      "Up to 80% of included minutes",
+    // Accounts with different quotas give a range; with no quota at all, the cap is a share.
+    const bigger = { ...account, installationId: 2, quotaMinutes: 50_000 };
+    expect(capText({ key: "github", limit: { percent: 80 } }, [account, bigger])).toBe(
+      "Up to 2,400–40,000 minutes",
     );
+    expect(capText({ key: "github", limit: { percent: 80 } }, [])).toBe("Up to 80% of minutes");
   });
 });
 
@@ -116,7 +118,7 @@ describe("Groundbox", () => {
   const groundbox = { groundbox: sampleFreeMinutes("groundbox", true) };
   test("caps and hands off in free minutes, and a connected uncapped step passes held jobs on", () => {
     expect(capText({ key: "groundbox", limit: { percent: 50 } }, [], groundbox)).toBe(
-      "Up to 1,500 free minutes",
+      "Up to 1,500 minutes",
     );
     expect(handoffText({ key: "groundbox" }, [], groundbox)).toEqual({
       text: "When Groundbox would hold the job",
