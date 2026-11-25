@@ -82,11 +82,11 @@ const structuredData = {
       <!-- Hero -->
       <section class="hero wrap" id="top">
         <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
-        <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
         <h1>One router for <span class="hl">every CI&nbsp;runner</span></h1>
         <p class="lede">
           Change runners with zero code changes. Each GitHub Actions job goes to the first free
           runner in your order.
+          <a href="https://github.com/relayrunner/relayrunner">Open source on GitHub</a>.
         </p>
         <div class="hero-actions">
           <a class="btn-go btn-lg" href="https://app.relayrunner.dev">Get started with GitHub</a>
@@ -199,7 +199,6 @@ const structuredData = {
       <!-- Your machine -->
       <section class="section wrap feature" id="connect">
         <div class="feature-copy">
-          <p class="kicker">Your machines</p>
           <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
           <p class="body">
             Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
@@ -234,15 +233,17 @@ const structuredData = {
       <section class="section wrap" id="providers" aria-labelledby="providers-h">
         <div class="split-head">
           <div>
-            <p class="kicker">Providers</p>
             <h2 id="providers-h">
               Route jobs to the runners <span class="hl">you already have.</span>
             </h2>
           </div>
-          <p class="body">
-            Each provider is a step in your runner order. Add, reorder or remove them in the
-            dashboard.
-          </p>
+          <div>
+            <p class="body">
+              Each provider is a step in your runner order. Add, reorder or remove them in the
+              dashboard.
+            </p>
+            <a class="feature-link" href="/integrations">Providers →</a>
+          </div>
         </div>
         <ul class="provider-grid">
           <li class="provider-card">
@@ -286,13 +287,13 @@ const structuredData = {
       <!-- Switch -->
       <section class="section wrap feature" id="how">
         <div class="feature-copy">
-          <p class="kicker">Switch</p>
           <h2>Change where jobs run <span class="hl">in seconds.</span></h2>
           <p class="body">
             Try a new provider, move work onto your machines, or send everything back to GitHub.
             You change the order in the dashboard, without a commit or pull request, and it applies
             to the next job.
           </p>
+          <a class="feature-link" href="/solutions/routing">Routing →</a>
         </div>
         <div class="panel" aria-hidden="true">
           <div class="mini-lanes">
@@ -337,19 +338,18 @@ const structuredData = {
           </p>
         </div>
         <div class="feature-copy">
-          <p class="kicker">Minutes</p>
           <h2>Stay inside your <span class="hl">included minutes.</span></h2>
           <p class="body">
             Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you reach
             it, jobs go to the next runner in your order.
           </p>
+          <a class="feature-link" href="/docs/guides/spend-controls">Spend controls →</a>
         </div>
       </section>
 
       <!-- See -->
       <section class="section wrap feature">
         <div class="feature-copy">
-          <p class="kicker">Compare</p>
           <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
           <p class="body">
             Every job shows where it ran and why. See how long the same job takes on each runner,
@@ -359,6 +359,7 @@ const structuredData = {
             Signals point out what makes CI slow or costly, like flaky jobs and long waits for a
             runner, and History says why each failed job failed.
           </p>
+          <a class="feature-link" href="/docs/dashboard/performance">Performance →</a>
         </div>
         <div class="panel" aria-hidden="true">
           <div class="times">
@@ -409,13 +410,15 @@ const structuredData = {
           </ul>
         </div>
         <div class="feature-copy">
-          <p class="kicker">Optimized checks <span class="kicker-note">Preview</span></p>
           <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
           <p class="body">
             PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a
             hosted runner bills each one as a full minute. Run them as optimized checks
             instead: they need no runner, post results to your pull request and use no minutes.
           </p>
+          <a class="feature-link" href="/docs/concepts/optimized-checks"
+            >Optimized checks →</a
+          ><span class="link-note">Preview</span>
         </div>
       </section>
 
@@ -428,10 +431,7 @@ const structuredData = {
             ran and how long it waited for a runner. Honeycomb, Grafana, Axiom or your own collector
             read it as is. Send job logs alongside, or archive them to your own bucket.
           </p>
-          <a class="feature-link" href="/docs/dashboard/telemetry">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
-            Set up telemetry
-          </a>
+          <a class="feature-link" href="/docs/dashboard/telemetry">Telemetry →</a>
         </div>
         <div class="panel" aria-hidden="true">
           <ol class="trace">
@@ -475,16 +475,12 @@ const structuredData = {
             failures and usage. Where you allow it, it can also change the runner order, pause a
             runner or set a job's size, and every change shows in Activity.
           </p>
-          <a class="feature-link" href="/docs/reference/mcp">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
-            Connect an agent
-          </a>
+          <a class="feature-link" href="/docs/reference/mcp">MCP server →</a>
         </div>
       </section>
 
       <!-- Dashboard -->
       <section class="section wrap" aria-labelledby="dashboard-h">
-        <p class="kicker">Dashboard</p>
         <h2 id="dashboard-h">See every runner and queued job <span class="hl">in one place.</span></h2>
         <p class="body">
           The Runners page shows what's running and waiting right now, how busy each runner is, and
@@ -498,7 +494,6 @@ const structuredData = {
 
       <!-- Safety -->
       <section class="section wrap" id="safety" aria-labelledby="safety-h">
-        <p class="kicker">Security</p>
         <h2 id="safety-h">Safe defaults for CI on <span class="hl">your own machines.</span></h2>
         <ul class="safety-grid">
           <li>
@@ -520,6 +515,7 @@ const structuredData = {
             </p>
           </li>
         </ul>
+        <a class="feature-link" href="/docs/reference/security">Security →</a>
       </section>
 
       <!-- Close -->
