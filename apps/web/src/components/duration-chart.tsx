@@ -1,7 +1,16 @@
 import { ChartColumnStackedIcon, ChartLineIcon } from "lucide-react";
 import { Count } from "@/components/count";
 import { memo, type ReactNode, useMemo, useState } from "react";
-import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
+import {
+  ChartTip,
+  DAY_FORMAT,
+  HOUR_FORMAT,
+  OrderAxis,
+  thinLabels,
+  TipRow,
+  topRounded,
+  useWidth,
+} from "@/components/chart-parts";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -15,7 +24,6 @@ import {
   bucketMsFor,
   chartStart,
   groupsByCount,
-  periodStarts,
   rollingSpreads,
 } from "@/lib/chart-trend";
 import { DAY_MS, HOUR_MS, niceStep, plural } from "@/lib/job-times";
@@ -597,7 +605,16 @@ function Trend({
   }, [shown, successes, slot, x, y, value]);
 
   const axis = useMemo(
-    () => <OrderAxis times={shown.map((each) => each.at)} slot={slot} width={width} />,
+    () => (
+      <OrderAxis
+        times={shown.map((each) => each.at)}
+        left={PAD.left}
+        slot={slot}
+        maxX={width - PAD.right - 32}
+        top={PAD.top}
+        bottom={HEIGHT - PAD.bottom}
+      />
+    ),
     [shown, slot, width],
   );
 
@@ -670,51 +687,6 @@ function Trend({
 
 /** How many successes it takes before the middle 80% is shaded. */
 const MIN_BAND = 12;
-
-/**
- * Labels under runs spaced by order rather than time: the date where each day starts, with a faint
- * line between days. Over three days or less, every few hours too where there's room.
- */
-function OrderAxis({ times, slot, width }: { times: number[]; slot: number; width: number }) {
-  const days = periodStarts(times, (at) => startOfDay(at));
-  const hours = days.length > 3 ? [] : periodStarts(times, (at) => startOfHours(at, 3));
-  const day = zoneFormat(DAY_FORMAT);
-  const hour = zoneFormat(HOUR_FORMAT);
-  // A label sits at the left edge of its first run's column.
-  const left = (index: number) => PAD.left + index * slot;
-  const kept = thinLabels(
-    [
-      ...days.map((index) => ({ x: left(index), text: day.format(times[index]!) })),
-      ...hours.map((index) => ({ x: left(index), text: hour.format(times[index]!) })),
-    ],
-    width - PAD.right - 32,
-  );
-  return (
-    <>
-      {days.slice(1).map((index) => (
-        <line
-          key={index}
-          x1={left(index)}
-          x2={left(index)}
-          y1={PAD.top}
-          y2={HEIGHT - PAD.bottom}
-          stroke="var(--rr-line)"
-          strokeDasharray="2 3"
-        />
-      ))}
-      {kept.map(({ x, text }) => (
-        <text
-          key={x}
-          x={x}
-          y={HEIGHT - 6}
-          className="fill-muted-foreground text-[10px] tabular-nums"
-        >
-          {text}
-        </text>
-      ))}
-    </>
-  );
-}
 
 /** A bucket's day, or its span of hours. */
 const bucketText = (at: number, bucketMs: number) =>
@@ -858,8 +830,6 @@ function YAxis({
   ));
 }
 
-const HOUR_FORMAT: Intl.DateTimeFormatOptions = { hour: "numeric" };
-const DAY_FORMAT: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 const BUCKET_FORMAT: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
@@ -908,18 +878,6 @@ function XAxis({ frame }: { frame: Frame }) {
       {text}
     </text>
   ));
-}
-
-/**
- * The axis labels that fit, taken in the order given so the first win (dates before hours): each
- * at least 56px from the others, and none past `maxX`.
- */
-function thinLabels(candidates: { x: number; text: string }[], maxX: number) {
-  const kept: { x: number; text: string }[] = [];
-  for (const label of candidates)
-    if (label.x <= maxX && kept.every((other) => Math.abs(other.x - label.x) >= 56))
-      kept.push(label);
-  return kept;
 }
 
 /** The hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */

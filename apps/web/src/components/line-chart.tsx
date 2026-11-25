@@ -1,5 +1,5 @@
-// Lines over days (or weeks), one per series, with gaps where a series has no value. The provider
-// pages draw each runner type's queue wait, job time or failure rate.
+// Lines over days (or weeks), one per series. Where a series has no value, a faint dashed line
+// bridges the gap, unless the chart leaves gaps blank. The provider pages draw each runner type's queue wait, job time or failure rate.
 import { useState } from "react";
 import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
 import { Swatch } from "@/components/stacked-bars";
@@ -26,6 +26,7 @@ export function LineChart({
   label,
   ceiling = Infinity,
   height = 220,
+  bridge = true,
 }: {
   starts: number[];
   bucketMs: number;
@@ -37,6 +38,8 @@ export function LineChart({
   /** The most the axis goes up to, such as 100 for a percentage. */
   ceiling?: number;
   height?: number;
+  /** Join values across missing ones with a faint dashed line. */
+  bridge?: boolean;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
@@ -64,6 +67,18 @@ export function LineChart({
       }
       d += `${open ? "L" : "M"}${x(i).toFixed(1)} ${y(value).toFixed(1)}`;
       open = true;
+    });
+    return d;
+  };
+  // A segment across each stretch of missing values, from the value before it to the one after.
+  const bridges = (values: (number | null)[]) => {
+    let d = "";
+    let last: number | undefined;
+    values.forEach((value, i) => {
+      if (value === null) return;
+      if (last !== undefined && last < i - 1)
+        d += `M${x(last).toFixed(1)} ${y(values[last]!).toFixed(1)}L${x(i).toFixed(1)} ${y(value).toFixed(1)}`;
+      last = i;
     });
     return d;
   };
@@ -116,6 +131,16 @@ export function LineChart({
           )}
           {lines.map((line) => (
             <g key={line.key}>
+              {bridge && (
+                <path
+                  d={bridges(line.values)}
+                  fill="none"
+                  stroke={line.color}
+                  strokeOpacity={0.5}
+                  strokeWidth={1.5}
+                  strokeDasharray="3 4"
+                />
+              )}
               <path
                 d={path(line.values)}
                 fill="none"
