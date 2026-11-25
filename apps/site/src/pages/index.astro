@@ -25,7 +25,7 @@ const TRACE = [
   { name: "Run tests", time: "1m 58s", from: 29, to: 95, depth: 2 },
 ];
 // What's new: the latest platform updates from the changelog, each with its type's icon (Lucide).
-const updates = await latestUpdates(6);
+const updates = latestUpdates(6);
 const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const UPDATE_ICONS: Record<UpdateType, string> = {
   Feature:
