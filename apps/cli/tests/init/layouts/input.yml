@@ -1,0 +1,49 @@
+# Layouts init has to edit without touching anything else.
+name: Layouts
+on: [push]
+
+jobs:
+  # The first job, with a comment above it.
+  build:
+    runs-on: ubuntu-latest # where it ran before
+    steps:
+      - run: make build
+
+  test:
+    needs: build
+    runs-on: "ubuntu-latest"
+    steps:
+      - run: make test
+
+  e2e:
+    needs: [build, test]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - run: make e2e
+
+  docs:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - run: make docs
+
+  relay-package:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "a job that already has the relay's name"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make package
+
+  deploy:
+    needs: package
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: make deploy
+
+  shared:
+    uses: ./.github/workflows/shared.yml

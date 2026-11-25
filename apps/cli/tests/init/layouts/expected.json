@@ -1,0 +1,54 @@
+{
+  "relay": "<relay>",
+  "routed": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "build",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "test",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "e2e",
+      "with": {
+        "cpus": "4",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "docs",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "relay-package",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "package",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    }
+  ]
+}

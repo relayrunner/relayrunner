@@ -1,0 +1,68 @@
+{
+  "relay": "<relay>",
+  "routed": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "lint",
+      "with": {
+        "github": "ubuntu-latest",
+        "machine": "self-hosted"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "test",
+      "with": {
+        "github": "ubuntu-24.04",
+        "machine": "self-hosted"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "arm",
+      "with": {
+        "github": "ubuntu-24.04-arm",
+        "machine": "self-hosted"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "mac",
+      "with": {
+        "github": "macos-15",
+        "machine": "macOS"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "mac-intel",
+      "with": {
+        "github": "macos-13",
+        "machine": "macOS"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "mac-large",
+      "with": {
+        "github": "macos-latest-large",
+        "machine": "macOS"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "mac-xlarge",
+      "with": {
+        "github": "macos-latest-xlarge",
+        "machine": "macOS"
+      },
+      "warnings": []
+    }
+  ]
+}

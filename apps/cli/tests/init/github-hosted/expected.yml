@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  relay-lint:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+
+  lint:
+    needs: relay-lint
+    runs-on: ${{ needs.relay-lint.outputs.runner }}
+    steps:
+      - run: npm run lint
+
+  relay-test:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+
+  test:
+    needs: relay-test
+    runs-on: ${{ needs.relay-test.outputs.runner }}
+    steps:
+      - run: npm test
+
+  relay-arm:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      arch: arm64
+
+  arm:
+    needs: relay-arm
+    runs-on: ${{ needs.relay-arm.outputs.runner }}
+    steps:
+      - run: npm test
+
+  relay-mac:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: macos
+
+  mac:
+    needs: relay-mac
+    runs-on: ${{ needs.relay-mac.outputs.runner }}
+    steps:
+      - run: swift test
+
+  relay-mac-intel:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: macos
+      arch: x64
+
+  mac-intel:
+    needs: relay-mac-intel
+    runs-on: ${{ needs.relay-mac-intel.outputs.runner }}
+    steps:
+      - run: swift test
+
+  relay-mac-large:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: macos
+      arch: x64
+
+  mac-large:
+    needs: relay-mac-large
+    runs-on: ${{ needs.relay-mac-large.outputs.runner }}
+    steps:
+      - run: swift test
+
+  relay-mac-xlarge:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: macos
+
+  mac-xlarge:
+    needs: relay-mac-xlarge
+    runs-on: ${{ needs.relay-mac-xlarge.outputs.runner }}
+    steps:
+      - run: swift test
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - run: npm test
+
+  matrix:
+    strategy:
+      matrix:
+        node: [20, 22]
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
