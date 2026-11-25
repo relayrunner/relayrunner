@@ -43,38 +43,46 @@ export function bucketIndex(at: number, start: number, end: number, bucketMs: nu
   return Math.min(Math.max(Math.floor((at - start) / bucketMs), 0), last);
 }
 
-/** The middle and spread of what finished in one bucket. */
-export type Spread = { at: number; count: number; p10: number; median: number; p90: number };
+/** The middle and spread of the values around one point. */
+type Spread = { p10: number; median: number; p90: number };
+
+/** How many neighbours a rolling median takes in: about a tenth of the runs, odd, from 5 to 21. */
+export function rollingWindow(count: number) {
+  const size = Math.min(Math.max(Math.round(count / 10), 5), 21);
+  return Math.min(size % 2 ? size : size + 1, count);
+}
 
 /**
- * The median, 10th and 90th percentile of the values in each `bucketMs` from `start` to `end`.
- * Buckets with nothing in them are left out, so a line through them breaks there.
+ * The median, 10th and 90th percentile of the `window` values around each one, in order. Near
+ * either end the window slides inward rather than shrinking, so the line doesn't jump there.
  */
-export function spreads(
-  values: { at: number; value: number }[],
-  start: number,
-  end: number,
-  bucketMs: number,
-): Spread[] {
-  const buckets = new Map<number, number[]>();
-  for (const { at, value } of values) {
-    const index = bucketIndex(at, start, end, bucketMs);
-    const list = buckets.get(index);
-    if (list) list.push(value);
-    else buckets.set(index, [value]);
-  }
-  return [...buckets]
-    .sort(([a], [b]) => a - b)
-    .map(([index, list]) => {
-      list.sort((a, b) => a - b);
-      return {
-        at: start + index * bucketMs,
-        count: list.length,
-        p10: quantile(list, 0.1),
-        median: quantile(list, 0.5),
-        p90: quantile(list, 0.9),
-      };
-    });
+export function rollingSpreads(values: number[], window = rollingWindow(values.length)): Spread[] {
+  const size = Math.min(Math.max(window, 1), values.length);
+  const half = Math.floor(size / 2);
+  return values.map((_, index) => {
+    const from = Math.min(Math.max(index - half, 0), values.length - size);
+    const sorted = values.slice(from, from + size).sort((a, b) => a - b);
+    return {
+      p10: quantile(sorted, 0.1),
+      median: quantile(sorted, 0.5),
+      p90: quantile(sorted, 0.9),
+    };
+  });
+}
+
+/**
+ * Where a run of times, oldest first, moves into a new period: the index of each time whose
+ * `periodOf` differs from the one before, starting with 0.
+ */
+export function periodStarts(times: number[], periodOf: (at: number) => number) {
+  const starts: number[] = [];
+  let last: number | undefined;
+  times.forEach((at, index) => {
+    const period = periodOf(at);
+    if (period !== last) starts.push(index);
+    last = period;
+  });
+  return starts;
 }
 
 /** The q-quantile (0 to 1) of ascending values, interpolated the way the API's job times are. */
