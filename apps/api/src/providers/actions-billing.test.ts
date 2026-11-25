@@ -557,6 +557,32 @@ describe("pollActionsUsage", () => {
     expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
   });
 
+  test("a personal token GitHub no longer accepts needs a sign-in, and doesn't log an error", async () => {
+    const { db, installationId } = await connectedOrg("User");
+    fakeGitHub({ usageStatus: 401 });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await runActionsUsagePoll(env, NOW);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
+    const logged = errors.mock.calls.flat().map(String);
+    expect(logged.filter((line) => line.includes(`"installationId":${installationId},`))).toEqual(
+      [],
+    );
+  });
+
+  test("an owner's token that couldn't be renewed needs a sign-in, without asking GitHub", async () => {
+    const { db, installationId, org } = await connectedOrg("User");
+    // Expired, with no refresh token: getAccessToken hands back the expired token as it is.
+    await db
+      .update(schema.account)
+      .set({ accessTokenExpiresAt: new Date(Date.now() - 60_000), refreshToken: null })
+      .where(eq(schema.account.providerId, "github"));
+    const calls = fakeGitHub({});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await runActionsUsagePoll(env, NOW);
+    expect(calls.some((call) => call.startsWith(`/users/${org}/`))).toBe(false);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
+  });
+
   test("a personal token without Plan: read is a missing permission", async () => {
     const { db, installationId } = await connectedOrg("User");
     fakeGitHub({ usageStatus: 404 });

@@ -141,6 +141,25 @@ describe("toWebhookMessage", () => {
     ).toMatchObject({ senderId: null });
   });
 
+  test("keeps who revoked the App's authorization, and skips one without a sender", () => {
+    expect(
+      toWebhookMessage(
+        "github_app_authorization",
+        "d",
+        { action: "revoked", sender: { id: 37834384, login: "octo" } },
+        "t",
+      ),
+    ).toEqual({
+      deliveryId: "d",
+      action: "revoked",
+      installationId: null,
+      receivedAt: "t",
+      event: "github_app_authorization",
+      senderId: 37834384,
+    });
+    expect(toWebhookMessage("github_app_authorization", "d", { action: "revoked" })).toBeNull();
+  });
+
   test("keeps only the repo fields of a repository event, and skips one without a repo", () => {
     const repository = {
       id: 3,

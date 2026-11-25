@@ -152,7 +152,11 @@ export type WebhookMessage =
       event: "check_suite";
       repository: { id: number; fullName: string };
       checkSuite: CheckSuite;
-    });
+    })
+  // Someone revoked the App's authorization to act as them (GitHub › Settings › Applications), so
+  // their sign-in tokens stop working. GitHub sends it to every App whatever it subscribes to; it
+  // has no installation. The only action is `revoked`.
+  | (Base & { event: "github_app_authorization"; senderId: number });
 
 // The pull_request actions that give a PR a new title or head commit. `edited` counts only when
 // the title changed (a body edit doesn't need a new check).
@@ -284,6 +288,10 @@ export function toWebhookMessage(
         added: repos(payload.repositories_added),
         removed: repos(payload.repositories_removed),
       };
+    case "github_app_authorization": {
+      if (!isRecord(payload.sender) || typeof payload.sender.id !== "number") return null;
+      return { ...base, event, senderId: payload.sender.id };
+    }
     case "repository": {
       const repo = payload.repository;
       if (!isRecord(repo) || typeof repo.id !== "number" || typeof repo.full_name !== "string")

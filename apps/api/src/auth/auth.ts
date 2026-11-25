@@ -10,6 +10,7 @@ import { sendEmail } from "../email.ts";
 import { githubBusy } from "../github/github-busy.ts";
 import { installSignIn } from "../github/install-sign-in.ts";
 import { syncMembershipsFromGitHub } from "../github/memberships.ts";
+import { refreshGitHubToken } from "../github/user-tokens.ts";
 import type { Env } from "../env.ts";
 import { log } from "../log.ts";
 
@@ -96,6 +97,12 @@ export function createAuth(
       github: {
         clientId: env.GITHUB_APP_CLIENT_ID,
         clientSecret: env.GITHUB_APP_CLIENT_SECRET,
+        // Throws when GitHub refuses a renewal, which Better Auth's own call takes for a success
+        // (src/github/user-tokens.ts).
+        refreshAccessToken: refreshGitHubToken({
+          clientId: env.GITHUB_APP_CLIENT_ID,
+          clientSecret: env.GITHUB_APP_CLIENT_SECRET,
+        }),
       },
     },
     databaseHooks: {

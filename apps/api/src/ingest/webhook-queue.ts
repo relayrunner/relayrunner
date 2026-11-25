@@ -54,6 +54,7 @@ import { errorMessage } from "../errors.ts";
 import { log, logDispatch, withLogContext } from "../log.ts";
 import type { Fields } from "@relayrunner/log";
 import { advanceEvaluation, resumeWaitingEvaluations } from "../reports/evaluations.ts";
+import { forgetGitHubTokens } from "../github/user-tokens.ts";
 
 // The main consumer's max_retries in wrangler.jsonc. From this attempt on, a failure records its
 // error so the dead letter can say why it failed.
@@ -296,6 +297,15 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
         );
       }
       return { handler: "repository" };
+    case "github_app_authorization": {
+      // Their tokens no longer work: forget them, so reads that need them ask for a new sign-in.
+      const forgotten = await forgetGitHubTokens(createDb(env.DB), message.senderId);
+      log.info("github.authorization_revoked", "GitHub App authorization revoked", {
+        githubUserId: message.senderId,
+        forgotten,
+      });
+      return { handler: "authorization_revoked" };
+    }
     case "pull_request":
       // Throws to retry: a check run that never posts leaves the PR without its check.
       await checkPullRequestTitle(env, message);

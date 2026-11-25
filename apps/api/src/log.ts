@@ -116,6 +116,8 @@ const API_EVENTS = [
   "pick.finished",
   "retry.requested",
   "github.membership_sync_failed",
+  "github.token_refresh_refused",
+  "github.authorization_revoked",
   "d1_cache.unreadable",
   "d1.read_retried",
   "flags.evaluation_failed",

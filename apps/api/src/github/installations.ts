@@ -3,6 +3,7 @@ import type { Auth } from "../auth/auth.ts";
 import { type Db, schema } from "../db/index.ts";
 import type { GitHubInstallation } from "./github.ts";
 import { runnerScope } from "./runners-api.ts";
+import { isExpired } from "./user-tokens.ts";
 
 // Records what GitHub says about an installation: the account it's on, which repos it sees, and
 // whether it's suspended. `observedAt` orders updates: a retried `suspend` that lands after a newer
@@ -128,10 +129,13 @@ export async function userGitHubToken(auth: Auth, db: Db, userId: string) {
     .limit(1);
   if (!account) return null;
   try {
-    const { accessToken } = await auth.api.getAccessToken({
+    const { accessToken, accessTokenExpiresAt } = await auth.api.getAccessToken({
       body: { accountId: account.id, userId },
     });
-    return accessToken ?? null;
+    // Still expired means the renewal didn't happen (src/github/user-tokens.ts): GitHub would
+    // only answer 401. A forgotten token comes back empty.
+    if (!accessToken || isExpired(accessTokenExpiresAt)) return null;
+    return accessToken;
   } catch {
     return null;
   }
