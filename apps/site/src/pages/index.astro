@@ -15,6 +15,14 @@ import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
 const site = Astro.site!.origin;
+// The telemetry mock: one run's trace, each span placed on the run's timeline in percent.
+const TRACE = [
+  { name: "RUN ci", time: "3m 02s", from: 0, to: 100, depth: 0 },
+  { name: "Waiting for a runner", time: "12s", from: 0, to: 7, depth: 1, wait: true },
+  { name: "ci / test", time: "2m 41s", from: 7, to: 96, depth: 1 },
+  { name: "Install", time: "38s", from: 8, to: 29, depth: 2 },
+  { name: "Run tests", time: "1m 58s", from: 29, to: 95, depth: 2 },
+];
 // Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
 const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
   (id) => !["blacksmith", "github", "cloudflare"].includes(id),
@@ -195,8 +203,9 @@ const structuredData = {
           <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
           <p class="body">
             Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
-            taking jobs. Close the lid and jobs go to the next runner in your order. Share it with your
-            team or keep it private.
+            taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries
+            on, a job cut off mid-run starts again on the next free runner. Share it with your team or
+            keep it private.
           </p>
           <p class="body">
             On a Mac, the menu bar app does the same with one switch, with nothing to keep open in a
@@ -346,6 +355,10 @@ const structuredData = {
             Every job shows where it ran and why. See how long the same job takes on each runner,
             and how much you use each provider.
           </p>
+          <p class="body">
+            Signals point out what makes CI slow or costly, like flaky jobs and long waits for a
+            runner, and History says why each failed job failed.
+          </p>
         </div>
         <div class="panel" aria-hidden="true">
           <div class="times">
@@ -406,6 +419,71 @@ const structuredData = {
         </div>
       </section>
 
+      <!-- Telemetry -->
+      <section class="section wrap feature" id="telemetry">
+        <div class="feature-copy">
+          <p class="kicker">Telemetry</p>
+          <h2>Send every run to <span class="hl">your observability tool.</span></h2>
+          <p class="body">
+            Each workflow run goes out as an OpenTelemetry trace: its jobs and steps, where each job
+            ran and how long it waited for a runner. Honeycomb, Grafana, Axiom or your own collector
+            read it as is. Send job logs alongside, or archive them to your own bucket.
+          </p>
+          <a class="feature-link" href="/docs/dashboard/telemetry">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
+            Set up telemetry
+          </a>
+        </div>
+        <div class="panel" aria-hidden="true">
+          <ol class="trace">
+            {
+              TRACE.map((span) => (
+                <li class:list={{ wait: span.wait }} style={`--depth: ${span.depth}`}>
+                  <b>{span.name}</b>
+                  <span class="trace-track">
+                    <i style={`--from: ${span.from}%; --to: ${span.to}%`} />
+                  </span>
+                  <code>{span.time}</code>
+                </li>
+              ))
+            }
+          </ol>
+          <p class="panel-note">
+            <b>ci / test</b> ran on <b>Ada's MacBook Pro</b> after 12s in the queue.
+          </p>
+        </div>
+      </section>
+
+      <!-- Agents -->
+      <section class="section wrap feature feature-flip" id="agents">
+        <div class="panel" aria-hidden="true">
+          <div class="term">
+            <div class="term-bar">Claude Code · relayrunner MCP</div>
+            <div class="term-body chat">
+              <p><span class="mute">&gt;</span> What's making our CI slow this week?</p>
+              <p class="mute">
+                ci / e2e waited 4 min for a runner on average. Every machine was busy at peak.
+              </p>
+              <p><span class="mute">&gt;</span> Move Blacksmith above GitHub-hosted.</p>
+              <p class="go-text">✓ Runner order saved. Next job: Blacksmith, if no machine is free.</p>
+            </div>
+          </div>
+        </div>
+        <div class="feature-copy">
+          <p class="kicker">Agents</p>
+          <h2>Ask your agent <span class="hl">about your CI.</span></h2>
+          <p class="body">
+            Connect the MCP server to Claude, Cursor or VS Code. Your agent sees your runners, runs,
+            failures and usage. Where you allow it, it can also change the runner order, pause a
+            runner or set a job's size, and every change shows in Activity.
+          </p>
+          <a class="feature-link" href="/docs/reference/mcp">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
+            Connect an agent
+          </a>
+        </div>
+      </section>
+
       <!-- Dashboard -->
       <section class="section wrap" aria-labelledby="dashboard-h">
         <p class="kicker">Dashboard</p>
@@ -439,7 +517,9 @@ const structuredData = {
           </li>
           <li>
             <h3>Jobs fail with a reason</h3>
-            <p>If no runner can take a job, it fails and tells you why instead of waiting in the queue.</p>
+            <p>
+              If no runner can take a job, it fails right away and your pull request's checks say why.
+            </p>
           </li>
         </ul>
       </section>

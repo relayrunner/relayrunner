@@ -142,8 +142,17 @@ const check = "M5 12l5 5 9-10";
       <details open>
         <summary>What if nothing in my order can take the job?</summary>
         <p>
-          The relay fails right away with one line that says why each provider couldn't take it.
-          Keep GitHub-hosted at the end of your order and a job always has somewhere to go.
+          The relay fails right away with one line that says why each provider couldn't take it, and
+          your pull request's checks show the same reason. Keep GitHub-hosted at the end of your order
+          and a job always has somewhere to go.
+        </p>
+      </details>
+      <details>
+        <summary>What if a runner fails partway through a job?</summary>
+        <p>
+          Turn on <a href="/docs/concepts/routing#automatic-retries">automatic retries</a>. A job whose
+          runner crashed or went offline runs again from your runner order, and the Activity page
+          shows why.
         </p>
       </details>
       <details>

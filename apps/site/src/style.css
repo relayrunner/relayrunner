@@ -681,6 +681,74 @@ button {
   font-size: 12px;
 }
 
+/* Telemetry: a trace waterfall. Each bar sits between --from and --to on the run's timeline. */
+.trace {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+}
+.trace li {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 4.5rem;
+  column-gap: 14px;
+  align-items: center;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 14px;
+}
+.trace li:last-child {
+  border-bottom: 0;
+}
+.trace b {
+  overflow: hidden;
+  padding-left: calc(var(--depth) * 14px);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace li:not(:first-child) b {
+  font-weight: 500;
+}
+.trace-track {
+  position: relative;
+  height: 10px;
+}
+.trace-track i {
+  position: absolute;
+  inset: 0 calc(100% - var(--to)) 0 var(--from);
+  border-radius: 3px;
+  background: var(--ink-2);
+  opacity: 0.55;
+}
+.trace li:first-child .trace-track i {
+  opacity: 0.85;
+}
+.trace .wait .trace-track i {
+  background: var(--run);
+  opacity: 1;
+}
+.trace code {
+  color: var(--mute);
+  font-size: 13px;
+  text-align: right;
+}
+
+/* Agents: a short chat in a terminal. */
+.chat p + p {
+  margin-top: 10px;
+}
+.chat {
+  font-size: 14px;
+}
+@media (max-width: 640px) {
+  .trace li {
+    grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 3.5rem;
+    column-gap: 10px;
+    padding-inline: 12px;
+  }
+}
+
 /* ---------- Safety ---------- */
 
 .safety-grid {

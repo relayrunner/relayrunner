@@ -145,6 +145,20 @@ const jobs = [
         </p>
       </details>
       <details>
+        <summary>Can my coding agents check on CI?</summary>
+        <p>
+          Yes. Connect the <a href="/docs/reference/mcp">MCP server</a> and your agent can see runs,
+          failures and waits for a runner. Where you allow it, it can change the runner order too.
+        </p>
+      </details>
+      <details>
+        <summary>What if a machine goes offline mid-job?</summary>
+        <p>
+          Turn on <a href="/docs/concepts/routing#automatic-retries">automatic retries</a> and the job
+          runs again on the next free runner in your order.
+        </p>
+      </details>
+      <details>
         <summary>How do I see where time goes?</summary>
         <p>
           The Performance page shows how long each job takes on each runner and how long it waited for
