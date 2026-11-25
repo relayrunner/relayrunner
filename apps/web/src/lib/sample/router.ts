@@ -79,7 +79,7 @@ export function sampleRouterConnections() {
 export function sampleProviderSpend(): { spend: ProviderSpend } {
   return {
     spend: {
-      boat: 41.6,
+      boat: sampleParam() === "ph" ? 21.4 : 41.6,
       depot: 12.4,
       blacksmith: 0,
       namespace: 7.25,

@@ -35,7 +35,7 @@ export function sampleActionsUsage(): ActionsUsage {
           reason: null,
           plan: "enterprise",
           quotaMinutes: 50000,
-          usedMinutes: 31400,
+          usedMinutes: 50000,
           netAmount: 0,
           burnRatePerHour: 820,
           budget: null,
