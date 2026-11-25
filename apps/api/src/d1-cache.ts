@@ -23,7 +23,7 @@ export function cachedRead<T>(name: string, read: (db: Db) => Promise<T>, fallba
         cached = { value, until: now + CACHE_MS };
         return value;
       } catch (error) {
-        log.error("d1_cache.unreadable", `${name} unreadable`, { cache: name, error });
+        log.warn("d1_cache.unreadable", `${name} unreadable`, { cache: name, error });
         return fallback();
       }
     },

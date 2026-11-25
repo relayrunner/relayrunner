@@ -11,8 +11,9 @@ import { addLogContext } from "./log.ts";
 export type SpanAttributes = Record<string, string | number | boolean | null | undefined>;
 
 /**
- * Run `fn` inside a span named `name`. A throw marks the span as an error, records the exception
- * and rethrows.
+ * Run `fn` inside a span named `name`. A throw marks the span as an error and rethrows. It doesn't
+ * record the exception: Workers Issues reports every recorded exception, including ones the caller
+ * handles (a queue retry), and a throw nobody handles is reported as the invocation's own failure.
  */
 export function traced<T>(
   name: string,
@@ -24,7 +25,6 @@ export function traced<T>(
     try {
       return await fn(span);
     } catch (error) {
-      span.recordException(error instanceof Error ? error : String(error));
       span.setStatus({
         code: "error",
         message: error instanceof Error ? error.message : String(error),

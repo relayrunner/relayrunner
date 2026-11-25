@@ -306,8 +306,8 @@ export async function pollInstallation(
   if (usage.status === "rejected") {
     const refused = usage.reason instanceof GitHubAccessError;
     if (refused && fallback) return pollInstallation(db, await fallback(), installation, now);
-    // A personal account reads with its owner's sign-in token: GitHub answering 401 means that
-    // sign-in no longer works (authorization revoked, say), the same as having no token.
+    // A personal account reads with its owner's token, which GitHub rejects once it expires or
+    // is revoked: the owner has to sign in again.
     const signedOut =
       kind === "user" && usage.reason instanceof GitHubError && usage.reason.status === 401;
     await recordFailure(
@@ -324,8 +324,8 @@ export async function pollInstallation(
       now,
       { plan: plan.status === "fulfilled" ? plan.value : undefined },
     );
-    // A refusal or a lapsed sign-in is the account's setup, not a fault: it's recorded above and
-    // the dashboard says how to fix it (refusals also back off, REFUSED_RETRY_MS). Only unexpected
+    // A refusal or a signed-out owner is the account's setup, not a fault: it's recorded above, the
+    // dashboard says how to fix it, and the poll backs off (REFUSED_RETRY_MS). Only unexpected
     // failures log.
     if (!refused && !signedOut) logFailure(installation.id, usage.reason);
     return;

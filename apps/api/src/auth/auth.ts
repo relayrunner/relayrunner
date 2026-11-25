@@ -5,6 +5,7 @@ import { bearer, deviceAuthorization, jwt, oAuthProxy, organization } from "bett
 import { agentOAuth } from "./agent-auth.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
+import { isOverloaded } from "../db/retry.ts";
 import { requestOrigin } from "../machines/device-origin.ts";
 import { sendEmail } from "../email.ts";
 import { githubBusy } from "../github/github-busy.ts";
@@ -79,6 +80,7 @@ export function createAuth(
     // own error page. Root-relative, so it stays on whichever dashboard host the browser is on.
     // Sign-in buttons pass errorCallbackURL to keep their redirect (apps/web/src/lib/sign-in.ts).
     onAPIError: { errorURL: "/login" },
+    logger: { log: logAuth },
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
     // Global role (schema.ts): "operator" sees the dashboard's Admin section. On session.user, so
     // it rides the session cookie cache. Granted by SQL only, never by the user.
@@ -241,4 +243,13 @@ export function workspaces() {
       session: { fields: { activeOrganizationId: "activeWorkspaceId" } },
     },
   });
+}
+
+// Better Auth's own messages, through the API's logger. An error it recovers from on its own
+// (resources it seeds again on first use when D1 is shedding load) is a warning, so Workers Issues
+// doesn't report it.
+function logAuth(level: "debug" | "info" | "warn" | "error", message: string, ...args: unknown[]) {
+  const error = args.find((arg) => arg instanceof Error);
+  const write = level === "error" && isOverloaded(error) ? log.warn : log[level];
+  write("auth.log", message, error ? { error } : {});
 }
