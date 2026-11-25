@@ -19,7 +19,7 @@ It sorts every job into three groups and lets you pick from the first:
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 
-To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job. Add `--auto` to set Linux x64 jobs' sizes on the Router page instead of in the file.
+To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job. Add `--exact` to keep each job on its old label instead of writing its shape.
 
 ## Route repos from the dashboard
 
@@ -49,8 +49,7 @@ jobs:
   relay-test:
     uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
-      machine: self-hosted
-      github: ubuntu-latest
+      os: linux
 
   test:
     needs: relay-test
@@ -58,7 +57,17 @@ jobs:
     steps: ...
 ```
 
-The old label moves to the relay's `github` input (or the provider's own input, such as `depot`, for a hosted provider's label), so the job still runs there when no machine is free. A `macos-*` job gets `machine: macOS`, so it only goes to Macs. `init` keeps your comments and formatting, and never commits.
+The relay gets what the job needs, read from its old label, so any runner on your Router page can take it: your machines first, then your runner order.
+
+| Old label                      | Relay inputs               |
+| ------------------------------ | -------------------------- |
+| `ubuntu-latest`                | `os: linux`                |
+| `ubuntu-24.04-arm`             | `os: linux`, `arch: arm64` |
+| `macos-15`                     | `os: macos`                |
+| `macos-13`                     | `os: macos`, `arch: x64`   |
+| `blacksmith-8vcpu-ubuntu-2404` | `os: linux`, `cpus: 8`     |
+
+`cpus` only appears when the label asks for more than a standard 2 CPU runner. Without it, you set the job's size on the Router page, with no commit. See [relay.yml inputs](/docs/reference/relay-inputs). To keep a job on its old label instead, run `init` with `--exact`. `init` keeps your comments and formatting, and never commits.
 
 Push the change. The check keeps its name in GitHub, so required checks and branch protection keep working.
 

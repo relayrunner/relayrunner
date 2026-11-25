@@ -73,18 +73,18 @@ Shows the machine, the workspaces it's in, who enrolled it, its sharing setting 
 ## `init`
 
 ```sh
-relayrunner init [--plan] [--apply <jobs>] [--auto] [--allow-deploy <jobs>] [--json]
+relayrunner init [--plan] [--apply <jobs>] [--exact] [--allow-deploy <jobs>] [--json]
 ```
 
 Routes a repo's jobs through RelayRunner. Run it inside a checkout. See [Move your workflows over](/docs/get-started/move-over).
 
-| Flag                    | What it does                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--plan`                | List the jobs and what would happen. Changes nothing.                                                                                      |
-| `--apply <jobs>`        | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`.                                                     |
-| `--auto`                | Write `auto` instead of the label for Linux x64 jobs, so you set their [size](/docs/reference/relay-inputs#auto-sizes) on the Router page. |
-| `--allow-deploy <jobs>` | Route these jobs even though they look like deploy jobs. The machine gets their secrets and cloud access.                                  |
-| `--json`                | Print the result as JSON.                                                                                                                  |
+| Flag                    | What it does                                                                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--plan`                | List the jobs and what would happen. Changes nothing.                                                                                                                              |
+| `--apply <jobs>`        | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`.                                                                                             |
+| `--exact`               | Keep each job's label under its provider's input instead of writing its [shape](/docs/reference/relay-inputs#what-the-job-needs), so only that provider and your machines take it. |
+| `--allow-deploy <jobs>` | Route these jobs even though they look like deploy jobs. The machine gets their secrets and cloud access.                                                                          |
+| `--json`                | Print the result as JSON.                                                                                                                                                          |
 
 ## `pause` and `resume`
 

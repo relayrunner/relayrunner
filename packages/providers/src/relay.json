@@ -1,5 +1,5 @@
 {
-  "relayRef": "v1.0.0-beta.9",
+  "relayRef": "v1.0.0-beta.10",
   "relayWorkflow": "relayrunner/actions/.github/workflows/relay.yml",
   "labelPrefixes": {
     "blacksmith": ["blacksmith-"],

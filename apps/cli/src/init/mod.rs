@@ -6,7 +6,8 @@
 //!   relayrunner init --plan [--json]   list every job with its verdict; changes nothing
 //!   relayrunner init --apply <jobs>    route those jobs without prompting (`all` = every ready job)
 //!
-//! `--auto` writes `auto` in place of a Linux x64 job's label, so the Router page sets its size.
+//! Each relay gets the job's shape (`os`, plus `arch` and `cpus` when its label asks for them), so
+//! any provider on the Router can take it. `--exact` writes the old label under its provider instead.
 //! `--allow-deploy <jobs>` lets jobs that look like deploy jobs be routed, once the user says so.
 //!
 //! `--plan --json` and `--apply` are what an agent setting up RelayRunner drives.
@@ -28,8 +29,8 @@ pub struct Plan {
     files: Vec<WorkflowFile>,
     jobs: Vec<WorkflowJob>,
     errors: Vec<FileError>,
-    /// Write `auto` for the jobs the Router can size (`--auto`).
-    auto: bool,
+    /// Write each job's old label instead of its shape (`--exact`).
+    exact: bool,
 }
 
 const PUBLIC_REPO: &str = "This repo is public, and machines never take jobs from public repos. There's nothing for init to set up here.";
@@ -78,7 +79,7 @@ fn local_plan(cwd: &Path, vm: bool, allow_deploy: &[String]) -> Result<Plan, Str
         files,
         jobs,
         errors,
-        auto: false,
+        exact: false,
     })
 }
 
@@ -177,7 +178,7 @@ fn changes_for(plan: &Plan, chosen: &[WorkflowJob]) -> Result<Vec<Change>, Strin
         }
     }
     for change in &mut changes {
-        change.after = workflows::route_jobs(&change.before, &change.jobs, plan.auto).map_err(|reason| {
+        change.after = workflows::route_jobs(&change.before, &change.jobs, plan.exact).map_err(|reason| {
             format!(
                 "Couldn't edit {}: {reason}. Route its jobs by hand: https://relayrunner.dev/docs/get-started/github-actions",
                 change.file
@@ -203,16 +204,24 @@ fn describe_repo(plan: &Plan) -> String {
     }
 }
 
-fn job_line(job: &WorkflowJob) -> String {
+/// Where a ready job will run once routed, for the plan and the picker.
+fn runs_where(job: &WorkflowJob, exact: bool) -> String {
+    let label = job.label.as_deref().unwrap_or_default();
+    match (&job.shape, exact) {
+        (Some(shape), false) => {
+            format!("any Router runner with {} (was {label})", shape.describe())
+        }
+        _ => format!("falls back to {label}"),
+    }
+}
+
+fn job_line(job: &WorkflowJob, exact: bool) -> String {
     let name = format!("{} › {}", short_file(&job.file), job.job);
     match job.verdict {
         Verdict::Skipped => format!("{name}: {}", job.reason.as_deref().unwrap_or_default()),
         Verdict::Routed => name,
         Verdict::Ready => {
-            let mut notes = vec![format!(
-                "falls back to {}",
-                job.label.as_deref().unwrap_or_default()
-            )];
+            let mut notes = vec![runs_where(job, exact)];
             notes.extend(job.warnings.iter().cloned());
             format!("{name}: {}", notes.join("; "))
         }
@@ -266,7 +275,7 @@ fn print_plan(plan: &Plan, json: bool) {
         }
         println!("\n{title}");
         for job in jobs {
-            println!("  {}", job_line(job));
+            println!("  {}", job_line(job, plan.exact));
         }
     }
     for error in &plan.errors {
@@ -293,8 +302,8 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
         struct Routed<'a> {
             file: &'a str,
             job: &'a str,
-            /// Whether the relay says `auto`, so the Router page sets the job's size.
-            auto: bool,
+            /// The relay's inputs, such as `{"os": "linux", "cpus": "4"}`.
+            with: serde_json::Map<String, serde_json::Value>,
             warnings: &'a [String],
         }
         #[derive(serde::Serialize)]
@@ -307,7 +316,11 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
             .map(|j| Routed {
                 file: &j.file,
                 job: &j.job,
-                auto: plan.auto && workflows::auto_sizable(j),
+                with: workflows::relay_inputs(j, plan.exact)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::String(v)))
+                    .collect(),
                 warnings: &j.warnings,
             })
             .collect();
@@ -360,7 +373,7 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
     };
     let lines = |jobs: &[&WorkflowJob]| -> String {
         jobs.iter()
-            .map(|j| job_line(j))
+            .map(|j| job_line(j, plan.exact))
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -383,10 +396,7 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
     let choices: Vec<ui::Choice> = ready
         .iter()
         .map(|j| {
-            let mut hint = vec![format!(
-                "{} when your machine is offline",
-                j.label.as_deref().unwrap_or_default()
-            )];
+            let mut hint = vec![runs_where(j, plan.exact)];
             hint.extend(j.warnings.iter().cloned());
             ui::Choice {
                 label: format!("{} › {}", short_file(&j.file), j.job),
@@ -441,14 +451,17 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
 }
 
 pub async fn command(args: &[String]) -> i32 {
-    let (mut plan_only, mut json, mut auto, mut apply_list) = (false, false, false, None::<String>);
+    let (mut plan_only, mut json, mut exact, mut apply_list) =
+        (false, false, false, None::<String>);
     let mut allow_deploy: Vec<String> = Vec::new();
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--plan" => plan_only = true,
             "--json" => json = true,
-            "--auto" => auto = true,
+            "--exact" => exact = true,
+            // Older agents' flag, from when the default wrote labels. Shapes size jobs now.
+            "--auto" => {}
             "--apply" => apply_list = Some(rest.next().cloned().unwrap_or_default()),
             "--allow-deploy" => {
                 allow_deploy.extend(job_names(rest.next().map_or("", String::as_str)));
@@ -474,7 +487,7 @@ pub async fn command(args: &[String]) -> i32 {
     let run = move || -> Result<(), String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
         let plan = Plan {
-            auto,
+            exact,
             ..plan(&cwd, vm, &allow_deploy)?
         };
         if let Some(list) = apply_list {
