@@ -32,7 +32,7 @@ export function PageTabs<V extends string>({ tabs, value }: { tabs: readonly Tab
     // without overflowing: overflow-x-auto would make the row scroll vertically by that pixel.
     <nav
       aria-label="Views"
-      className="-mt-2 mb-6 flex gap-5 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)]"
+      className="-mt-2 mb-8 flex gap-5 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)]"
     >
       {tabs.map((tab, index) => {
         const active = tab.value === value;
