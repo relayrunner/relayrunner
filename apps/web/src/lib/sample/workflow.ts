@@ -186,6 +186,8 @@ type PhPlan = {
   idle?: number;
   /** Its speed on a day, days ago: 1 is usual. */
   speed?: (daysAgo: number) => number;
+  /** Its share of runs on a day, days ago, as the Router moved runs between runners: 1 is usual. */
+  volume?: (daysAgo: number) => number;
 };
 
 const PH_PLAN: Record<string, PhPlan> = {
@@ -194,6 +196,8 @@ const PH_PLAN: Record<string, PhPlan> = {
     seconds: [190, 92, 41, 125],
     rate: 0.006,
     perDay: 1.1,
+    // Most runs until Blacksmith and Boat took over, then only overflow.
+    volume: (d) => (d >= 11 ? 3.2 : d >= 9 ? 1.4 : 0.35),
     wait: 11,
     spread: 0.16,
     speed: (d) => (d <= 9 && d >= 6 ? 1.22 : 1),
@@ -212,6 +216,7 @@ const PH_PLAN: Record<string, PhPlan> = {
     seconds: [100, 50, 20, 66],
     rate: 0.008,
     perDay: 2.2,
+    volume: (d) => (d >= 7 ? 1.3 : 0.8),
     wait: 4,
     spread: 0.1,
     since: 11,
@@ -221,6 +226,7 @@ const PH_PLAN: Record<string, PhPlan> = {
     seconds: [128, 62, 26, 84],
     rate: 0.0006,
     perDay: 2,
+    volume: (d) => (d >= 7 ? 0.6 : 1.4),
     wait: 3,
     spread: 0.12,
     since: 9,
@@ -235,10 +241,14 @@ const PH_PLAN: Record<string, PhPlan> = {
     seconds: [150, 74, 31, 100],
     rate: 0.0016,
     perDay: 0.8,
+    // Tried for a few days, then dropped down the order.
+    volume: (d) => (d >= 8 && d <= 12 ? 2.2 : 0.15),
     wait: 14,
     spread: 0.2,
   },
 };
+
+const PH_DENSITY = 12;
 
 function phWorkflowReport(
   days: number,
@@ -259,7 +269,9 @@ function phWorkflowReport(
   ) => {
     const plan = PH_PLAN[env]!;
     const factor = (plan.speed?.(daysAgo) ?? 1) * drift.get(env)! * (cold ? 1.5 : 1);
-    const runNoise = 1 + (next() - 0.5) * plan.spread * 2 + (next() < 0.06 ? 0.35 : 0);
+    // Runs vary around the usual time, with a few slow outliers (a cold cache, a busy host).
+    const runNoise =
+      1 + (next() - 0.5) * plan.spread * 3 + (next() < 0.08 ? 0.25 + next() * 0.45 : 0);
     const jobs = JOBS.map((name) => {
       const noise = runNoise * (1 + (next() - 0.5) * 0.08);
       const ms = Math.round(plan.seconds[JOBS.indexOf(name)]! * 1000 * noise * factor);
@@ -283,7 +295,10 @@ function phWorkflowReport(
       drift.set(env, Math.min(1.1, Math.max(0.9, drift.get(env)! + (next() - 0.5) * 0.06)));
       if (plan.since !== undefined && day > plan.since) continue;
       if (plan.idle && next() < plan.idle) continue;
-      const count = Math.round(plan.perDay * (0.5 + next()));
+      // Busy repos run CI dozens of times a day, so the chart reads as a cloud of runs.
+      const count = Math.round(
+        plan.perDay * (plan.volume?.(day) ?? 1) * PH_DENSITY * (0.5 + next()),
+      );
       for (let i = 0; i < count; i++) run(env, start + (0.1 + next() * 0.8) * DAY_MS, day);
     }
   }
