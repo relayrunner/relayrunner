@@ -37,7 +37,7 @@ with:
 - **A provider with nothing that fits is skipped**, such as one with no macOS runners, or GitHub-hosted for a job that needs more than its standard runners. The Activity page says why.
 - **GitHub-hosted counts its standard runners only:** 2 vCPU on private repos and 4 on public ones for Linux, Arm and Windows, and 3 for macOS. Name a larger runner's label in `github` to use it.
 - **A machine running jobs in a VM** fits when the VM's size meets `cpus`.
-- **Shape inputs need relay.yml `v1.0.0-beta.10` or later.**
+- **Shape inputs need relay.yml 1.0.0 or later**, which `@v1` follows.
 
 ## Exact labels
 

@@ -81,7 +81,11 @@ fn plan_lines(json: &str) -> String {
 
 fn check(case: &Path, file: &str, actual: &str, update: bool) -> Option<String> {
     let path = case.join(file);
-    let actual = actual.replace(&relay_ref(), "<relay>");
+    // Swap only the relay's own ref, since a short one like `v1` turns up in other refs too.
+    let relay = relay_ref();
+    let actual = actual
+        .replace(&format!("relay.yml@{relay}"), "relay.yml@<relay>")
+        .replace(&format!("\"relay\": \"{relay}\""), "\"relay\": \"<relay>\"");
     if update {
         fs::write(&path, &actual).unwrap();
         return None;

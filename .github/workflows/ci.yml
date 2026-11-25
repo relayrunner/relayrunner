@@ -21,7 +21,7 @@ jobs:
   # Asks RelayRunner where to run `check`: any provider in the workspace's Router with a Linux
   # runner, at the job's size from the Router page. The repo is public, so it never gets a machine.
   relay:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.10
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
       os: linux
 
