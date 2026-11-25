@@ -18,14 +18,14 @@
   --meter-track: #e8ece5;
   --go: #2fb344;
   --go-hover: #27a03b;
-  --go-text: #178a2e;
+  --go-text: #15803d;
   --go-ink: #03140a;
   --go-soft: rgba(47, 179, 68, 0.12);
   --go-edge: rgba(47, 179, 68, 0.6);
   --run: #c98a12;
   --run-text: #9a6608;
   /* Eyebrows and kickers above headings, so they don't blend into green headline words. */
-  --label: #4a4fc4;
+  --label: #22679a;
   --mascot-green: linear-gradient(140deg, #52c93c 0%, #2db83a 45%, #129a3c 100%);
   --shadow-card: 0 24px 48px -32px rgba(14, 26, 17, 0.28);
   --shadow-on: 0 20px 50px -28px rgba(47, 179, 68, 0.55);
@@ -36,17 +36,17 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b0d10;
-  --bg-soft: #0f1215;
-  --bg-deep: #101317;
-  --raised: #161a20;
-  --line: #272c35;
-  --line-soft: #1d2128;
+  --bg: #0a0f1a;
+  --bg-soft: #0e1420;
+  --bg-deep: #0f1522;
+  --raised: #151c2a;
+  --line: #243047;
+  --line-soft: #1a2232;
   --ink: #e6edf3;
   --ink-2: #b4bcc6;
   --mute: #8b949e;
   --idle: #4a515c;
-  --meter-track: #23272f;
+  --meter-track: #1e2636;
   --go: #3fb950;
   --go-hover: #4fcc61;
   --go-text: #3fb950;
@@ -54,7 +54,7 @@
   --go-edge: rgba(63, 185, 80, 0.55);
   --run: #d29922;
   --run-text: #d29922;
-  --label: #a3a8f5;
+  --label: #7cb6e4;
   --shadow-card: 0 24px 48px -28px rgba(0, 0, 0, 0.8);
   --shadow-on: 0 20px 50px -28px rgba(63, 185, 80, 0.45);
 }

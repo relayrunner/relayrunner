@@ -17,13 +17,13 @@
   --sl-color-gray-2: #b4bcc6;
   --sl-color-gray-3: #8b949e;
   --sl-color-gray-4: #4a515c;
-  --sl-color-gray-5: #272c35;
-  --sl-color-gray-6: #161a20;
-  --sl-color-gray-7: #101317;
-  --sl-color-black: #0b0d10;
+  --sl-color-gray-5: #243047;
+  --sl-color-gray-6: #151c2a;
+  --sl-color-gray-7: #0f1522;
+  --sl-color-black: #0a0f1a;
 
   /* Notes (:::note) are neutral, like the dashboard's info panels. */
-  --sl-color-blue-low: #161a20;
+  --sl-color-blue-low: #151c2a;
   --sl-color-blue: #8b949e;
   --sl-color-blue-high: #e6edf3;
 }
