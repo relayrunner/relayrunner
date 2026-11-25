@@ -19,6 +19,7 @@ import {
 import { RELAYRUNNER_LABEL } from "../routing/labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
+import { isOverloaded } from "../db/retry.ts";
 import { recordPick, type PickRecord } from "../routing/route-decisions.ts";
 import { evaluationRunner } from "../reports/evaluations.ts";
 import { findInstallationAndWorkspace, installationRunnerScope } from "../github/installations.ts";
@@ -329,7 +330,12 @@ export class PickRunner extends DurableObject<Env> {
         runnerId = undefined; // GitHub removes a JIT runner once its job is done.
       }
     } catch (error) {
-      outcome = { result: "error", error: error instanceof Error ? error.message : String(error) };
+      outcome = {
+        result: "error",
+        error: error instanceof Error ? error.message : String(error),
+        // D1 shedding load for a few seconds; the sweep picks up a job left waiting.
+        ...(isOverloaded(error) ? { d1Overloaded: true } : {}),
+      };
     } finally {
       await client?.closeSession().catch((error) => logCleanupError("close session", work, error));
       // A runner left registered shows as idle on GitHub, and GitHub can hand it a job nobody will
@@ -350,7 +356,9 @@ export class PickRunner extends DurableObject<Env> {
     const next = token ? await this.rearmIfQueued(work, attempt, token) : undefined;
     // The pick's wide event: one per pick runner, with how it ended and whether a replacement
     // runner follows (`next`).
-    (outcome.result === "error" ? log.error : log.info)("pick.finished", "pick finished", {
+    const level =
+      outcome.result !== "error" ? log.info : outcome.d1Overloaded ? log.warn : log.error;
+    level("pick.finished", "pick finished", {
       ...outcome,
       next,
       durationMs: Date.now() - startedAt,

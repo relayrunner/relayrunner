@@ -49,7 +49,7 @@ import {
   type BillingBudget,
   type BillingUsageItem,
 } from "../github/billing-api.ts";
-import { GitHubAccessError } from "../github/github-api.ts";
+import { GitHubAccessError, GitHubError } from "../github/github-api.ts";
 import { appInstallationToken } from "../github/github-app.ts";
 import { log } from "../log.ts";
 
@@ -306,17 +306,28 @@ export async function pollInstallation(
   if (usage.status === "rejected") {
     const refused = usage.reason instanceof GitHubAccessError;
     if (refused && fallback) return pollInstallation(db, await fallback(), installation, now);
+    // A personal account reads with its owner's token, which GitHub rejects once it expires or
+    // is revoked: the owner has to sign in again.
+    const signedOut =
+      kind === "user" && usage.reason instanceof GitHubError && usage.reason.status === 401;
     await recordFailure(
       db,
       installation.id,
-      refused ? (enterprise ? "enterprise_permission" : "missing_permission") : "error",
+      signedOut
+        ? "sign_in_needed"
+        : refused
+          ? enterprise
+            ? "enterprise_permission"
+            : "missing_permission"
+          : "error",
       usage.reason,
       now,
       { plan: plan.status === "fulfilled" ? plan.value : undefined },
     );
-    // A refusal is the account's setup, not a fault: it's recorded above, the dashboard says how
-    // to fix it, and the poll backs off (REFUSED_RETRY_MS). Only unexpected failures log.
-    if (!refused) logFailure(installation.id, usage.reason);
+    // A refusal or a signed-out owner is the account's setup, not a fault: it's recorded above, the
+    // dashboard says how to fix it, and the poll backs off (REFUSED_RETRY_MS). Only unexpected
+    // failures log.
+    if (!refused && !signedOut) logFailure(installation.id, usage.reason);
     return;
   }
 

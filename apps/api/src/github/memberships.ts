@@ -58,7 +58,8 @@ export async function syncMembershipsFromGitHub(
   try {
     installations = await listUserInstallations(token);
   } catch (error) {
-    log.error(
+    // Usually the user's GitHub token expired or was revoked; they sign in again.
+    log.warn(
       "github.membership_sync_skipped",
       "membership sync skipped: GitHub installations unreadable",
       { userId, status: error instanceof GitHubError ? error.status : null, error },

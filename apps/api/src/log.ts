@@ -118,6 +118,7 @@ const API_EVENTS = [
   "github.membership_sync_failed",
   "d1_cache.unreadable",
   "d1.read_retried",
+  "auth.log",
   "flags.evaluation_failed",
   "admin.change",
   "runner.registered_on_org",

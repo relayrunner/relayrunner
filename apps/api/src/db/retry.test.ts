@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestD1 } from "../testing-d1.ts";
-import { retryOverloadedReads } from "./retry.ts";
+import { isOverloaded, retryOverloadedReads } from "./retry.ts";
 
 const OVERLOADED = new Error("D1 DB is overloaded. Requests queued for too long.");
 
@@ -63,5 +63,12 @@ describe("retryOverloadedReads", () => {
     const d1 = retryOverloadedReads(createTestD1());
     const [first] = await d1.batch([d1.prepare("select ? as n").bind(7)]);
     expect(first!.results).toEqual([{ n: 7 }]);
+  });
+});
+
+describe("isOverloaded", () => {
+  it("finds the overload under Drizzle's wrapper", () => {
+    expect(isOverloaded(new Error("Failed query: select 1", { cause: OVERLOADED }))).toBe(true);
+    expect(isOverloaded(new Error("D1_ERROR: no such table: nope"))).toBe(false);
   });
 });

@@ -46,7 +46,11 @@ async function retry<T>(read: () => Promise<T>, sql: string): Promise<T> {
   }
 }
 
-/** D1's "D1 DB is overloaded. Requests queued for too long." */
-function isOverloaded(error: unknown): boolean {
-  return error instanceof Error && /D1 DB is overloaded/i.test(error.message);
+/**
+ * D1's "D1 DB is overloaded" ("Requests queued for too long", "Too many requests queued"), also
+ * when Drizzle wraps it as the cause of its "Failed query" error.
+ */
+export function isOverloaded(error: unknown, depth = 0): boolean {
+  if (!(error instanceof Error) || depth > 3) return false;
+  return /D1 DB is overloaded/i.test(error.message) || isOverloaded(error.cause, depth + 1);
 }
