@@ -2,6 +2,7 @@
 // a laptop, Blacksmith (from an evaluation and routed runs) and a container.
 import type { WorkflowReport, WorkflowRunner, WorkflowRunPoint } from "@relayrunner/api-types";
 import { DAY_MS } from "@/lib/job-times";
+import { sampleParam } from "./param.ts";
 import { seededRandom } from "./shared.ts";
 
 const LINUX = "github:linux-2-core";
@@ -62,12 +63,42 @@ function median(values: number[]) {
 
 const billed = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
+/** A row per runner: its runs, evaluations, and median run and jobs over `runs`. */
+function summarize(envs: (typeof ENVIRONMENTS)[string][], runs: WorkflowRunPoint[]) {
+  return envs.map((env): WorkflowRunner => {
+    const touched = runs.filter((point) => point.jobs.some((job) => job.environment === env.key));
+    const whole = runs.filter((point) => point.environment === env.key);
+    const jobs: WorkflowRunner["jobs"] = {};
+    for (const name of JOBS) {
+      const list = runs.flatMap((point) =>
+        point.jobs.filter((job) => job.name === name && job.environment === env.key),
+      );
+      if (list.length)
+        jobs[name] = {
+          runs: list.length,
+          medianMs: median(list.map((job) => job.ms)),
+          usd: median(list.flatMap((job) => job.usd ?? [])),
+        };
+    }
+    return {
+      ...env,
+      runs: touched.filter((point) => !point.evaluation).length,
+      evaluations: touched.filter((point) => point.evaluation).length,
+      wholeRuns: whole.length,
+      medianMs: median(whole.map((point) => point.ms)),
+      usd: median(whole.flatMap((point) => point.usd ?? [])),
+      jobs,
+    };
+  });
+}
+
 export function sampleWorkflowReport(
   days: number,
   repositoryId: number,
   workflow: string | null,
   now = Date.now(),
 ): WorkflowReport {
+  if (sampleParam() === "ph") return phWorkflowReport(days, repositoryId, workflow, now);
   const next = seededRandom(7);
   const runs: WorkflowRunPoint[] = [];
   let runId = 9000;
@@ -113,31 +144,7 @@ export function sampleWorkflowReport(
     run(BLACKSMITH, evaluatedAt + i * 4 * 60_000, { evaluation: true, cold: i === 0 });
   runs.sort((a, b) => a.at - b.at);
 
-  const runners = Object.values(ENVIRONMENTS).map((env): WorkflowRunner => {
-    const touched = runs.filter((point) => point.jobs.some((job) => job.environment === env.key));
-    const whole = runs.filter((point) => point.environment === env.key);
-    const jobs: WorkflowRunner["jobs"] = {};
-    for (const name of JOBS) {
-      const list = runs.flatMap((point) =>
-        point.jobs.filter((job) => job.name === name && job.environment === env.key),
-      );
-      if (list.length)
-        jobs[name] = {
-          runs: list.length,
-          medianMs: median(list.map((job) => job.ms)),
-          usd: median(list.flatMap((job) => job.usd ?? [])),
-        };
-    }
-    return {
-      ...env,
-      runs: touched.filter((point) => !point.evaluation).length,
-      evaluations: touched.filter((point) => point.evaluation).length,
-      wholeRuns: whole.length,
-      medianMs: median(whole.map((point) => point.ms)),
-      usd: median(whole.flatMap((point) => point.usd ?? [])),
-      jobs,
-    };
-  });
+  const runners = summarize(Object.values(ENVIRONMENTS), runs);
 
   return {
     repositoryId,
@@ -152,6 +159,216 @@ export function sampleWorkflowReport(
       .sort((a, b) => b.runs + b.evaluations - (a.runs + a.evaluations)),
     runs,
     untried: ["depot", "namespace", "boat", "ubicloud", "berrybox", "lizard", "groundbox"],
+    truncated: false,
+  };
+}
+
+// `?sample=ph`: CI on more runners, each with its own history over the range. Two laptops and a
+// server of the team's own, GitHub's, and four providers: build-01 got much faster after a change,
+// GitHub's runs slowed for a few days, and Blacksmith and Depot started taking runs after an
+// evaluation. Namespace has only been evaluated.
+const MINI = "machine:sample-mini";
+const BUILD = "machine:sample-github";
+const DEPOT = "depot:depot-ubuntu-24.04-4";
+const UBICLOUD = "ubicloud:ubicloud-standard-4";
+const NAMESPACE = "namespace:nscloud-ubuntu-24.04-amd64-4x16";
+
+type PhPlan = {
+  info: (typeof ENVIRONMENTS)[string];
+  /** Usual seconds per job, in JOBS order. */
+  seconds: number[];
+  rate: number;
+  /** Runs a day, roughly. */
+  perDay: number;
+  wait: number;
+  /** How much each run varies, as a share of its time. */
+  spread: number;
+  /** The oldest day (days ago) it took routed runs, if not the whole range. */
+  since?: number;
+  /** A share of days it didn't run (a laptop asleep). */
+  idle?: number;
+  /** Its speed on a day, days ago: 1 is usual. */
+  speed?: (daysAgo: number) => number;
+};
+
+const PH_PLAN: Record<string, PhPlan> = {
+  [LINUX]: {
+    info: ENVIRONMENTS[LINUX]!,
+    seconds: [190, 92, 41, 125],
+    rate: 0.006,
+    perDay: 2.6,
+    wait: 11,
+    spread: 0.16,
+    speed: (d) => (d <= 9 && d >= 6 ? 1.22 : 1),
+  },
+  [MAC]: {
+    info: ENVIRONMENTS[MAC]!,
+    seconds: [84, 40, 13, 54],
+    rate: 0,
+    perDay: 1.6,
+    wait: 2,
+    spread: 0.38,
+    idle: 0.2,
+  },
+  [MINI]: {
+    info: {
+      key: MINI,
+      label: "studio-mini",
+      detail: "Mac mini · Apple M4 Pro",
+      machine: { source: "connect", kind: "desktop", model: "Mac mini" },
+    },
+    seconds: [50, 24, 9, 33],
+    rate: 0,
+    perDay: 1.5,
+    wait: 3,
+    spread: 0.12,
+    since: 11,
+  },
+  [BUILD]: {
+    info: {
+      key: BUILD,
+      label: "build-01",
+      detail: "Self-hosted · 16 cores",
+      machine: { source: "github", kind: null, model: null },
+    },
+    seconds: [220, 104, 44, 146],
+    rate: 0,
+    perDay: 1.8,
+    wait: 24,
+    spread: 0.14,
+    // A warm dependency cache from day 7 on.
+    speed: (d) => (d >= 8 ? 1 : d === 7 ? 0.62 : 0.33),
+  },
+  [BLACKSMITH]: {
+    info: { ...ENVIRONMENTS[BLACKSMITH]!, label: "blacksmith-4vcpu-ubuntu-2404" },
+    seconds: [112, 58, 23, 74],
+    rate: 0.008,
+    perDay: 1.4,
+    wait: 4,
+    spread: 0.1,
+    since: 9,
+  },
+  [DEPOT]: {
+    info: {
+      key: DEPOT,
+      label: "depot-ubuntu-24.04-4",
+      detail: "Depot",
+      size: { vcpus: 4, memoryGb: 16 },
+    },
+    seconds: [132, 66, 27, 86],
+    rate: 0.008,
+    perDay: 1.3,
+    wait: 5,
+    spread: 0.1,
+    since: 7,
+    // Its layer cache fills over the first few days.
+    speed: (d) => (d >= 6 ? 1 : d >= 4 ? 0.86 : 0.74),
+  },
+  [UBICLOUD]: {
+    info: {
+      key: UBICLOUD,
+      label: "ubicloud-standard-4",
+      detail: "Ubicloud",
+      size: { vcpus: 4, memoryGb: 16 },
+    },
+    seconds: [166, 82, 34, 110],
+    rate: 0.0016,
+    perDay: 1.2,
+    wait: 14,
+    spread: 0.2,
+  },
+  [NAMESPACE]: {
+    info: {
+      key: NAMESPACE,
+      label: "nscloud-ubuntu-24.04-amd64-4x16",
+      detail: "Namespace",
+      size: { vcpus: 4, memoryGb: 16 },
+    },
+    seconds: [98, 50, 19, 64],
+    rate: 0.008,
+    perDay: 0,
+    wait: 6,
+    spread: 0.1,
+  },
+};
+
+function phWorkflowReport(
+  days: number,
+  repositoryId: number,
+  workflow: string | null,
+  now: number,
+): WorkflowReport {
+  const next = seededRandom(11);
+  const runs: WorkflowRunPoint[] = [];
+  let runId = 9000;
+  // A slow day-to-day drift per runner, so lines wander a little.
+  const drift = new Map(Object.keys(PH_PLAN).map((key) => [key, 1]));
+  const run = (
+    env: string,
+    at: number,
+    daysAgo: number,
+    { evaluation = false, cold = false } = {},
+  ) => {
+    const plan = PH_PLAN[env]!;
+    const factor = (plan.speed?.(daysAgo) ?? 1) * drift.get(env)! * (cold ? 1.5 : 1);
+    const runNoise = 1 + (next() - 0.5) * plan.spread * 2 + (next() < 0.06 ? 0.35 : 0);
+    const jobs = JOBS.map((name) => {
+      const noise = runNoise * (1 + (next() - 0.5) * 0.08);
+      const ms = Math.round(plan.seconds[JOBS.indexOf(name)]! * 1000 * noise * factor);
+      const waitMs = Math.round(plan.wait * 1000 * (0.4 + next() * 1.2));
+      return { name, environment: env, ms, waitMs, usd: billed(ms) * plan.rate };
+    });
+    runs.push({
+      runId: (runId += 1),
+      runAttempt: 1,
+      at,
+      ms: Math.max(...jobs.map((job) => job.ms)) + 6000 + Math.round(next() * 8000),
+      usd: jobs.reduce((sum, job) => sum + job.usd, 0),
+      environment: env,
+      evaluation,
+      jobs,
+    });
+  };
+  for (let day = days - 1; day >= 0; day--) {
+    const start = now - (day + 1) * DAY_MS;
+    for (const [env, plan] of Object.entries(PH_PLAN)) {
+      drift.set(env, Math.min(1.1, Math.max(0.9, drift.get(env)! + (next() - 0.5) * 0.06)));
+      if (plan.since !== undefined && day > plan.since) continue;
+      if (plan.idle && next() < plan.idle) continue;
+      const count = Math.round(plan.perDay * (0.5 + next()));
+      for (let i = 0; i < count; i++) run(env, start + (0.1 + next() * 0.8) * DAY_MS, day);
+    }
+  }
+  // Evaluations before Blacksmith and Depot took routed runs, and Namespace's, which hasn't yet:
+  // five back to back, the first cold.
+  for (const [env, daysAgo] of [
+    [BLACKSMITH, 10],
+    [DEPOT, 8],
+    [NAMESPACE, 2],
+  ] as const) {
+    const at = now - Math.min(days - 1, daysAgo) * DAY_MS;
+    for (let i = 0; i < 5; i++)
+      run(env, at + i * 4 * 60_000, daysAgo, { evaluation: true, cold: i === 0 });
+  }
+  runs.sort((a, b) => a.at - b.at);
+
+  const runners = summarize(
+    Object.values(PH_PLAN).map((plan) => plan.info),
+    runs,
+  );
+  return {
+    repositoryId,
+    repository: "acme/app",
+    workflow,
+    days,
+    fewRuns: 5,
+    baseline: LINUX,
+    jobs: [...JOBS],
+    runners: runners
+      .filter((runner) => runner.runs + runner.evaluations > 0)
+      .sort((a, b) => b.runs + b.evaluations - (a.runs + a.evaluations)),
+    runs,
+    untried: ["warpbuild", "boat", "runs-on", "berrybox", "lizard", "groundbox"],
     truncated: false,
   };
 }
