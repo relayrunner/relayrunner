@@ -108,7 +108,7 @@ button {
   }
 }
 .eyebrow {
-  color: var(--go-text);
+  color: var(--label);
   font-size: 15px;
   font-weight: 600;
 }
@@ -347,7 +347,7 @@ button {
   padding-top: clamp(72px, 9vw, 112px);
 }
 .kicker {
-  color: var(--go-text);
+  color: var(--label);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
