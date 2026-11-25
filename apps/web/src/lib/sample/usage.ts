@@ -1,5 +1,6 @@
 // Usage and free-check savings for the dev preview (lib/sample/answers.ts).
 import type { FreeCheckSavings, UsageReport, UsageRow } from "@/lib/usage";
+import { sampleParam } from "./param.ts";
 
 const TOTAL_KEYS = [
   "jobs",
@@ -22,6 +23,7 @@ export function sampleUsageReport(days: number): UsageReport {
     jobs: number,
     shortJobs: number,
     billedMinutes: number,
+    rounding = 0.33,
   ): UsageRow => {
     const j = Math.round(jobs * scale);
     const s = Math.round(shortJobs * scale);
@@ -37,14 +39,25 @@ export function sampleUsageReport(days: number): UsageReport {
       shortBilledMinutes: s,
       cost: b * perMinute,
       shortCost: s * perMinute,
-      roundingCost: b * perMinute * 0.33,
+      roundingCost: b * perMinute * rounding,
     };
   };
-  const byRunner = [
-    row("macos", "macOS", 0.062, 120, 40, 900),
-    row("linux-2-core", "ubuntu-latest", 0.006, 2400, 1500, 6200),
-    row("self-hosted", "Self-hosted", 0, 300, 90, 1400),
-  ];
+  // `?sample=ph`: a workspace mixing its machines, GitHub, Blacksmith and Boat (Product Hunt shots).
+  // Blacksmith and Boat bill by the second, so nothing is lost to rounding there.
+  const byRunner =
+    sampleParam() === "ph"
+      ? [
+          row("self-hosted", "Self-hosted", 0, 3400, 1100, 14200, 0),
+          row("linux-2-core", "ubuntu-latest", 0.006, 2100, 1300, 5600),
+          row("blacksmith-4vcpu", "Blacksmith 4 vCPU", 0.004, 1800, 600, 9800, 0),
+          row("boat", "Boat", 0.0006, 1500, 520, 8400, 0),
+          row("macos", "macOS", 0.062, 140, 40, 1050),
+        ]
+      : [
+          row("macos", "macOS", 0.062, 120, 40, 900),
+          row("linux-2-core", "ubuntu-latest", 0.006, 2400, 1500, 6200),
+          row("self-hosted", "Self-hosted", 0, 300, 90, 1400),
+        ];
   return {
     days,
     shortJobSeconds: 60,
