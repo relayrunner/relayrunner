@@ -8,6 +8,8 @@ export type Stickiness = {
   /** The workflow the state is about: the latest relayed, or the last one removed. */
   repository: string;
   workflow: string;
+  /** The workflow's file, when its runs carry one. */
+  workflowPath: string | null;
   /** The branch that added the relay, while trying or after the trial was abandoned. */
   branch: string | null;
   lastRelayAt: string;

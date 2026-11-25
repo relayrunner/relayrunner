@@ -1,10 +1,11 @@
 /**
  * Tells operators about early-access milestones in Slack: a new signup, an App install, a
  * workspace's first machine, its first job on a machine, runs that couldn't be routed, and a
- * workspace that adopted the relay and then took it out (src/routing/stickiness.ts). The
- * 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
+ * workspace that adopted the relay and then took it out (src/routing/stickiness.ts, checked
+ * against the default branch by relay-on-default.ts). The 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
  * D1 and posts one message per ping to OPERATOR_SLACK_WEBHOOK_URL. Nothing is stored: each window
- * is read once, so a skipped cron run skips its pings.
+ * is read once, so a skipped cron run skips its pings. An uninstall can't wait for the cron, since
+ * it deletes the workspace: pingUninstall posts it from the webhook.
  *
  * Our own workspaces (internalWorkspaceIds) and operators' own signups are left out, so our own
  * testing stays quiet. So are test accounts that aren't operators, by GitHub user id
@@ -16,9 +17,20 @@ import { type Db, createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { SETTLE_MS, workspaceStickiness } from "../routing/stickiness.ts";
+import { type RelayOnDefault, relayOnDefaultBranch } from "../routing/relay-on-default.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import { log } from "../log.ts";
+import { DAY_MS } from "../time.ts";
 
 export const PING_WINDOW_MS = 15 * 60 * 1000;
+
+/** Where a workflow's relay stands on its repo's default branch (relay-on-default.ts). */
+export type RelayCheck = (
+  installationId: number,
+  repository: string,
+  workflowPath: string,
+  lastRelayAt: Date,
+) => Promise<RelayOnDefault>;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
 
 /** Escapes text for Slack's mrkdwn, so a name can't add formatting or links. */
@@ -101,13 +113,15 @@ export async function testAccounts(db: Db, githubIds: number[]) {
 
 /**
  * The pings for what happened in [since, until), oldest first. `ignoredGithubIds` are test
- * accounts to leave out, like our own.
+ * accounts to leave out, like our own. `relayCheck`, when given, vets each "took the relay out"
+ * against the workflow file on the default branch.
  */
 export async function collectOperatorPings(
   db: Db,
   since: Date,
   until: Date,
   ignoredGithubIds: number[] = [],
+  relayCheck?: RelayCheck,
 ): Promise<string[]> {
   const tests = await testAccounts(db, ignoredGithubIds);
   const ours = new Set([...(await internalWorkspaceIds(db)), ...tests.workspaces]);
@@ -296,8 +310,12 @@ export async function collectOperatorPings(
     return flipped >= since.getTime() && flipped < until.getTime();
   });
   if (removed.length) {
-    const names = await db
-      .select({ id: schema.workspace.id, name: schema.workspace.name })
+    const rows = await db
+      .select({
+        id: schema.workspace.id,
+        name: schema.workspace.name,
+        installationId: schema.workspace.installationId,
+      })
       .from(schema.workspace)
       .where(
         inArray(
@@ -305,17 +323,82 @@ export async function collectOperatorPings(
           removed.map(([id]) => id),
         ),
       );
-    const nameOf = new Map(names.map((row) => [row.id, row.name]));
+    const byId = new Map(rows.map((row) => [row.id, row]));
     for (const [workspaceId, state] of removed) {
+      const workspace = byId.get(workspaceId);
+      // A relay only ever tried on branches, or still on the default branch, wasn't taken out. If
+      // GitHub can't tell us, ping anyway.
+      if (relayCheck && workspace && state.workflowPath) {
+        const onDefault = await relayCheck(
+          workspace.installationId,
+          state.repository,
+          state.workflowPath,
+          new Date(state.lastRelayAt),
+        ).catch((error: unknown) => {
+          log.warn("operator.relay_check_failed", "couldn't check the default branch", { error });
+          return "removed" as const;
+        });
+        if (onDefault !== "removed") continue;
+      }
       const lastRelay = new Date(state.lastRelayAt).toUTCString();
       pings.push({
         at: Date.parse(state.since),
-        text: `:leftwards_arrow_with_hook: *${esc(nameOf.get(workspaceId) ?? workspaceId)}* took the relay out: ${state.runsWithout} runs without it in ${esc(state.repository)} since its last relay (${esc(state.workflow)}, ${lastRelay})`,
+        text: `:leftwards_arrow_with_hook: *${esc(workspace?.name ?? workspaceId)}* took the relay out: ${state.runsWithout} runs without it in ${esc(state.repository)} since its last relay (${esc(state.workflow)}, ${lastRelay})`,
       });
     }
   }
 
   return pings.sort((a, b) => a.at - b.at).map((ping) => ping.text);
+}
+
+/**
+ * Posts "App uninstalled" for an installation about to be forgotten (the `installation.deleted`
+ * webhook), right away, since nothing of it is left for the cron to read afterwards. Quiet for our
+ * own and test workspaces, and when the workspace is already gone (an operator delete). A failure
+ * is logged, never thrown, so the uninstall still goes through.
+ */
+export async function pingUninstall(
+  env: Env,
+  db: Db,
+  installationId: number,
+  now = Date.now(),
+  fetcher: typeof fetch = fetch,
+): Promise<boolean> {
+  const url = env.OPERATOR_SLACK_WEBHOOK_URL;
+  if (!url) return false;
+  try {
+    const [install] = await db
+      .select({
+        id: schema.workspace.id,
+        createdAt: schema.workspace.createdAt,
+        login: schema.githubInstallation.accountLogin,
+        type: schema.githubInstallation.accountType,
+      })
+      .from(schema.workspace)
+      .innerJoin(
+        schema.githubInstallation,
+        eq(schema.githubInstallation.id, schema.workspace.installationId),
+      )
+      .where(eq(schema.workspace.installationId, installationId))
+      .limit(1);
+    if (!install) return false;
+    const tests = await testAccounts(db, parseGithubIds(env.OPERATOR_PINGS_IGNORE_GITHUB_IDS));
+    if (tests.workspaces.has(install.id) || (await internalWorkspaceIds(db)).has(install.id))
+      return false;
+    const kind = install.type === "Organization" ? "org" : "personal account";
+    const days = Math.floor((now - install.createdAt.getTime()) / DAY_MS);
+    const when =
+      days === 0 ? "on the day it was installed" : `after ${days === 1 ? "1 day" : `${days} days`}`;
+    await postToWebhook(
+      url,
+      `:wastebasket: App uninstalled from the ${kind} *${esc(install.login)}* ${when}`,
+      fetcher,
+    );
+    return true;
+  } catch (error) {
+    log.error("operator.uninstall_ping_failed", "uninstall ping not sent", { error });
+    return false;
+  }
 }
 
 /**
@@ -336,6 +419,13 @@ export async function sendOperatorPings(
     since,
     until,
     parseGithubIds(env.OPERATOR_PINGS_IGNORE_GITHUB_IDS),
+    async (installationId, repository, workflowPath, lastRelayAt) =>
+      relayOnDefaultBranch(
+        await appInstallationToken(env, installationId),
+        repository,
+        workflowPath,
+        lastRelayAt,
+      ),
   );
   let sent = 0;
   for (const text of pings) {

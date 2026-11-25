@@ -73,6 +73,8 @@ const API_EVENTS = [
   "operator.health_alerts",
   "operator.health_issues_not_recorded",
   "operator.ping_not_sent",
+  "operator.relay_check_failed",
+  "operator.uninstall_ping_failed",
   "operator.product_events_not_sent",
   "pick.actor_not_found",
   "pick.blocked",

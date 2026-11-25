@@ -133,9 +133,15 @@ export async function repoTarball(token: string, repo: string, sha: string) {
   return response.body;
 }
 
-/** A file's text from the repo's default branch, or null when it doesn't exist. */
-export async function repoFile(token: string, repo: string, path: string): Promise<string | null> {
-  const response = await githubFetch(token, `/repos/${repo}/contents/${path}`, {
+/** A file's text from the repo's default branch (or `ref`), or null when it doesn't exist. */
+export async function repoFile(
+  token: string,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<string | null> {
+  const query = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+  const response = await githubFetch(token, `/repos/${repo}/contents/${path}${query}`, {
     accept: "application/vnd.github.raw+json",
     allow: [404],
   });

@@ -78,6 +78,7 @@ interface WorkflowState {
   since: number;
   repository: string;
   workflow: string;
+  workflowPath: string | null;
   branch: string | null;
   lastRelayAt: number;
   runsWithout: number;
@@ -96,6 +97,7 @@ function workflowState(
   const base = {
     repository: first.repository,
     workflow: first.workflowName,
+    workflowPath: runs.findLast((run) => run.workflowPath)?.workflowPath ?? null,
     lastRelayAt: last.startedAt,
     runsWithout: 0,
   };
@@ -185,6 +187,7 @@ export function stickinessOf(runs: StickinessRun[], now: number): Map<number, St
       since: new Date(state.since).toISOString(),
       repository: state.repository,
       workflow: state.workflow,
+      workflowPath: state.workflowPath,
       branch: state.branch,
       lastRelayAt: new Date(state.lastRelayAt).toISOString(),
       runsWithout: state.runsWithout,

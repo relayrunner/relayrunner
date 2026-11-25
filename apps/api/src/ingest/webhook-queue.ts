@@ -22,6 +22,7 @@ import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { forgetInstallation } from "../operator/admin-delete.ts";
+import { pingUninstall } from "../operator/operator-pings.ts";
 import { queueRunHistory } from "./run-history.ts";
 import {
   ensureWorkspace,
@@ -464,7 +465,10 @@ async function recordInstallation(
   // Uses installationId, not the summary, so a message from an ingress that predates the summary
   // still removes the org.
   if (message.event === "installation" && message.action === "deleted") {
-    if (message.installationId) await forgetInstallation(env, db, message.installationId);
+    if (message.installationId) {
+      await pingUninstall(env, db, message.installationId);
+      await forgetInstallation(env, db, message.installationId);
+    }
     return;
   }
   const installation = message.installation;
