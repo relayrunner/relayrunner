@@ -1,11 +1,15 @@
 // Connected machines for the dev preview (lib/sample/answers.ts), like GET /api/machines.
 import type { Machine } from "../machines.ts";
 import { sampleMachineJob } from "./live-jobs.ts";
+import { sampleParam } from "./param.ts";
+
+// The Product Hunt variant names the laptop the way a person would and keeps it to its owner.
+const PH = sampleParam() === "ph";
 
 // The dev preview's machines, matching the sample reports' `machine:` keys.
 const SAMPLE_MACHINE: Machine = {
   id: "sample",
-  name: "ada-mbp",
+  name: PH ? "Ada's MacBook Pro" : "ada-mbp",
   os: "linux",
   arch: "arm64",
   labels: ["self-hosted", "Linux", "ARM64"],
@@ -34,7 +38,7 @@ const SAMPLE_MACHINE: Machine = {
   },
   owner: "Ada",
   mine: true,
-  sharing: "anyone",
+  sharing: PH ? "only_me" : "anyone",
   status: {
     online: true,
     state: "idle",
@@ -87,6 +91,7 @@ export const SAMPLE_MACHINES: Machine[] = [
     ...SAMPLE_MACHINE,
     id: "sample-linux",
     name: "ci-box",
+    sharing: "anyone",
     os: "linux",
     arch: "x64",
     device: {
@@ -101,7 +106,14 @@ export const SAMPLE_MACHINES: Machine[] = [
     },
     macApp: null,
     runner: { version: "2.331.0", update: null, updateBy: null },
-    status: { ...SAMPLE_MACHINE.status!, state: "busy", slots: 16, running: 11 },
+    status: {
+      ...SAMPLE_MACHINE.status!,
+      state: "busy",
+      slots: 16,
+      running: 11,
+      // An always-on box: connected for weeks.
+      connectedAt: PH ? Date.now() - 21 * 86_400_000 : SAMPLE_MACHINE.status!.connectedAt,
+    },
     jobs: [
       "lint",
       "typecheck",

@@ -27,7 +27,11 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
         label: "ubuntu-latest",
         detail: "GitHub-hosted",
       },
-      { key: "machine:sample", label: "ada-mbp", detail: "" },
+      {
+        key: "machine:sample",
+        label: sampleParam() === "ph" ? "Ada's MacBook Pro" : "ada-mbp",
+        detail: "",
+      },
       { key: "machine:sample-mini", label: "studio-mini", detail: "" },
       { key: "self-hosted:default", label: "Self-hosted", detail: "" },
     ],
