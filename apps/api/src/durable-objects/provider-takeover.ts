@@ -52,6 +52,10 @@ export interface TakeoverWork {
 
 type Phase = "takeover" | "rerun";
 
+// A step that fails runs again after this long, this many times in all.
+const FAILURE_RETRY_MS = 30_000;
+const MAX_FAILURE_RETRIES = 3;
+
 // One per routed job on a hosted provider's label (src/routing/provider-takeover.ts), addressed by
 // takeoverName. A minute after the job queued it asks GitHub whether a runner took it. If one did,
 // the provider can see the repo. If not, it acts as a one-job runner on the job's label, claims the
@@ -87,6 +91,12 @@ export class ProviderTakeover extends DurableObject<Env> {
     } catch (error) {
       result = "error";
       log.error("takeover.failed", "takeover failed", { phase, ...ids, error });
+      // Most failures are GitHub answering badly for a moment, so the same step runs again
+      // shortly. Each step checks GitHub's state first, so running it again is safe.
+      const failures = ((await this.ctx.storage.get<number>("failures")) ?? 0) + 1;
+      await this.ctx.storage.put("failures", failures);
+      if (failures <= MAX_FAILURE_RETRIES)
+        await this.ctx.storage.setAlarm(Date.now() + FAILURE_RETRY_MS);
     }
     log.info("takeover.checked", "takeover checked", { phase, ...ids, result });
   }

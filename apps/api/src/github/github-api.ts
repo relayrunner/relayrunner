@@ -43,17 +43,32 @@ export async function githubFetch(
 }
 
 export async function getJson<T>(token: string, path: string): Promise<T> {
-  return (await (await githubFetch(token, path)).json()) as T;
+  return readJson<T>("GET", path, await githubFetch(token, path));
 }
 
 /** A GET's body, or null when GitHub answers 404. */
 export async function getJsonOrNull<T>(token: string, path: string) {
   const response = await githubFetch(token, path, { allow: [404] });
-  return response.status === 404 ? null : ((await response.json()) as T);
+  return response.status === 404 ? null : readJson<T>("GET", path, response);
 }
 
 export async function sendJson<T>(token: string, method: string, path: string, body?: unknown) {
-  return (await (await githubFetch(token, path, { method, body })).json()) as T;
+  return readJson<T>(method, path, await githubFetch(token, path, { method, body }));
+}
+
+// An ok answer's JSON body. GitHub sometimes sends a 200 whose body is empty or cut off; that
+// throws a GitHubError with a 502 status, the same as GitHub failing outright, rather than a bare
+// SyntaxError.
+async function readJson<T>(method: string, path: string, response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new GitHubError(
+      502,
+      `${method} ${path} answered ${response.status} with a body that isn't JSON (${text.length} bytes)`,
+    );
+  }
 }
 
 /** GitHub's own words for a refused call, else `fallback`. */
@@ -116,7 +131,7 @@ async function getPage(token: string, path: string): Promise<unknown> {
     allow: cached ? [304] : [],
   });
   if (response.status === 304 && cached) return cached.body;
-  const body: unknown = await response.json();
+  const body = await readJson<unknown>("GET", path, response);
   const etag = response.headers.get("etag");
   listedPages.delete(path);
   if (etag) {

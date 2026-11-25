@@ -142,6 +142,24 @@ describe("ProviderTakeover", () => {
     expect(retry).toEqual({ kind: "provider_missed", runner: "other", status: "requested" });
   });
 
+  test("a step that fails runs again shortly, a few times at most", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await takeover.start(work);
+    github.workflowJobRunner.mockRejectedValue(new Error("GitHub answered badly"));
+    for (let failure = 1; failure <= 3; failure++) {
+      const before = Date.now();
+      await takeover.alarm();
+      expect(state.alarm()).toBeGreaterThanOrEqual(before + 30_000);
+    }
+    const last = state.alarm();
+    await takeover.alarm();
+    expect(state.alarm()).toBe(last);
+
+    github.workflowJobRunner.mockResolvedValue({ status: "in_progress", runnerName: "gbx-1" });
+    await takeover.alarm();
+    expect(providerPicked).toHaveBeenCalledWith("groundbox", 1);
+  });
+
   test("a later attempt that misses again is ended without another re-run", async () => {
     await takeover.start({ ...work, runAttempt: 3 });
     github.workflowJobRunner.mockResolvedValue({ status: "queued", runnerName: null });
