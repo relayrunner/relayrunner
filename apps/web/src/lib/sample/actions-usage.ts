@@ -15,6 +15,8 @@ export function sampleActionsUsage(): ActionsUsage {
   const now = new Date();
   const cycleStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   const readAt = new Date(now.getTime() - 6 * 60_000).toISOString();
+  const resetsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+  const inDays = (days: number) => new Date(now.getTime() + days * 86_400_000).toISOString();
   const base = {
     accountType: "Organization",
     grossAmount: 0,
@@ -37,6 +39,13 @@ export function sampleActionsUsage(): ActionsUsage {
         usedMinutes: 1640,
         netAmount: 0,
         burnRatePerHour: 38,
+        projection: {
+          outlook: "runs_out",
+          minutesPerDay: 140,
+          projectedMinutes: 2480,
+          runsOutAt: inDays(2.6),
+          resetsAt,
+        },
       },
       {
         ...base,
@@ -49,6 +58,13 @@ export function sampleActionsUsage(): ActionsUsage {
         usedMinutes: 3112,
         netAmount: 0.67,
         burnRatePerHour: 54,
+        projection: {
+          outlook: "over",
+          minutesPerDay: 210,
+          projectedMinutes: 4380,
+          runsOutAt: null,
+          resetsAt,
+        },
         budget: null,
       },
       {
@@ -77,6 +93,13 @@ export function sampleActionsUsage(): ActionsUsage {
         usedMinutes: 420,
         netAmount: 0,
         burnRatePerHour: 6,
+        projection: {
+          outlook: "surplus",
+          minutesPerDay: 18,
+          projectedMinutes: 530,
+          runsOutAt: null,
+          resetsAt,
+        },
         budget: null,
       },
     ],
