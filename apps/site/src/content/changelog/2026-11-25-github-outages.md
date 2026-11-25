@@ -1,5 +1,5 @@
 ---
-title: Routing rides out GitHub outages
+title: Routing retries through GitHub outages
 date: 2026-11-25
 type: Reliability
 description: The Router keeps retrying through GitHub errors for about 20 minutes, and the site and dashboard show RelayRunner's live status.

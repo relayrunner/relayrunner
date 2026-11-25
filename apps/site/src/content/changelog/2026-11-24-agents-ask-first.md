@@ -1,5 +1,5 @@
 ---
-title: Agents ask you before they stop something
+title: Confirm agent changes that pause or reorder runners
 date: 2026-11-24
 type: Agents
 description: In agents that can show a form, RelayRunner asks you to confirm a new runner order, a paused runner or AI turned off.

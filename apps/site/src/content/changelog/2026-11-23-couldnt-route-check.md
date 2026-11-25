@@ -1,5 +1,5 @@
 ---
-title: Jobs that can't route say why on the pull request
+title: Failed checks show why a job couldn't route
 date: 2026-11-23
 type: Feature
 description: A failed RelayRunner check names the reason a job couldn't route, starting with the one you can fix.

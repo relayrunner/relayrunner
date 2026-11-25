@@ -1,5 +1,5 @@
 ---
-title: See where job time goes
+title: Job time split into setup, build and test
 date: 2026-11-23
 type: Feature
 description: Performance splits the time inside each job into setup, build and test, and says which setup steps a cache covers.
