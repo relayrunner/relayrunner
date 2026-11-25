@@ -163,15 +163,12 @@ export function sampleWorkflowReport(
   };
 }
 
-// `?sample=ph`: CI on more runners, each with its own history over the range. Two laptops and a
-// server of the team's own, GitHub's, and four providers: build-01 got much faster after a change,
-// GitHub's runs slowed for a few days, and Blacksmith and Depot started taking runs after an
-// evaluation. Namespace has only been evaluated.
-const MINI = "machine:sample-mini";
-const BUILD = "machine:sample-github";
-const DEPOT = "depot:depot-ubuntu-24.04-4";
+// `?sample=ph`: CI on a mix of runners, each with its own history over the range: a laptop of the
+// team's own, GitHub's, and three providers at speeds they typically show against GitHub's 2-vCPU
+// runner (Blacksmith about 1.9x, Boat about 1.5x, Ubicloud about 1.3x). GitHub's runs slowed for a
+// few days; Blacksmith and Boat started taking runs after an evaluation.
+const BOAT = "boat:boat";
 const UBICLOUD = "ubicloud:ubicloud-standard-4";
-const NAMESPACE = "namespace:nscloud-ubuntu-24.04-amd64-4x16";
 
 type PhPlan = {
   info: (typeof ENVIRONMENTS)[string];
@@ -196,7 +193,7 @@ const PH_PLAN: Record<string, PhPlan> = {
     info: ENVIRONMENTS[LINUX]!,
     seconds: [190, 92, 41, 125],
     rate: 0.006,
-    perDay: 2.6,
+    perDay: 1.1,
     wait: 11,
     spread: 0.16,
     speed: (d) => (d <= 9 && d >= 6 ? 1.22 : 1),
@@ -205,64 +202,28 @@ const PH_PLAN: Record<string, PhPlan> = {
     info: ENVIRONMENTS[MAC]!,
     seconds: [84, 40, 13, 54],
     rate: 0,
-    perDay: 1.6,
+    perDay: 2.6,
     wait: 2,
-    spread: 0.38,
-    idle: 0.2,
-  },
-  [MINI]: {
-    info: {
-      key: MINI,
-      label: "studio-mini",
-      detail: "Mac mini · Apple M4 Pro",
-      machine: { source: "connect", kind: "desktop", model: "Mac mini" },
-    },
-    seconds: [50, 24, 9, 33],
-    rate: 0,
-    perDay: 1.5,
-    wait: 3,
-    spread: 0.12,
-    since: 11,
-  },
-  [BUILD]: {
-    info: {
-      key: BUILD,
-      label: "build-01",
-      detail: "Self-hosted · 16 cores",
-      machine: { source: "github", kind: null, model: null },
-    },
-    seconds: [220, 104, 44, 146],
-    rate: 0,
-    perDay: 1.8,
-    wait: 24,
-    spread: 0.14,
-    // A warm dependency cache from day 7 on.
-    speed: (d) => (d >= 8 ? 1 : d === 7 ? 0.62 : 0.33),
+    spread: 0.3,
+    idle: 0.15,
   },
   [BLACKSMITH]: {
     info: { ...ENVIRONMENTS[BLACKSMITH]!, label: "blacksmith-4vcpu-ubuntu-2404" },
-    seconds: [112, 58, 23, 74],
+    seconds: [100, 50, 20, 66],
     rate: 0.008,
-    perDay: 1.4,
+    perDay: 2.2,
     wait: 4,
     spread: 0.1,
-    since: 9,
+    since: 11,
   },
-  [DEPOT]: {
-    info: {
-      key: DEPOT,
-      label: "depot-ubuntu-24.04-4",
-      detail: "Depot",
-      size: { vcpus: 4, memoryGb: 16 },
-    },
-    seconds: [132, 66, 27, 86],
-    rate: 0.008,
-    perDay: 1.3,
-    wait: 5,
-    spread: 0.1,
-    since: 7,
-    // Its layer cache fills over the first few days.
-    speed: (d) => (d >= 6 ? 1 : d >= 4 ? 0.86 : 0.74),
+  [BOAT]: {
+    info: { key: BOAT, label: "boat", detail: "Boat", size: { vcpus: 4, memoryGb: 8 } },
+    seconds: [128, 62, 26, 84],
+    rate: 0.0006,
+    perDay: 2,
+    wait: 3,
+    spread: 0.12,
+    since: 9,
   },
   [UBICLOUD]: {
     info: {
@@ -271,24 +232,11 @@ const PH_PLAN: Record<string, PhPlan> = {
       detail: "Ubicloud",
       size: { vcpus: 4, memoryGb: 16 },
     },
-    seconds: [166, 82, 34, 110],
+    seconds: [150, 74, 31, 100],
     rate: 0.0016,
-    perDay: 1.2,
+    perDay: 0.8,
     wait: 14,
     spread: 0.2,
-  },
-  [NAMESPACE]: {
-    info: {
-      key: NAMESPACE,
-      label: "nscloud-ubuntu-24.04-amd64-4x16",
-      detail: "Namespace",
-      size: { vcpus: 4, memoryGb: 16 },
-    },
-    seconds: [98, 50, 19, 64],
-    rate: 0.008,
-    perDay: 0,
-    wait: 6,
-    spread: 0.1,
   },
 };
 
@@ -339,12 +287,10 @@ function phWorkflowReport(
       for (let i = 0; i < count; i++) run(env, start + (0.1 + next() * 0.8) * DAY_MS, day);
     }
   }
-  // Evaluations before Blacksmith and Depot took routed runs, and Namespace's, which hasn't yet:
-  // five back to back, the first cold.
+  // Evaluations before Blacksmith and Boat took routed runs: five back to back, the first cold.
   for (const [env, daysAgo] of [
-    [BLACKSMITH, 10],
-    [DEPOT, 8],
-    [NAMESPACE, 2],
+    [BLACKSMITH, 12],
+    [BOAT, 10],
   ] as const) {
     const at = now - Math.min(days - 1, daysAgo) * DAY_MS;
     for (let i = 0; i < 5; i++)
@@ -368,7 +314,7 @@ function phWorkflowReport(
       .filter((runner) => runner.runs + runner.evaluations > 0)
       .sort((a, b) => b.runs + b.evaluations - (a.runs + a.evaluations)),
     runs,
-    untried: ["warpbuild", "boat", "runs-on", "berrybox", "lizard", "groundbox"],
+    untried: ["depot", "namespace", "warpbuild", "runs-on", "berrybox", "lizard", "groundbox"],
     truncated: false,
   };
 }
