@@ -402,6 +402,22 @@ export const machine = sqliteTable(
   ],
 );
 
+// When each person first ran the Mac app (a hello with macAppVersion from a machine they own), so
+// operators hear about it once (src/operator/operator-pings.ts). Written by MachineLink the first
+// time one of their machines says hello from the Mac app.
+export const macAppFirstUse = sqliteTable(
+  "mac_app_first_use",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    machineId: text("machine_id").references(() => machine.id, { onDelete: "set null" }),
+    macAppVersion: text("mac_app_version").notNull(),
+    firstUsedAt: integer("first_used_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("mac_app_first_use_at_idx").on(table.firstUsedAt)],
+);
+
 // Which workspaces a connected machine takes jobs in (#363). Its owner picks them on /device, from
 // the Runners page and with `relayrunner workspaces`. A row only counts while the owner is still a
 // member there (src/machines/machines.ts inWorkspace), and membership sync deletes the rows for a workspace

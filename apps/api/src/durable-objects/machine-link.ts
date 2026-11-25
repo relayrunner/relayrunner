@@ -24,6 +24,7 @@ import {
   issuePendingToken,
   pausedByName,
   promotePendingToken,
+  recordMacAppFirstUse,
 } from "../machines/machines.ts";
 import {
   placeNow,
@@ -678,8 +679,10 @@ async function saveHello(
     .from(schema.machine)
     .where(eq(schema.machine.id, machineId))
     .limit(1);
-  const columns = helloColumns(hello, new Date());
+  const now = new Date();
+  const columns = helloColumns(hello, now);
   if (machine && helloChanged(machine, columns))
     await db.update(schema.machine).set(columns).where(eq(schema.machine.id, machineId));
+  if (machine) await recordMacAppFirstUse(db, machine, hello.macAppVersion, now);
   return machine;
 }

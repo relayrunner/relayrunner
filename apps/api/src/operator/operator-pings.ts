@@ -1,8 +1,8 @@
 /**
  * Tells operators about early-access milestones in Slack: a new signup, an App install, a
- * workspace's first machine, its first job on a machine, runs that couldn't be routed, and a
- * workspace that adopted the relay and then took it out (src/routing/stickiness.ts, checked
- * against the default branch by relay-on-default.ts). The 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
+ * workspace's first machine and its first job on a machine, someone's first use of the Mac app,
+ * runs that couldn't be routed, and a workspace that adopted the relay and then took it out
+ * (src/routing/stickiness.ts, checked against the default branch by relay-on-default.ts). The 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
  * D1 and posts one message per ping to OPERATOR_SLACK_WEBHOOK_URL. Nothing is stored: each window
  * is read once, so a skipped cron run skips its pings. An uninstall can't wait for the cron, since
  * it deletes the workspace: pingUninstall posts it from the webhook.
@@ -214,6 +214,65 @@ export async function collectOperatorPings(
     pings.push({
       at: arrival.occurredAt.getTime(),
       text: `:computer: *${esc(arrival.workspace)}*: ${what}, ${esc(name)}${about ? ` (${esc(about)})` : ""}`,
+    });
+  }
+
+  // Someone's first Mac app hello (mac_app_first_use, written by MachineLink). Quiet for operators
+  // and test accounts, and when the machine only takes jobs in our own workspaces.
+  const macAppFirsts = await db
+    .select({
+      userId: schema.macAppFirstUse.userId,
+      machineId: schema.macAppFirstUse.machineId,
+      version: schema.macAppFirstUse.macAppVersion,
+      firstUsedAt: schema.macAppFirstUse.firstUsedAt,
+      person: schema.user.name,
+      role: schema.user.role,
+      machine: schema.machine.name,
+      deviceModel: schema.machine.deviceModel,
+    })
+    .from(schema.macAppFirstUse)
+    .innerJoin(schema.user, eq(schema.user.id, schema.macAppFirstUse.userId))
+    .leftJoin(schema.machine, eq(schema.machine.id, schema.macAppFirstUse.machineId))
+    .where(
+      and(
+        gte(schema.macAppFirstUse.firstUsedAt, since),
+        lt(schema.macAppFirstUse.firstUsedAt, until),
+      ),
+    )
+    .catch((error: unknown) => {
+      // Migrations and the deploy both run on merge, so the code can land first.
+      if (String(error).includes("no such table")) return [];
+      throw error;
+    });
+  const macMachineIds = macAppFirsts.flatMap((first) => first.machineId ?? []);
+  const macWorkspaces = Map.groupBy(
+    macMachineIds.length
+      ? await db
+          .select({
+            machineId: schema.machineWorkspace.machineId,
+            id: schema.workspace.id,
+            name: schema.workspace.name,
+          })
+          .from(schema.machineWorkspace)
+          .innerJoin(schema.workspace, eq(schema.workspace.id, schema.machineWorkspace.workspaceId))
+          .where(inArray(schema.machineWorkspace.machineId, macMachineIds))
+      : [],
+    (row) => row.machineId,
+  );
+  for (const first of macAppFirsts) {
+    if (first.role === "operator" || tests.users.has(first.userId)) continue;
+    const workspaces = (first.machineId && macWorkspaces.get(first.machineId)) || [];
+    const theirs = workspaces.filter((workspace) => !ours.has(workspace.id));
+    if (workspaces.length > 0 && theirs.length === 0) continue;
+    const on = first.machine
+      ? ` on ${esc(first.machine)}${first.deviceModel ? ` (${esc(first.deviceModel)})` : ""}`
+      : "";
+    const where = theirs.length
+      ? ` for ${theirs.map((workspace) => `*${esc(workspace.name)}*`).join(", ")}`
+      : "";
+    pings.push({
+      at: first.firstUsedAt.getTime(),
+      text: `:apple: *${esc(first.person)}* started using the Mac app ${esc(first.version)}${on}${where}`,
     });
   }
 

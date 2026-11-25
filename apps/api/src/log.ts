@@ -64,6 +64,7 @@ const API_EVENTS = [
   "installation_task.retrying",
   "machine.connection_taken_over",
   "machine.job",
+  "machine.mac_app_first_use_not_saved",
   "machine.job_not_reached_runner",
   "machine.routing_label_not_removed",
   "machine.run_job_not_read",

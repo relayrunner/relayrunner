@@ -521,6 +521,30 @@ export function helloColumns(
 }
 
 /**
+ * Notes the owner's first Mac app hello, for the operator ping (src/operator/operator-pings.ts):
+ * only from a machine that wasn't on the Mac app before, so a reconnect writes nothing. Logs a
+ * failure instead of throwing, so it never stands in the way of the hello.
+ */
+export async function recordMacAppFirstUse(
+  db: Db,
+  machine: Pick<typeof schema.machine.$inferSelect, "id" | "userId" | "macAppVersion">,
+  macAppVersion: string | undefined,
+  now: Date,
+) {
+  if (!macAppVersion || !machine.userId || machine.macAppVersion) return;
+  await db
+    .insert(schema.macAppFirstUse)
+    .values({ userId: machine.userId, machineId: machine.id, macAppVersion, firstUsedAt: now })
+    .onConflictDoNothing()
+    .catch((error: unknown) =>
+      log.warn("machine.mac_app_first_use_not_saved", "Mac app first use not saved", {
+        machineId: machine.id,
+        error,
+      }),
+    );
+}
+
+/**
  * Whether a machine row holds anything other than what `columns` (helloColumns) set, apart from
  * when the device was reported.
  */

@@ -9,6 +9,7 @@ import {
   deviceColumns,
   helloChanged,
   helloColumns,
+  recordMacAppFirstUse,
   presentMachine,
   issuePendingToken,
   promotePendingToken,
@@ -146,6 +147,34 @@ async function enrollAs(
   };
   return { ...body, cookie, workspaceId, accessToken: token.access_token, code };
 }
+
+describe("recordMacAppFirstUse", () => {
+  test("keeps the owner's first Mac app hello, and writes nothing for later ones", async () => {
+    const { machine } = await enroll("mac-first-use");
+    const db = createDb(env.DB);
+    const [row] = await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id));
+    const firstUse = () =>
+      db.select().from(schema.macAppFirstUse).where(eq(schema.macAppFirstUse.userId, row!.userId!));
+
+    // A plain CLI hello isn't a Mac app use.
+    await recordMacAppFirstUse(db, row!, undefined, new Date(1_000));
+    expect(await firstUse()).toEqual([]);
+
+    await recordMacAppFirstUse(db, row!, "0.7.0", new Date(2_000));
+    // Already on the Mac app: a reconnect, so nothing to note.
+    await recordMacAppFirstUse(db, { ...row!, macAppVersion: "0.7.0" }, "0.8.0", new Date(3_000));
+    // Their first Mac app hello from another machine, later on: the first one stands.
+    await recordMacAppFirstUse(db, { ...row!, macAppVersion: null }, "0.8.0", new Date(4_000));
+    expect(await firstUse()).toEqual([
+      {
+        userId: row!.userId,
+        machineId: machine.id,
+        macAppVersion: "0.7.0",
+        firstUsedAt: new Date(2_000),
+      },
+    ]);
+  });
+});
 
 describe("helloChanged", () => {
   const device = { kind: "laptop" as const, model: "MacBook Pro", chip: "Apple M3", cpuCores: 12 };

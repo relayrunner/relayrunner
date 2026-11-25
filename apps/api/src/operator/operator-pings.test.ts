@@ -59,6 +59,25 @@ async function machineArrives(
   );
 }
 
+/** `userId`'s first Mac app hello, from a machine taking jobs in `workspaceId`. */
+async function macAppUse(userId: string, workspaceId: string, firstUsedAt: Date) {
+  ids += 1;
+  const machineId = `pings-mac-${ids}`;
+  const db = createDb(env.DB);
+  await db.insert(schema.machine).values({
+    id: machineId,
+    userId,
+    name: "studio",
+    os: "macos",
+    deviceModel: "MacBook Pro",
+    macAppVersion: "0.7.0",
+  });
+  await db.insert(schema.machineWorkspace).values({ machineId, workspaceId });
+  await db
+    .insert(schema.macAppFirstUse)
+    .values({ userId, machineId, macAppVersion: "0.7.0", firstUsedAt });
+}
+
 async function machineRun(workspaceId: string, createdAt: Date) {
   ids += 1;
   await createDb(env.DB)
@@ -174,6 +193,18 @@ describe("operator pings", () => {
     expect(about(later, "First Machine")).toEqual([]);
   });
 
+  test("pings someone's first use of the Mac app once", async () => {
+    const { workspace: ws, user } = await workspace("Mac Co");
+    await macAppUse(user.id, ws.id, new Date(Date.now() - 500));
+    const db = createDb(env.DB);
+    const { since, until } = window();
+    expect(about(await collectOperatorPings(db, since, until), "Mac Co")).toEqual([
+      `:apple: *${user.name}* started using the Mac app 0.7.0 on studio (MacBook Pro) for *Mac Co*`,
+    ]);
+    const later = await collectOperatorPings(db, until, new Date(until.getTime() + PING_WINDOW_MS));
+    expect(about(later, "Mac Co")).toEqual([]);
+  });
+
   test("pings a workspace's first run on a machine once", async () => {
     const { workspace: ws } = await workspace("First Run");
     const now = Date.now();
@@ -287,6 +318,7 @@ describe("operator pings", () => {
       .where(eq(schema.user.id, member.user.id));
     await machineArrives(member.workspace.id, "machine.connected", new Date());
     await unroutable(member.workspace.id, new Date(), "nothing fits");
+    await macAppUse(member.user.id, member.workspace.id, new Date());
 
     // Installed by an operator who isn't a member (yet).
     const installed = await workspace("Ours Installed");
@@ -314,6 +346,7 @@ describe("operator pings", () => {
     expect(about(pings, "Theirs With Us")).toHaveLength(1);
     expect(about(pings, "Ours")).toEqual([]);
     expect(about(pings, member.user.email)).toEqual([]);
+    expect(about(pings, `*${member.user.name}* started using the Mac app`)).toEqual([]);
     expect(about(pings, member.workspace.slug)).toEqual([]);
     expect(about(pings, installed.workspace.slug)).toEqual([]);
   });
