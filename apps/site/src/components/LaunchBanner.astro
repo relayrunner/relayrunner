@@ -1,0 +1,58 @@
+---
+/*
+ * "Live on Product Hunt" strip above the header on the landing pages (not the docs).
+ * It hides itself once the launch day ends (midnight Pacific), so a later deploy can
+ * simply delete this file and its two usages.
+ */
+const URL =
+  "https://www.producthunt.com/products/relayrunner?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-relayrunner";
+const UNTIL = "2026-11-26T08:00:00Z";
+---
+
+<a class="launch-banner" href={URL} target="_blank" rel="noopener noreferrer" data-until={UNTIL}>
+  <span class="launch-badge" aria-hidden="true">P</span>
+  <span><strong>We're live on Product Hunt today.</strong> <span class="launch-cta">Come say hi&nbsp;→</span></span>
+</a>
+<script is:inline>
+  (function () {
+    var el = document.currentScript.previousElementSibling;
+    if (Date.now() > Date.parse(el.dataset.until)) el.remove();
+  })();
+</script>
+
+<style>
+  .launch-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 9px 16px;
+    background: #ff6154;
+    color: #fff;
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.35;
+    text-align: center;
+    text-decoration: none;
+  }
+  .launch-banner:hover .launch-cta {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .launch-badge {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    color: #ff6154;
+    font-weight: 800;
+    font-size: 13px;
+  }
+  .launch-cta {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+</style>

@@ -7,6 +7,7 @@ import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import MacAppPreview from "../components/MacAppPreview.astro";
 import Screenshot from "../components/Screenshot.astro";
+import LaunchBanner from "../components/LaunchBanner.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { setupPrompt } from "../lib/agent-setup";
@@ -66,6 +67,7 @@ const structuredData = {
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
+    <LaunchBanner />
     <SiteHeader home />
 
     <main id="main">
