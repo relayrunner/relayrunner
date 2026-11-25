@@ -66,8 +66,8 @@ export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
           {over
             .map((account) => `${account.accountLogin}: ${usd(account.netAmount)} this month`)
             .join(" · ")}
-          . Usage went past the plan's included minutes. A "While under" limit on GitHub-hosted in
-          the Router moves jobs to your machines before that happens.
+          . Usage went past the plan's included minutes. A minutes cap on GitHub-hosted in the
+          Router moves jobs to your machines before that happens.
         </p>
       </div>
     </div>

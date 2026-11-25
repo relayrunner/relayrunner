@@ -33,7 +33,7 @@ function quotaOf(step: RunnerStep, accounts: AccountUsage[], free: FreeMinutesBy
 
 export const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
 
-/** A step's spend cap as its button reads: "While under 2,400 min", "While under $100/mo" or "No cap". */
+/** A step's spend cap as its button reads: "Up to 2,400 minutes", "Up to $100 a month" or "No cap". */
 export function capText(
   step: RunnerStep,
   accounts: AccountUsage[],
@@ -42,13 +42,14 @@ export function capText(
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
     if (limitHasNoMinutes(step, free)) return "No minutes to track";
+    const kind = step.key === "github" ? "minutes" : "free minutes";
     const quota = quotaOf(step, accounts, free);
-    if (quota === null) return `While under ${step.limit.percent}%`;
-    const cap = minutes((quota * step.limit.percent) / 100);
-    return step.key !== "github" ? `While under ${cap} free min` : `While under ${cap} min`;
+    if (quota === null)
+      return `Up to ${step.limit.percent}% of ${step.key === "github" ? "included minutes" : kind}`;
+    return `Up to ${minutes((quota * step.limit.percent) / 100)} ${kind}`;
   }
   if ("spendLimit" in step && step.spendLimit)
-    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+    return `Up to $${step.spendLimit.usd.toLocaleString("en-US")} a month`;
   return "No cap";
 }
 
