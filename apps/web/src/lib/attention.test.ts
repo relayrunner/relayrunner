@@ -109,7 +109,7 @@ describe("attentionItems", () => {
       {
         key: "missing:g",
         text: "build-01 was removed or re-registered on GitHub",
-        fix: { kind: "add-runner" },
+        fix: { kind: "missing", machine: gone },
       },
     ]);
   });
