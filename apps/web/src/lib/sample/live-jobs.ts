@@ -2,6 +2,7 @@
 // SAMPLE_MACHINES.
 import type { MachineJob } from "../machines.ts";
 import type { LiveJob, LiveJobs } from "../live-jobs.ts";
+import { sampleParam } from "./param.ts";
 
 const MIN = 60_000;
 
@@ -21,7 +22,11 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
   });
   return {
     environments: [
-      { key: "github:linux-2-core", label: "ubuntu-latest", detail: "GitHub-hosted" },
+      {
+        key: "github:linux-2-core",
+        label: "ubuntu-latest",
+        detail: "GitHub-hosted",
+      },
       { key: "machine:sample", label: "ada-mbp", detail: "" },
       { key: "machine:sample-mini", label: "studio-mini", detail: "" },
       { key: "self-hosted:default", label: "Self-hosted", detail: "" },
@@ -33,7 +38,11 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
         environment: "machine:sample",
         labels: ["rr-0123456789ab"],
         startedAt: now - 4 * MIN - 57_000,
-        typical: { medianMs: 6 * MIN + 20_000, p90Ms: 7 * MIN + 30_000, samples: 38 },
+        typical: {
+          medianMs: 6 * MIN + 20_000,
+          p90Ms: 7 * MIN + 30_000,
+          samples: 38,
+        },
       }),
       job({
         id: 102,
@@ -43,29 +52,33 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
         typical: { medianMs: 41_000, p90Ms: 55_000, samples: 50 },
       }),
     ],
-    queued: [
-      job({
-        id: 103,
-        name: "build (windows)",
-        workflow: "Release",
-        environment: "self-hosted:default",
-        labels: ["self-hosted", "windows"],
-        queuedAt: now - 12 * MIN - 4_000,
-      }),
-      job({
-        id: 104,
-        name: "e2e",
-        environment: "machine:sample-mini",
-        labels: ["rr-89abcdef0123"],
-        queuedAt: now - 2 * MIN - 31_000,
-      }),
-      job({
-        id: 105,
-        name: "typecheck",
-        environment: "github:linux-2-core",
-        queuedAt: now - 9_000,
-      }),
-    ],
+    // The Product Hunt variant shows an empty queue.
+    queued:
+      sampleParam() === "ph"
+        ? []
+        : [
+            job({
+              id: 103,
+              name: "build (windows)",
+              workflow: "Release",
+              environment: "self-hosted:default",
+              labels: ["self-hosted", "windows"],
+              queuedAt: now - 12 * MIN - 4_000,
+            }),
+            job({
+              id: 104,
+              name: "e2e",
+              environment: "machine:sample-mini",
+              labels: ["rr-89abcdef0123"],
+              queuedAt: now - 2 * MIN - 31_000,
+            }),
+            job({
+              id: 105,
+              name: "typecheck",
+              environment: "github:linux-2-core",
+              queuedAt: now - 9_000,
+            }),
+          ],
   };
 }
 

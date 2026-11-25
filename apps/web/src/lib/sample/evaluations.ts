@@ -1,6 +1,6 @@
 // Evaluations for the dev preview (lib/sample/answers.ts), like GET /api/evaluations/:id. The
 // signed-out Evaluate page (routes/evaluate.$provider.tsx) shows sampleEvaluation as its example.
-import { labelForSize } from "@relayrunner/providers";
+import { BASE_BOOK, isProviderId, labelForSize, listRate } from "@relayrunner/providers";
 import {
   type Attempt,
   EVALUATION_RUNS,
@@ -70,8 +70,15 @@ const SAMPLE_JOBS: [string, Split, Split, Split][] = [
 
 const SAMPLE_RUN_MS = [475, 310, 298, 304, 301].map(s);
 
-// List-price cost of each run: 18 billed minutes cold, 11 warm, at 4 vCPU.
-const SAMPLE_RUN_USD = [0.216, 0.132, 0.132, 0.132, 0.132];
+// Billed minutes of each run (each job's run time rounded up): 18 cold, 11 warm.
+const SAMPLE_RUN_MINUTES = [18, 11, 11, 11, 11];
+
+// Each run's cost at the provider's list price for its runner, as the API prices them, or $0.012 a
+// minute for a provider without one.
+function runUsd(provider: string, label: string): number[] {
+  const rate = (isProviderId(provider) && listRate(BASE_BOOK, provider, label)) || 0.012;
+  return SAMPLE_RUN_MINUTES.map((minutes) => minutes * rate);
+}
 
 /** A made-up evaluation: `done` attempts finished, the next one running. */
 export function sampleEvaluation(
@@ -81,6 +88,8 @@ export function sampleEvaluation(
   stopped = false,
 ) {
   const vcpus = 4;
+  const label = labelForSize(provider, vcpus, 0) ?? "";
+  const runCosts = runUsd(provider, label);
   const attempts: Attempt[] = SAMPLE_RUN_MS.map((ms, i) => {
     const attempt = i + 1;
     const status =
@@ -90,7 +99,7 @@ export function sampleEvaluation(
       status,
       conclusion: status === "done" ? "success" : null,
       ms: status === "done" ? ms : null,
-      usd: status === "done" ? SAMPLE_RUN_USD[i]! : null,
+      usd: status === "done" ? runCosts[i]! : null,
       jobs:
         status === "waiting"
           ? []
@@ -110,7 +119,7 @@ export function sampleEvaluation(
     error: state === "waiting" ? "no_dispatch" : null,
     provider,
     vcpus,
-    label: labelForSize(provider, vcpus, 0) ?? "",
+    label,
     repositoryId: 1,
     repository: "acme/web",
     workflow: "CI",
@@ -136,11 +145,11 @@ export function sampleEvaluation(
     baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.224 },
     cold:
       done >= 1
-        ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000, usd: SAMPLE_RUN_USD[0]! }
+        ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000, usd: runCosts[0]! }
         : { ms: null, waitMs: null, usd: null },
     warm:
       done >= 2
-        ? { ms: 302_000, waitMs: 5_000, usd: 0.132 }
+        ? { ms: 302_000, waitMs: 5_000, usd: runCosts[1]! }
         : { ms: null, waitMs: null, usd: null },
     jobs: SAMPLE_JOBS.map(([name, baseline, cold, warm]) => ({
       name,
