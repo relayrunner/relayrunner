@@ -24,8 +24,6 @@
   --go-edge: rgba(47, 179, 68, 0.6);
   --run: #c98a12;
   --run-text: #9a6608;
-  /* Eyebrows and kickers above headings, so they don't blend into green headline words. */
-  --label: #22679a;
   --mascot-green: linear-gradient(140deg, #52c93c 0%, #2db83a 45%, #129a3c 100%);
   --shadow-card: 0 24px 48px -32px rgba(14, 26, 17, 0.28);
   --shadow-on: 0 20px 50px -28px rgba(47, 179, 68, 0.55);
@@ -54,7 +52,6 @@
   --go-edge: rgba(63, 185, 80, 0.55);
   --run: #d29922;
   --run-text: #d29922;
-  --label: #7cb6e4;
   --shadow-card: 0 24px 48px -28px rgba(0, 0, 0, 0.8);
   --shadow-on: 0 20px 50px -28px rgba(63, 185, 80, 0.45);
 }
