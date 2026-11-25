@@ -90,9 +90,8 @@ const check = "M5 12l5 5 9-10";
   relay-test:
     uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
-      <mark>machine: self-hosted</mark>
-      <mark>github: ubuntu-latest</mark>
-      <mark>blacksmith: blacksmith-4vcpu-ubuntu-2404</mark>
+      <mark>os: linux</mark>
+      <mark>cpus: 4</mark>
   test:
     needs: relay-test
     runs-on: {"${{ needs.relay-test.outputs.runner }}"}</pre>
@@ -101,8 +100,8 @@ const check = "M5 12l5 5 9-10";
       <p class="kicker">The relay</p>
       <h2>Each job runs on the first free runner its relay allows.</h2>
       <p class="body">
-        The relay answers in about a second, needs no runner and uses no minutes. Leave a provider
-        out of a job's relay and that job never runs there.
+        The relay answers in about a second, needs no runner and uses no minutes. Say what the job
+        needs, like Linux with 4 CPUs, and each runner in your order offers its smallest one that fits.
       </p>
       <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
     </div>
