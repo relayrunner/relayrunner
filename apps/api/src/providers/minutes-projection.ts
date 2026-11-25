@@ -9,7 +9,7 @@
 // `outlook` is what the dashboard says, and later what routing can act on: "surplus" means minutes
 // already paid for will go unused, so GitHub-hosted runners could take more jobs this cycle.
 
-const DAY_MS = 86_400_000;
+import { DAY_MS, utcDay } from "../time.ts";
 
 // The pace looks back over this many complete days at most.
 export const PACE_WINDOW_DAYS = 14;
@@ -103,7 +103,7 @@ export function projectMinutes({
   const start = cycleStart.getTime();
   const end = Date.UTC(cycleStart.getUTCFullYear(), cycleStart.getUTCMonth() + 1, 1);
   const at = now.getTime();
-  const today = at - (at % DAY_MS);
+  const today = utcDay(at);
   if (today <= start || at >= end) return null;
 
   const rates = dailyRates(days, usedMinutes, start, today, at);
@@ -113,7 +113,7 @@ export function projectMinutes({
   let total = usedMinutes;
   let runsOutAt: number | null = null;
   for (let from = at; from < end;) {
-    const until = Math.min(end, from - (from % DAY_MS) + DAY_MS);
+    const until = Math.min(end, utcDay(from) + DAY_MS);
     const perMs = rateOn(from) / DAY_MS;
     const added = perMs * (until - from);
     // Landing on the quota right at the reset still counts as lasting.

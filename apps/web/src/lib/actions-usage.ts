@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { shortDate } from "./time-zone";
+import { shortDate, utcShortDate } from "./time-zone";
 import { count, exact } from "./utils";
 
 // Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
@@ -100,10 +100,6 @@ export function unavailableText(account: AccountUsage): string | null {
   }
 }
 
-// The reset is a UTC day (GitHub's billing month), so it's named in UTC.
-const resetText = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-
 /**
  * Where the cycle is headed at the recent pace: when the included minutes run out, or how many will
  * go unused by the reset. Null without a projection.
@@ -113,7 +109,7 @@ export function paceText(usage: AccountUsage) {
   const quota = usage.quotaMinutes;
   if (!projection || quota === null) return null;
   const { projectedMinutes: projected, runsOutAt } = projection;
-  const reset = resetText(projection.resetsAt);
+  const reset = utcShortDate(projection.resetsAt);
   switch (projection.outlook) {
     case "runs_out":
       return `At this pace, included minutes run out around ${shortDate(Date.parse(runsOutAt!))}. GitHub bills jobs after that, until the ${reset} reset.`;

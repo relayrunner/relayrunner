@@ -32,7 +32,7 @@ import {
 } from "drizzle-orm";
 import { recordOverage } from "../reports/activity.ts";
 import { createAuth } from "../auth/auth.ts";
-import { createDb, type Db, prepare, schema } from "../db/index.ts";
+import { createDb, type Db, isMissingTable, prepare, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { linkEnterpriseOrganizations } from "../github/enterprise.ts";
@@ -420,7 +420,7 @@ export async function pollInstallation(
     ),
   ]);
 
-  await saveDays(db, installation.id, start, dailyMinutes(items, privacy));
+  await saveDays(db, installation.id, dailyMinutes(items, privacy));
 
   // GitHub billed overage: the account went past its included minutes. The Activity log says so
   // once per cycle, and the dashboard shows a banner while netAmount stays above 0 (#117).
@@ -434,11 +434,10 @@ export async function pollInstallation(
     });
 }
 
-// Migrations and the deploy both run on merge, so the code can land before actions_usage_day.
-const missingTable = (error: unknown) => String(error).includes("no such table");
-
-// Replaces the installation's daily minutes with this cycle's. Older cycles go with them.
-async function saveDays(db: Db, installationId: number, start: Date, days: DayUsage[]) {
+// Replaces the installation's daily minutes with this cycle's. Older cycles go with them. Apart from
+// the poll's main batch so a missing actions_usage_day (code deployed before its migration, which
+// both run on merge) can't fail the poll. TODO: fold into the main batch once migrated.
+async function saveDays(db: Db, installationId: number, days: DayUsage[]) {
   const d1 = db.$client;
   await d1
     .batch([
@@ -450,13 +449,13 @@ async function saveDays(db: Db, installationId: number, start: Date, days: DayUs
       ),
       d1
         .prepare(
-          `INSERT INTO actions_usage_day (installation_id, cycle_start, day, used_minutes)
-          SELECT ?1, ?2, value ->> 'day', value ->> 'usedMinutes' FROM json_each(?3)`,
+          `INSERT INTO actions_usage_day (installation_id, day, used_minutes)
+          SELECT ?1, value ->> 'day', value ->> 'usedMinutes' FROM json_each(?2)`,
         )
-        .bind(installationId, start.getTime(), JSON.stringify(days)),
+        .bind(installationId, JSON.stringify(days)),
     ])
     .catch((error: unknown) => {
-      if (!missingTable(error)) throw error;
+      if (!isMissingTable(error)) throw error;
     });
 }
 
@@ -468,12 +467,12 @@ async function readDays(db: Db, installationId: number, start: Date): Promise<Da
     .where(
       and(
         eq(schema.actionsUsageDay.installationId, installationId),
-        eq(schema.actionsUsageDay.cycleStart, start),
+        gte(schema.actionsUsageDay.day, dayOf(start)),
       ),
     )
     .orderBy(asc(schema.actionsUsageDay.day))
     .catch((error: unknown) => {
-      if (missingTable(error)) return [];
+      if (isMissingTable(error)) return [];
       throw error;
     });
 }
@@ -483,25 +482,25 @@ type UsageRow = Omit<
   "id" | "installationId" | "cycleStart" | "createdAt" | "updatedAt"
 >;
 
+type CycleItem = BillingUsageItem & { repositoryName: string };
+
 // The cycle's Actions items. An enterprise's span orgs, so their repos are named "org/repo".
-function cycleItems(items: BillingUsageItem[], start: Date, enterprise: boolean) {
-  return items.flatMap((item) =>
-    item.product.toLowerCase() === "actions" && item.date.slice(0, 10) >= dayOf(start)
-      ? [
-          {
-            ...item,
-            repositoryName:
-              enterprise && item.organizationName && item.repositoryName
-                ? `${item.organizationName}/${item.repositoryName}`
-                : (item.repositoryName ?? ""),
-          },
-        ]
-      : [],
-  );
+function cycleItems(items: BillingUsageItem[], start: Date, enterprise: boolean): CycleItem[] {
+  return items
+    .filter(
+      (item) => item.product.toLowerCase() === "actions" && item.date.slice(0, 10) >= dayOf(start),
+    )
+    .map((item) => ({
+      ...item,
+      repositoryName:
+        enterprise && item.organizationName && item.repositoryName
+          ? `${item.organizationName}/${item.repositoryName}`
+          : (item.repositoryName ?? ""),
+    }));
 }
 
 // The cycle's Actions rows, summed over its days per repo and SKU.
-function aggregate(items: ReturnType<typeof cycleItems>): UsageRow[] {
+function aggregate(items: CycleItem[]): UsageRow[] {
   const rows = new Map<string, UsageRow>();
   for (const item of items) {
     const { repositoryName } = item;
@@ -572,10 +571,7 @@ const countsTowardQuota = (
   privacy.get(row.repositoryName.toLowerCase()) !== false;
 
 // Each day's quota minutes, for the run-out projection.
-function dailyMinutes(
-  items: ReturnType<typeof cycleItems>,
-  privacy: Map<string, boolean>,
-): DayUsage[] {
+function dailyMinutes(items: CycleItem[], privacy: Map<string, boolean>): DayUsage[] {
   const days = new Map<string, number>();
   for (const item of items) {
     if (!countsTowardQuota(item, privacy)) continue;

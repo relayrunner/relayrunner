@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "92243c52-2c64-4311-806b-36feef60616e",
+  "id": "6c47b373-9893-45aa-bb1b-06af6ac98cd0",
   "prevId": "4efdba36-49d0-4a68-aaa2-f58c97b01b0a",
   "tables": {
     "account": {
@@ -351,13 +351,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "cycle_start": {
-          "name": "cycle_start",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "day": {
           "name": "day",
           "type": "text",
@@ -390,13 +383,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "actions_usage_day_installation_id_cycle_start_day_pk": {
+        "actions_usage_day_installation_id_day_pk": {
           "columns": [
             "installation_id",
-            "cycle_start",
             "day"
           ],
-          "name": "actions_usage_day_installation_id_cycle_start_day_pk"
+          "name": "actions_usage_day_installation_id_day_pk"
         }
       },
       "uniqueConstraints": {},

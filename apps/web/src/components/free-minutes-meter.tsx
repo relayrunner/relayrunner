@@ -2,6 +2,7 @@ import { type FreeMinutesProvider, RUNNER_LABELS } from "@relayrunner/runner-ord
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { QuotaMeter } from "@/components/quota-meter";
+import { utcShortDate } from "@/lib/time-zone";
 import { counted, type FreeMinutes, getFreeMinutes } from "@/lib/free-minutes";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +15,7 @@ const count = (n: number) => Math.round(n).toLocaleString("en-US");
 function resets(cycleStart: string) {
   const start = new Date(cycleStart);
   const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-  return next.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return utcShortDate(next);
 }
 
 /** A counted free-minutes total: used against the quota, then what ran past it. */

@@ -13,7 +13,7 @@
  * workspaces where everyone is a test account or an operator.
  */
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { type Db, createDb, schema } from "../db/index.ts";
+import { type Db, createDb, isMissingTable, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { SETTLE_MS, workspaceStickiness } from "../routing/stickiness.ts";
@@ -240,8 +240,7 @@ export async function collectOperatorPings(
       ),
     )
     .catch((error: unknown) => {
-      // Migrations and the deploy both run on merge, so the code can land first.
-      if (String(error).includes("no such table")) return [];
+      if (isMissingTable(error)) return [];
       throw error;
     });
   const macMachineIds = macAppFirsts.flatMap((first) => first.machineId ?? []);
