@@ -26,7 +26,7 @@ export function sampleRunnerOrder(): RunnerOrderResponse {
       order: {
         steps: [
           { key: "machine" },
-          { key: "github", limit: { percent: 80 } },
+          { key: "github", limit: { percent: 100 } },
           { key: "blacksmith", limit: { percent: 90 } },
           { key: "boat", spendLimit: { usd: 50 } },
         ],
