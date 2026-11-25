@@ -154,9 +154,10 @@ export function sampleWorkflowReport(
     fewRuns: 5,
     baseline: LINUX,
     jobs: [...JOBS],
+    // In PH_COLOR_ORDER, since the chart colors runners by their place in this list.
     runners: runners
       .filter((runner) => runner.runs + runner.evaluations > 0)
-      .sort((a, b) => b.runs + b.evaluations - (a.runs + a.evaluations)),
+      .sort((a, b) => PH_COLOR_ORDER.indexOf(a.key) - PH_COLOR_ORDER.indexOf(b.key)),
     runs,
     untried: ["depot", "namespace", "boat", "ubicloud", "berrybox", "lizard", "groundbox"],
     truncated: false,
@@ -248,7 +249,11 @@ const PH_PLAN: Record<string, PhPlan> = {
   },
 };
 
-const PH_DENSITY = 12;
+const PH_DENSITY = 7;
+
+// The order that gives each runner a color near its brand from the chart's palette: Boat blue,
+// GitHub green, the MacBook purple, Ubicloud orange and Blacksmith yellow.
+const PH_COLOR_ORDER = [BOAT, LINUX, MAC, UBICLOUD, BLACKSMITH];
 
 function phWorkflowReport(
   days: number,
@@ -291,13 +296,16 @@ function phWorkflowReport(
   };
   for (let day = days - 1; day >= 0; day--) {
     const start = now - (day + 1) * DAY_MS;
+    // Quiet weekends and uneven weekdays, so some stretches are sparse and some busy.
+    const weekend = new Date(start + DAY_MS / 2).getUTCDay() % 6 === 0;
+    const busy = weekend ? 0.15 + next() * 0.15 : 0.45 + next() * 1.1;
     for (const [env, plan] of Object.entries(PH_PLAN)) {
       drift.set(env, Math.min(1.1, Math.max(0.9, drift.get(env)! + (next() - 0.5) * 0.06)));
       if (plan.since !== undefined && day > plan.since) continue;
       if (plan.idle && next() < plan.idle) continue;
       // Busy repos run CI dozens of times a day, so the chart reads as a cloud of runs.
       const count = Math.round(
-        plan.perDay * (plan.volume?.(day) ?? 1) * PH_DENSITY * (0.5 + next()),
+        plan.perDay * (plan.volume?.(day) ?? 1) * PH_DENSITY * busy * (0.6 + next() * 0.8),
       );
       for (let i = 0; i < count; i++) run(env, start + (0.1 + next() * 0.8) * DAY_MS, day);
     }
@@ -325,9 +333,10 @@ function phWorkflowReport(
     fewRuns: 5,
     baseline: LINUX,
     jobs: [...JOBS],
+    // In PH_COLOR_ORDER, since the chart colors runners by their place in this list.
     runners: runners
       .filter((runner) => runner.runs + runner.evaluations > 0)
-      .sort((a, b) => b.runs + b.evaluations - (a.runs + a.evaluations)),
+      .sort((a, b) => PH_COLOR_ORDER.indexOf(a.key) - PH_COLOR_ORDER.indexOf(b.key)),
     runs,
     untried: ["depot", "namespace", "warpbuild", "runs-on", "berrybox", "lizard", "groundbox"],
     truncated: false,
