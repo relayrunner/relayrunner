@@ -33,7 +33,29 @@ function quotaOf(step: RunnerStep, accounts: AccountUsage[], free: FreeMinutesBy
 
 export const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
 
-/** A step's spend cap as its button reads: "While under 2,400 min", "While under $100/mo" or "No cap". */
+/**
+ * A minutes cap as an amount: "2,400 minutes", or "80% of minutes" with no quota to count. Each
+ * GitHub account has its own quota, so with several the cap is a range: "1,600–2,400 minutes".
+ */
+function minutesCap(
+  step: RunnerStep,
+  percent: number,
+  accounts: AccountUsage[],
+  free: FreeMinutesByProvider,
+) {
+  const quotas =
+    step.key === "github"
+      ? accounts.filter(hasQuota).map((account) => account.quotaMinutes!)
+      : [quotaOf(step, accounts, free)].filter((quota) => quota !== null);
+  if (quotas.length === 0) return `${percent}% of minutes`;
+  const low = minutes((Math.min(...quotas) * percent) / 100);
+  const high = minutes((Math.max(...quotas) * percent) / 100);
+  return `${low === high ? low : `${low}–${high}`} minutes`;
+}
+
+const spendCap = (usd: number) => `$${usd.toLocaleString("en-US")}/month`;
+
+/** A step's spend cap as its button reads: "Up to 2,400 minutes", "Up to $100/month" or "No cap". */
 export function capText(
   step: RunnerStep,
   accounts: AccountUsage[],
@@ -42,13 +64,9 @@ export function capText(
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
     if (limitHasNoMinutes(step, free)) return "No minutes to track";
-    const quota = quotaOf(step, accounts, free);
-    if (quota === null) return `While under ${step.limit.percent}%`;
-    const cap = minutes((quota * step.limit.percent) / 100);
-    return step.key !== "github" ? `While under ${cap} free min` : `While under ${cap} min`;
+    return `Up to ${minutesCap(step, step.limit.percent, accounts, free)}`;
   }
-  if ("spendLimit" in step && step.spendLimit)
-    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+  if ("spendLimit" in step && step.spendLimit) return `Up to ${spendCap(step.spendLimit.usd)}`;
   return "No cap";
 }
 
@@ -68,21 +86,13 @@ export function handoffText(
   if (prev.key === "machine") return { text: "When every machine is busy or offline", warn: false };
   const label = RUNNER_LABELS[prev.key];
   // A limit on free minutes the plan doesn't have never stops a job: the step reads as uncapped.
-  if ("limit" in prev && prev.limit && !limitHasNoMinutes(prev, free)) {
-    const quota = quotaOf(prev, accounts, free);
-    if (quota === null)
-      return { text: `Once ${prev.limit.percent}% of included minutes are used`, warn: false };
-    const cap = minutes((quota * prev.limit.percent) / 100);
+  if ("limit" in prev && prev.limit && !limitHasNoMinutes(prev, free))
     return {
-      text: prev.key !== "github" ? `Once ${cap} free min are used` : `Once ${cap} min are used`,
+      text: `Once ${minutesCap(prev, prev.limit.percent, accounts, free)} are used`,
       warn: false,
     };
-  }
   if ("spendLimit" in prev && prev.spendLimit)
-    return {
-      text: `Once $${prev.spendLimit.usd.toLocaleString("en-US")} is spent this month`,
-      warn: false,
-    };
+    return { text: `Once ${spendCap(prev.spendLimit.usd)} is spent`, warn: false };
   if (prev.key === "boat") {
     if (boatConnected)
       return { text: "When Boat reaches its plan's limit on job starts", warn: false };

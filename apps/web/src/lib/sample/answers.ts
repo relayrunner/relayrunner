@@ -204,6 +204,8 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/workspaces\/[^/]+\/provider-health$/, () => sampleHealth()],
   // Every flag on, to show what's behind them.
   [/^\/flags$/, () => allFlags(true)],
+  // `localStorage["rr-status-preview"] = "degraded"` (or downtime, maintenance) previews the banner.
+  [/^\/status$/, () => sampleServiceStatus()],
 ];
 
 // What a change answers, from the body it sent. Changes not listed go nowhere: the page keeps what
@@ -269,4 +271,16 @@ export function sampleAnswer(path: string, init?: RequestInit): unknown {
     if (match) return structuredClone(answer(match, url.searchParams));
   }
   throw new Error(`The dev preview has no sample for GET ${url.pathname}`);
+}
+
+const SAMPLE_INCIDENTS: Record<string, string> = {
+  degraded: "Delayed job routing",
+  downtime: "Jobs are not being routed",
+  maintenance: "Database maintenance until 10:30 AM",
+};
+
+function sampleServiceStatus() {
+  const state = localStorage.getItem("rr-status-preview");
+  if (!state || !(state in SAMPLE_INCIDENTS)) return { state: "operational", incident: null };
+  return { state, incident: SAMPLE_INCIDENTS[state] };
 }

@@ -113,6 +113,8 @@ export function ProviderTrendsCard({
         axis={failures ? (v) => `${v}%` : timeAxis}
         format={failures ? (v) => `${v.toFixed(v < 10 ? 1 : 0)}%` : clock}
         label={`${title} by runner type`}
+        // A day with too few jobs for a rate stays blank rather than guessing one.
+        bridge={!failures}
       />
       <Legend series={lines} />
     </section>

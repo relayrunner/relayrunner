@@ -40,7 +40,7 @@ import { CloudRunnersTable } from "@/components/cloud-runners-table";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { NeedsAttention } from "@/components/runner-attention";
-import { RunnersNow } from "@/components/runners-now";
+import { RunnersFreshness, RunnersNow } from "@/components/runners-now";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -327,13 +327,17 @@ function RunnersPage() {
       {dialog}
       {othersDialog}
       <PageHeader
+        className="max-w-5xl"
         title="Runners"
         action={
           !machinesLoaded || (empty && others.length === 0) ? undefined : (
-            <AddRunner
-              onAddExisting={() => setGithubOpen(true)}
-              onAddMine={others.length > 0 ? () => setOthersOpen(true) : undefined}
-            />
+            <div className="flex items-center gap-4">
+              {!empty && <RunnersFreshness machines={allMachines} updatedAt={updatedAt} />}
+              <AddRunner
+                onAddExisting={() => setGithubOpen(true)}
+                onAddMine={others.length > 0 ? () => setOthersOpen(true) : undefined}
+              />
+            </div>
           )
         }
       >

@@ -1,0 +1,1 @@
+ALTER TABLE `auto_job` ADD `cpus` integer;

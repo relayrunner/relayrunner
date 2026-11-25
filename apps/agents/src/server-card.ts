@@ -18,7 +18,8 @@ export const serverCard = (mcpUrl: string) => ({
   name: "app.relayrunner/mcp",
   version: SERVER_VERSION,
   title: "RelayRunner",
-  description: "Read your RelayRunner workspace: runners, workflow runs, routing and CI usage.",
+  description:
+    "Read and change your RelayRunner workspace: runners, workflow runs, routing and CI usage.",
   websiteUrl: "https://relayrunner.dev/docs/reference/mcp",
   repository: {
     url: "https://github.com/relayrunner/relayrunner",

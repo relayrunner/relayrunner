@@ -63,7 +63,7 @@ function ProviderSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="Providers">
+      <PageHeader className="max-w-3xl" title="Providers">
         Paste a read-only token from a hosted runner provider to see what it actually billed, not
         just an estimate. Tokens are stored encrypted and never shown again.
       </PageHeader>

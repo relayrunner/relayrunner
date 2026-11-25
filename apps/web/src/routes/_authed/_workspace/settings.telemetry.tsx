@@ -62,7 +62,7 @@ function TelemetrySettingsPage() {
 
   return (
     <section>
-      <PageHeader title="Telemetry">
+      <PageHeader className="max-w-3xl" title="Telemetry">
         Send traces and job logs to an OpenTelemetry endpoint, and keep job logs in your own bucket.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}

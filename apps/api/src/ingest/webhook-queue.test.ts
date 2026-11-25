@@ -372,6 +372,30 @@ describe("webhook queue consumer", () => {
       log.mockRestore();
     });
 
+    test("a retried queued job that has since ended gets no runner", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      const now = Date.now();
+      await db
+        .prepare(
+          "insert into workflow_job (id, installation_id, repository_id, repository_full_name, run_id, run_attempt, name, kind, status, labels, head_sha, github_created_at, created_at, updated_at) values (43, 7, 1, 'relayrunner/relayrunner', 9, 1, 'build', 'other', 'completed', '[\"rr-0123456789ab\"]', 'abc', ?1, ?1, ?1)",
+        )
+        .bind(now)
+        .run();
+      claim.mockReset();
+      run.mockClear();
+      const ended = workflowJob(["rr-0123456789ab"]) as Extract<
+        WebhookMessage,
+        { event: "workflow_job" }
+      >;
+      ended.job.id = 43;
+      expect(await consumer.processWebhook(routeEnv(), ended, { retry: true })).toMatchObject({
+        result: "job_ended",
+      });
+      expect(claim).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+      log.mockRestore();
+    });
+
     test("a job whose machine went offline after the pick goes back in line", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       claim.mockResolvedValueOnce({ id: "0123456789ab", machineId: "m1" });

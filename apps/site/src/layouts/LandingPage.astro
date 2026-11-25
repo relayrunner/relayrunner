@@ -6,6 +6,7 @@
  */
 import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
+import LaunchBanner from "../components/LaunchBanner.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import "../style.css";
 import "../styles/solutions.css";
@@ -33,6 +34,7 @@ const { title, description, path, image, imageAlt } = Astro.props;
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
+    <LaunchBanner />
     <SiteHeader />
     <main id="main">
       <slot />

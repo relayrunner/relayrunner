@@ -223,7 +223,7 @@ export function RunnerOrderEditor({
                   className="mt-1 justify-self-start text-muted-foreground"
                 >
                   <PlusIcon aria-hidden />
-                  Add step
+                  Add runner
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
@@ -678,6 +678,10 @@ function LimitChoice({
         value={text}
         disabled={disabled}
         aria-label={inputLabel}
+        // Clicking or tabbing into the number picks this choice, so it needn't be clicked too.
+        onFocus={() => {
+          if (!on) pick();
+        }}
         onChange={(event) => {
           setText(event.target.value);
           if (on) pick(event.target.value);

@@ -1,6 +1,8 @@
 // Pieces the dashboard's SVG charts share: hover tooltips, stacked bar segments and the width
 // a chart draws at.
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { periodStarts } from "@/lib/chart-trend";
+import { startOfDay, startOfHours, zoneFormat } from "@/lib/time-zone";
 
 /** A tooltip line: a label, with its value on the right. */
 export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
@@ -66,4 +68,80 @@ export function useWidth<T extends HTMLElement>() {
     return () => observer.disconnect();
   }, []);
   return [ref, width] as const;
+}
+
+export const HOUR_FORMAT: Intl.DateTimeFormatOptions = { hour: "numeric" };
+export const DAY_FORMAT: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+
+/**
+ * The axis labels that fit, taken in the order given so the first win (dates before hours): each
+ * at least 56px from the others, and none past `maxX`.
+ */
+export function thinLabels(candidates: { x: number; text: string }[], maxX: number) {
+  const kept: { x: number; text: string }[] = [];
+  for (const label of candidates)
+    if (label.x <= maxX && kept.every((other) => Math.abs(other.x - label.x) >= 56))
+      kept.push(label);
+  return kept;
+}
+
+/**
+ * Labels under runs spaced by order rather than time, each run `slot` wide from `left`: the date
+ * where each day starts, with a faint line from `top` to `bottom` between days. Over three days or
+ * less, every few hours too where there's room.
+ */
+export function OrderAxis({
+  times,
+  left,
+  slot,
+  maxX,
+  top,
+  bottom,
+}: {
+  /** When each run finished, oldest first. */
+  times: number[];
+  left: number;
+  slot: number;
+  maxX: number;
+  top: number;
+  bottom: number;
+}) {
+  const days = periodStarts(times, (at) => startOfDay(at));
+  const hours = days.length > 3 ? [] : periodStarts(times, (at) => startOfHours(at, 3));
+  const day = zoneFormat(DAY_FORMAT);
+  const hour = zoneFormat(HOUR_FORMAT);
+  // A label sits at the left edge of its first run's column.
+  const edge = (index: number) => left + index * slot;
+  const kept = thinLabels(
+    [
+      ...days.map((index) => ({ x: edge(index), text: day.format(times[index]!) })),
+      ...hours.map((index) => ({ x: edge(index), text: hour.format(times[index]!) })),
+    ],
+    maxX,
+  );
+  return (
+    <>
+      {days.slice(1).map((index) => (
+        <line
+          key={index}
+          x1={edge(index)}
+          x2={edge(index)}
+          y1={top}
+          y2={bottom}
+          stroke="var(--rr-line)"
+          strokeDasharray="2 3"
+        />
+      ))}
+      {kept.map(({ x, text }) => (
+        <text
+          key={x}
+          x={x}
+          y={bottom + 16}
+          className="fill-muted-foreground text-[10px] tabular-nums"
+        >
+          {text}
+        </text>
+      ))}
+    </>
+  );
 }

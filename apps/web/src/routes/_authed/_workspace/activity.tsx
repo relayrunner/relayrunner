@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
+import { RUNNER_LABELS, stepText } from "@relayrunner/runner-order";
 import {
   Archive,
   Ban,
@@ -63,7 +63,6 @@ import { DAY_MS } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import { getCheckSavings, minutes, money, type FreeCheckSavings } from "@/lib/usage";
 import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
-import { ruleText } from "@/lib/runner-order";
 import { formatDateTime } from "@/lib/time-zone";
 
 // Fast enough that a push shows up within seconds, without a live connection.
@@ -180,6 +179,7 @@ function ActivityRoute() {
   return (
     <section>
       <PageHeader
+        className="max-w-6xl"
         title="Activity"
         action={savings && savings.checks > 0 && <SavingsLink savings={savings} />}
       >
@@ -499,13 +499,6 @@ function memberSentence(item: ActivityItem) {
     default:
       return "";
   }
-}
-
-// One runner order step, with its cap as the Router page words it: "GitHub-hosted (while under 80%)".
-function stepText(step: RunnerStep) {
-  const label = RUNNER_LABELS[step.key];
-  const limited = ("limit" in step && step.limit) || ("spendLimit" in step && step.spendLimit);
-  return limited ? `${label} (${ruleText(step).toLowerCase()})` : label;
 }
 
 // Settings events lead with who: "Ada set the default size for auto jobs to 4 vCPU".

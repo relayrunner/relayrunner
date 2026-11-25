@@ -40,7 +40,7 @@ function GitHubSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="GitHub">
+      <PageHeader className="max-w-3xl" title="GitHub">
         {workspace.name} is the RelayRunner GitHub App installed on this account. Its repos' jobs
         are what this workspace routes.
       </PageHeader>

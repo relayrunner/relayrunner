@@ -69,7 +69,12 @@ function rpc(env: Env, body: unknown, token = "good", headers: Record<string, st
 }
 
 // A 2026-07-28 request: no handshake, the client's details ride along in every request's _meta.
-async function modernRpc(env: Env, method: string, params: Record<string, unknown> = {}) {
+async function modernRpc(
+  env: Env,
+  method: string,
+  params: Record<string, unknown> = {},
+  capabilities: Record<string, unknown> = {},
+) {
   const response = await rpc(
     env,
     {
@@ -79,12 +84,16 @@ async function modernRpc(env: Env, method: string, params: Record<string, unknow
         _meta: {
           "io.modelcontextprotocol/protocolVersion": "2026-07-28",
           "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" },
-          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/clientCapabilities": capabilities,
         },
       },
     },
     "good",
-    { "mcp-protocol-version": "2026-07-28", "mcp-method": method },
+    {
+      "mcp-protocol-version": "2026-07-28",
+      "mcp-method": method,
+      ...(typeof params.name === "string" && { "mcp-name": params.name }),
+    },
   );
   return (await response.json()) as { result?: any; error?: { code: number } };
 }
@@ -504,6 +513,79 @@ describe("mcp server", () => {
     expect((await call("resume_runner", { runner: "twin" })).result.content[0].text).toContain(
       "More than one runner",
     );
+  });
+
+  test("changes that stop or drop something ask the person first where the client can", async () => {
+    const { env, asked } = fakeEnv(
+      {
+        "/api/workspaces/w1/runner-order": { order: {}, previous: {} },
+        "/api/workspaces/w1/ai": { offAt: "now" },
+        "/api/machines": { machines: [{ id: "m1", name: "Mac" }] },
+        "/api/machines/m1/pause": { machine: { id: "m1", name: "Mac", paused: {} } },
+      },
+      { names: { w1: "Acme" } },
+    );
+    const changes = () => asked.filter((path) => !path.startsWith("/"));
+    const elicitation = { elicitation: {} };
+    const order = {
+      name: "set_runner_order",
+      arguments: {
+        version: "v1",
+        steps: [{ key: "machine" }, { key: "github", limit: { percent: 80 } }],
+      },
+    };
+
+    // A client that can't show a form gets today's behavior: the change goes through.
+    await modernRpc(env, "tools/call", { name: "set_ai", arguments: { enabled: false } });
+    expect(changes()).toEqual(["PUT /api/workspaces/w1/ai"]);
+
+    // One that can is asked, and nothing changes until the person answers.
+    const question = await modernRpc(env, "tools/call", order, elicitation);
+    expect(question.result.resultType).toBe("input_required");
+    expect(question.result.inputRequests.confirm.params.message).toBe(
+      "Change the runner order in Acme to Self-hosted, then GitHub-hosted (while under 80%)? Providers left out get no jobs.",
+    );
+    expect(changes()).toHaveLength(1);
+
+    const declined = await modernRpc(
+      env,
+      "tools/call",
+      { ...order, inputResponses: { confirm: { action: "decline" } } },
+      elicitation,
+    );
+    expect(JSON.parse(declined.result.content[0].text)).toMatchObject({ changed: false });
+    expect(changes()).toHaveLength(1);
+
+    await modernRpc(
+      env,
+      "tools/call",
+      { ...order, inputResponses: { confirm: { action: "accept", content: {} } } },
+      elicitation,
+    );
+    expect(changes().at(-1)).toBe("PUT /api/workspaces/w1/runner-order");
+
+    const pause = await modernRpc(
+      env,
+      "tools/call",
+      { name: "pause_runner", arguments: { runner: "mac" } },
+      elicitation,
+    );
+    expect(pause.result.inputRequests.confirm.params.message).toContain("Pause Mac?");
+
+    // Turning AI back on, or a URL-only client, doesn't ask.
+    await modernRpc(
+      env,
+      "tools/call",
+      { name: "set_ai", arguments: { enabled: true } },
+      elicitation,
+    );
+    await modernRpc(
+      env,
+      "tools/call",
+      { name: "set_ai", arguments: { enabled: false } },
+      { elicitation: { url: {} } },
+    );
+    expect(changes().slice(-2)).toEqual(["PUT /api/workspaces/w1/ai", "PUT /api/workspaces/w1/ai"]);
   });
 
   test("an API refusal is a tool error, not a crash", async () => {

@@ -1,0 +1,121 @@
+name: Hosted
+
+on: push
+
+jobs:
+  relay-blacksmith-default:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+
+  blacksmith-default:
+    needs: relay-blacksmith-default
+    runs-on: ${{ needs.relay-blacksmith-default.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-blacksmith-big-arm:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      arch: arm64
+      cpus: 8
+
+  blacksmith-big-arm:
+    needs: relay-blacksmith-big-arm
+    runs-on: ${{ needs.relay-blacksmith-big-arm.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-depot:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+
+  depot:
+    needs: relay-depot
+    runs-on: ${{ needs.relay-depot.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-depot-16:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      cpus: 16
+
+  depot-16:
+    needs: relay-depot-16
+    runs-on: ${{ needs.relay-depot-16.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-depot-mac:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: macos
+
+  depot-mac:
+    needs: relay-depot-mac
+    runs-on: ${{ needs.relay-depot-mac.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-warp:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      cpus: 4
+
+  warp:
+    needs: relay-warp
+    runs-on: ${{ needs.relay-warp.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-ubicloud:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      cpus: 8
+
+  ubicloud:
+    needs: relay-ubicloud
+    runs-on: ${{ needs.relay-ubicloud.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-namespace:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      cpus: 4
+
+  namespace:
+    needs: relay-namespace
+    runs-on: ${{ needs.relay-namespace.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-boat:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+
+  boat:
+    needs: relay-boat
+    runs-on: ${{ needs.relay-boat.outputs.runner }}
+    steps:
+      - run: make
+
+  relay-groundbox:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
+    with:
+      os: linux
+      cpus: 4
+
+  groundbox:
+    needs: relay-groundbox
+    runs-on: ${{ needs.relay-groundbox.outputs.runner }}
+    steps:
+      - run: make

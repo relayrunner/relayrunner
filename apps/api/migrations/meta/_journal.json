@@ -610,6 +610,13 @@
       "when": 1795481804479,
       "tag": "20261124005644_feedback_machine",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "6",
+      "when": 1795484140514,
+      "tag": "20261124013540_auto_job_cpus",
+      "breakpoints": true
     }
   ]
 }

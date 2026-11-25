@@ -51,6 +51,8 @@ const ROUTES: Record<string, Route> = {
       "installation_repositories",
       "repository",
       "pull_request",
+      // Someone revoked the App's sign-in authorization: the API forgets their GitHub tokens.
+      "github_app_authorization",
     ]),
   },
   "/api/webhooks/github-checks": {

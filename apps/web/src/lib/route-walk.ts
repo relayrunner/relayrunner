@@ -125,7 +125,7 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
         ? `${RUNNER_LABELS[key]}'s app isn't installed`
         : `${RUNNER_LABELS[key]} can't see this repo`;
     case "no_size":
-      return noSizeText(key, step.vcpus);
+      return noSizeText(key, step.vcpus, step.platform);
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -184,7 +184,7 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "provider_no_access":
       return accessText(RUNNER_LABELS[key], step.access);
     case "no_size":
-      return noSizeText(key, step.vcpus);
+      return noSizeText(key, step.vcpus, step.platform);
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

@@ -228,6 +228,115 @@ export function integrationCard({ id, name, url }) {
   });
 }
 
+/**
+ * The integrations index card: jobs split across runner clouds. On the right, a week of jobs with
+ * each runner's share: the runners that cost nothing (your machines, the minutes plans include)
+ * take the most, then the cheapest per-minute clouds. The shares are illustrative.
+ */
+export function integrationsCard({ url }) {
+  const c = dark;
+  const run = "#d29922";
+  const included = [
+    { id: "machines", name: "Your machines", pct: 38, tone: c.go },
+    { id: "blacksmith", name: "Blacksmith", pct: 22, tone: "#2ea043" },
+    { id: "github", name: "GitHub-hosted", pct: 14, tone: "#238636" },
+  ];
+  const perMinute = [
+    { id: "depot", name: "Depot", pct: 12, tone: run },
+    { id: "ubicloud", name: "Ubicloud", pct: 9, tone: "#bb8009" },
+    { id: "namespace", name: "Namespace", pct: 5, tone: "#9e6a03" },
+  ];
+  const row = ({ id, name, pct, tone }) =>
+    h(
+      "div",
+      { alignItems: "center", gap: 12, height: 44 },
+      img(provider(id), 28),
+      h("div", { width: 150, fontSize: 19, fontWeight: 700 }, name),
+      h(
+        "div",
+        { flex: 1, height: 12, borderRadius: 6, border: `1px solid ${c.line}`, background: c.lane },
+        // The biggest share (38%) nearly fills its track.
+        h("div", { width: `${Math.round((pct / 40) * 100)}%`, borderRadius: 6, background: tone }),
+      ),
+      h("div", { width: 48, justifyContent: "flex-end", ...mono(17, c.body, 500) }, `${pct}%`),
+    );
+  const group = (label, tag, rows) =>
+    h(
+      "div",
+      { flexDirection: "column", gap: 2 },
+      h(
+        "div",
+        { alignItems: "center", gap: 10, marginBottom: 6 },
+        h("div", caps(c), label),
+        h("div", mono(14, c.mute), tag),
+      ),
+      rows.map(row),
+    );
+  return h(
+    "div",
+    {
+      width: 1200,
+      height: 630,
+      position: "relative",
+      alignItems: "center",
+      gap: 52,
+      padding: "0 72px",
+      background: c.bg,
+      color: c.ink,
+      fontFamily: "Hanken Grotesk",
+    },
+    h(
+      "div",
+      { flexDirection: "column", flex: 1 },
+      brand(c),
+      h(
+        "div",
+        {
+          flexDirection: "column",
+          marginTop: 40,
+          fontSize: 60,
+          fontWeight: 700,
+          lineHeight: 1.02,
+          letterSpacing: "-0.045em",
+        },
+        h("div", {}, "Split your CI across"),
+        h("div", { color: c.go }, "every runner cloud."),
+      ),
+      h(
+        "div",
+        { marginTop: 24, color: c.body, fontSize: 24, lineHeight: 1.45 },
+        "Each job goes to the cheapest runner with room: your machines, the minutes your plans include, then the lowest price per minute.",
+      ),
+    ),
+    h(
+      "div",
+      {
+        flexDirection: "column",
+        gap: 18,
+        width: 500,
+        flexShrink: 0,
+        padding: "24px 26px",
+        borderRadius: 14,
+        border: `1px solid ${c.line}`,
+        background: "#0f1216",
+      },
+      h(
+        "div",
+        { alignItems: "center", ...mono(16, c.body) },
+        h("div", {}, "jobs this week"),
+        h("div", { marginLeft: "auto", color: c.mute }, "1,284"),
+      ),
+      group("Free first", "$0", included),
+      group("Then paid", "per minute", perMinute),
+    ),
+    h(
+      "div",
+      { position: "absolute", left: 72, bottom: 40, color: c.mute, fontSize: 18, fontWeight: 500 },
+      url,
+    ),
+  );
+}
+
 /** A docs page's card: its sidebar section, title, description and address. */
 export function docsCard({ section, title, description, url }) {
   const c = light;

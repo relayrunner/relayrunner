@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bucketIndex, bucketMsFor, chartStart, groupsByCount, spreads } from "./chart-trend.ts";
+import {
+  bucketIndex,
+  bucketMsFor,
+  chartStart,
+  groupsByCount,
+  periodStarts,
+  rollingSpreads,
+  rollingWindow,
+} from "./chart-trend.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -56,29 +64,32 @@ describe("bucketIndex", () => {
   });
 });
 
-describe("spreads", () => {
-  it("finds each bucket's median, 10th and 90th percentile, leaving empty ones out", () => {
-    const values = [
-      ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => ({ at: 10, value })),
-      { at: 250, value: 40 },
-      { at: 260, value: 20 },
-    ];
-    expect(spreads(values, 0, 300, 100)).toEqual([
-      { at: 0, count: 10, p10: 2, median: 6, p90: 9 },
-      { at: 200, count: 2, p10: 22, median: 30, p90: 38 },
-    ]);
+describe("rollingWindow", () => {
+  it("takes about a tenth of the runs, odd, from 5 to 21", () => {
+    expect(rollingWindow(3)).toBe(3);
+    expect(rollingWindow(40)).toBe(5);
+    expect(rollingWindow(88)).toBe(9);
+    expect(rollingWindow(120)).toBe(13);
+    expect(rollingWindow(1000)).toBe(21);
+  });
+});
+
+describe("rollingSpreads", () => {
+  it("finds the median and middle 80% of each value's neighbours", () => {
+    const result = rollingSpreads([10, 20, 30, 40, 50], 3);
+    expect(result.map((spread) => spread.median)).toEqual([20, 20, 30, 40, 40]);
+    expect(result[2]).toEqual({ p10: 22, median: 30, p90: 38 });
   });
 
-  it("keeps points past either end in the first or last bucket", () => {
-    const result = spreads(
-      [
-        { at: -5, value: 1 },
-        { at: 305, value: 2 },
-      ],
-      0,
-      300,
-      100,
-    );
-    expect(result.map((spread) => spread.at)).toEqual([0, 200]);
+  it("uses every value when there are fewer than the window", () => {
+    expect(rollingSpreads([5, 1], 9).map((spread) => spread.median)).toEqual([3, 3]);
+  });
+});
+
+describe("periodStarts", () => {
+  it("marks the first time in each period", () => {
+    const day = (at: number) => Math.floor(at / 100);
+    expect(periodStarts([10, 20, 150, 160, 420], day)).toEqual([0, 2, 4]);
+    expect(periodStarts([], day)).toEqual([]);
   });
 });

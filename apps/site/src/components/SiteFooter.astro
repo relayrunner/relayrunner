@@ -60,6 +60,10 @@ const columns = [
       </a>
       <p>Route GitHub Actions jobs across your machines and hosted runners.</p>
       <p>Free and <a href={GITHUB}>open source</a>.</p>
+      <a class="footer-status" href="https://status.relayrunner.dev" data-state="operational">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-label">All systems operational</span>
+      </a>
       <a class="footer-x" href={X} aria-label="RelayRunner on X" title="X">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -91,3 +95,29 @@ const columns = [
     }
   </div>
 </footer>
+
+<script>
+  // The status line starts as a plain link to the status page, then shows the live state from the
+  // dashboard's API (apps/api/src/routes/status.ts), which reads status.relayrunner.dev. If that
+  // read fails it stays "All systems operational", the same as before the read.
+  const LABELS: Record<string, string> = {
+    operational: "All systems operational",
+    degraded: "Degraded performance",
+    downtime: "Outage",
+    maintenance: "Maintenance",
+  };
+  const link = document.querySelector<HTMLElement>(".footer-status");
+  const show = (state: string) => {
+    if (!link || !LABELS[state]) return;
+    link.dataset.state = state;
+    link.querySelector(".status-label")!.textContent = LABELS[state];
+  };
+  // `?status=degraded` (or downtime, maintenance) previews a state in `astro dev`.
+  const preview = import.meta.env.DEV && new URLSearchParams(location.search).get("status");
+  if (preview) show(preview);
+  else
+    fetch("https://app.relayrunner.dev/api/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((status) => status?.state && show(status.state))
+      .catch(() => {});
+</script>

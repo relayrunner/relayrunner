@@ -23,13 +23,15 @@ jobs:
     steps: ...
 ```
 
-The relay takes one input per provider:
+Tell the relay what the job needs with `os`, `arch` and `cpus`, such as `os: linux` and `cpus: 4`. Every provider in your runner order can then take the job, each with its smallest runner that fits, and a machine fits when it has the OS and enough cores.
+
+To use a specific runner instead, the relay takes one input per provider:
 
 - **`machine`**: labels a self-hosted machine must have, all of them. `self-hosted` accepts any machine.
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
 - **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted).
 
-Leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
+Without `os`, `arch` or `cpus`, leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
 
 ## What happens on a push
 

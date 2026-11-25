@@ -64,7 +64,7 @@ function UsagePage() {
 
   return (
     <section>
-      <PageHeader title="Usage">
+      <PageHeader className="max-w-4xl" title="Usage">
         Every job in your connected repos, whichever runner took it. GitHub bills each job by the
         minute, rounded up, so a job that finishes in seconds still pays for a whole minute.
       </PageHeader>

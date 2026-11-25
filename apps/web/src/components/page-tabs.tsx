@@ -28,7 +28,12 @@ export function viewOf<V extends string>(tabs: readonly Tab<V>[], value: unknown
  */
 export function PageTabs<V extends string>({ tabs, value }: { tabs: readonly Tab<V>[]; value: V }) {
   return (
-    <nav aria-label="Views" className="-mt-2 mb-6 flex gap-5 overflow-x-auto border-b">
+    // The rule is an inset shadow, not a border, so the active tab's underline can sit on it
+    // without overflowing: overflow-x-auto would make the row scroll vertically by that pixel.
+    <nav
+      aria-label="Views"
+      className="-mt-2 mb-8 flex gap-5 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-border)]"
+    >
       {tabs.map((tab, index) => {
         const active = tab.value === value;
         return (
@@ -38,7 +43,7 @@ export function PageTabs<V extends string>({ tabs, value }: { tabs: readonly Tab
             search={{ view: index === 0 ? undefined : tab.value } as never}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px border-b-2 pb-2 text-sm whitespace-nowrap transition-colors",
+              "border-b-2 pb-2 text-sm whitespace-nowrap transition-colors",
               active
                 ? "border-foreground font-medium text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",

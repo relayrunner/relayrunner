@@ -35,7 +35,7 @@ describe("traced", () => {
         throw error;
       }),
     ).rejects.toBe(error);
-    expect(span.recordException).toHaveBeenCalledWith(error);
+    expect(span.recordException).not.toHaveBeenCalled();
     expect(span.setStatus).toHaveBeenCalledWith({ code: "error", message: "boom" });
   });
 });

@@ -13,8 +13,14 @@ import { usesRelayRunner } from "./labels.ts";
 import {
   type HostedProviderId,
   isProviderLabel,
+  SHAPE_ARCHES,
+  SHAPE_OSES,
+  type ShapeArch,
+  type ShapeOs,
+  type ShapePlatform,
   SKIPS_PERSONAL_ACCOUNTS,
   SKIPS_PUBLIC_REPOS,
+  sellsPlatform,
 } from "@relayrunner/providers";
 import {
   AUTO,
@@ -26,6 +32,8 @@ import {
   RUNNER_KEYS,
   RUNNER_LABELS,
   type RelayInputs,
+  hasShape,
+  type RelayShape,
   type RetryRunner,
   type RunnerKey,
   type RunnerOrder,
@@ -175,6 +183,9 @@ export interface Candidate {
   labels: string[];
   // Its VM's labels, when it also runs jobs in one (isolatedLabels).
   isolatedLabels?: string[];
+  // The CPUs a job gets on it and in its VM (machineCpus), null or left out when unknown.
+  cpus?: number | null;
+  isolatedCpus?: number | null;
   // Paused machines stay connected but never take a new job.
   paused?: boolean;
   // Whose jobs it takes, and its owner's GitHub account id (null when the owner is gone or never
@@ -269,26 +280,79 @@ export function hasLabels(machine: string[], wanted: string[]) {
   return wanted.every((label) => have.has(label.toLowerCase()));
 }
 
-type Places = { labels: string[]; isolatedLabels?: string[] };
+// A machine's places for jobs, with the CPUs a job gets in each: the machine's cores, or its VM's
+// size. Null or left out when unknown (an older CLI, a runner added from GitHub).
+type Places = {
+  labels: string[];
+  isolatedLabels?: string[];
+  cpus?: number | null;
+  isolatedCpus?: number | null;
+};
 
-/** Whether a job's wanted labels fit one of a machine's places: the machine itself or its VM. */
-export function fits(machine: Places, wanted: string[]) {
-  return hasLabels(machine.labels, wanted) || vmFits(machine, wanted);
+/** What a job wants of a machine: every label, and at least `cpus` CPUs when its relay says. */
+export interface MachineWant {
+  labels: string[];
+  cpus?: number;
 }
 
-function vmFits(machine: Places, wanted: string[]) {
-  return machine.isolatedLabels !== undefined && hasLabels(machine.isolatedLabels, wanted);
+/** A job's machine labels, or labels plus CPUs, as a MachineWant. */
+export const wantOf = (wanted: string[] | MachineWant): MachineWant =>
+  Array.isArray(wanted) ? { labels: wanted } : wanted;
+
+/** What a picked job wants of a machine: its `machine` labels and its relay's `cpus`. */
+export const machineWant = (job: { machine: string[]; cpus?: number }): MachineWant => ({
+  labels: job.machine,
+  ...(job.cpus !== undefined && { cpus: job.cpus }),
+});
+
+// Unknown CPUs count as enough: the job may run slower, but it runs.
+const enoughCpus = (have: number | null | undefined, cpus: number | undefined) =>
+  cpus === undefined || have == null || have >= cpus;
+
+function hostFits(machine: Places, wanted: MachineWant) {
+  return hasLabels(machine.labels, wanted.labels) && enoughCpus(machine.cpus, wanted.cpus);
+}
+
+function vmFits(machine: Places, wanted: MachineWant) {
+  return (
+    machine.isolatedLabels !== undefined &&
+    hasLabels(machine.isolatedLabels, wanted.labels) &&
+    enoughCpus(machine.isolatedCpus, wanted.cpus)
+  );
 }
 
 /**
- * Whether a job a machine fits runs in its VM. When only one place has the wanted labels, that
- * one. When both do (the job asked only for `self-hosted` or the arch), the job's GitHub fallback
- * says what it was written for: `ubuntu-*` means Linux, so the VM; anything else, the machine.
+ * Whether a job's wanted labels (and CPUs) fit one of a machine's places: the machine itself or
+ * its VM.
  */
-export function runsIsolated(machine: Places, wanted: string[], fallback: string[]) {
-  if (!vmFits(machine, wanted)) return false;
-  if (!hasLabels(machine.labels, wanted)) return true;
+export function fits(machine: Places, wanted: string[] | MachineWant) {
+  const want = wantOf(wanted);
+  return hostFits(machine, want) || vmFits(machine, want);
+}
+
+/**
+ * Whether a job a machine fits runs in its VM. When only one place fits, that one. When both do
+ * (the job asked only for `self-hosted` or the arch), the job's GitHub fallback says what it was
+ * written for: `ubuntu-*` means Linux, so the VM; anything else, the machine.
+ */
+export function runsIsolated(machine: Places, wanted: string[] | MachineWant, fallback: string[]) {
+  const want = wantOf(wanted);
+  if (!vmFits(machine, want)) return false;
+  if (!hostFits(machine, want)) return true;
   return fallback.some((label) => /^ubuntu/i.test(label));
+}
+
+/**
+ * The CPUs a job gets in each of a machine's places, from its stored hello: on the machine itself
+ * its cores, unless it runs every job in a VM of its own OS; in its VM, the VM's size.
+ */
+export function machineCpus(machine: {
+  cpuCores: number | null;
+  vmCpus: number | null;
+  isolatedOs: string | null;
+}): { cpus: number | null; isolatedCpus?: number | null } {
+  if (machine.isolatedOs) return { cpus: machine.cpuCores, isolatedCpus: machine.vmCpus };
+  return { cpus: machine.vmCpus ?? machine.cpuCores };
 }
 
 /**
@@ -353,7 +417,7 @@ export function chooseMachine(
   candidates: Candidate[],
   held: HeldSlots,
   picked: Map<string, number> = new Map(),
-  wanted: string[] = [],
+  wanted: string[] | MachineWant = [],
   starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): Candidate | null {
   const starter = starterId(starters);
@@ -377,7 +441,7 @@ export function chooseMachine(
 /** The online, unpaused machines that fit the job (labels and sharing). */
 export function readyMachines<C extends Candidate>(
   candidates: C[],
-  wanted: string[] = [],
+  wanted: string[] | MachineWant = [],
   starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): C[] {
   return candidates.filter(
@@ -394,7 +458,7 @@ export function readyMachines<C extends Candidate>(
 export function fullMachines(
   candidates: Candidate[],
   held: HeldSlots,
-  wanted: string[] = [],
+  wanted: string[] | MachineWant = [],
   starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): FullMachine[] | null {
   const fitting = readyMachines(candidates, wanted, starters);
@@ -411,7 +475,7 @@ export function fullMachines(
  */
 export function pausedMatches(
   machines: (Places & { name: string; paused?: boolean })[],
-  wanted: string[] = [],
+  wanted: string[] | MachineWant = [],
 ): string[] {
   const matching = machines.filter((machine) => fits(machine, wanted));
   if (matching.length === 0 || !matching.every((machine) => machine.paused)) return [];
@@ -422,6 +486,8 @@ export interface PoolMachine {
   name: string;
   labels: string[];
   isolatedLabels?: string[];
+  cpus?: number | null;
+  isolatedCpus?: number | null;
   paused?: boolean;
   sharing?: MachineSharing;
   ownerGithubId?: number | null;
@@ -436,7 +502,7 @@ export interface PoolMachine {
  */
 export function unavailableMachines(
   machines: PoolMachine[],
-  wanted: string[],
+  wanted: string[] | MachineWant,
   starters: JobStarters,
 ): { paused: string[] } | { notShared: NotSharedMachine[] } | null {
   const matching = machines.filter((machine) => fits(machine, wanted));
@@ -503,6 +569,27 @@ export interface JobContext extends RelayInputs {
   // re-run by someone else. The context has only the login: the id is the actor's when the logins
   // match, else null until the pick looks it up (resolveTriggeredBy).
   triggeredBy: GithubActor | null;
+  // The relay's `os`, `arch` and `cpus` inputs (relayShape), left out when it sets none.
+  shape?: RelayShape;
+}
+
+/**
+ * A relay's `os`, `arch` and `cpus` inputs, ignoring case and blanks. A value the relay can't mean
+ * (an OS it doesn't know, `cpus: 0`) is dropped, so the job routes as if it were left out.
+ */
+export function relayShape(inputs: Map<string, unknown> | null | undefined): RelayShape {
+  const text = (key: string) => {
+    const value = scalar(inputs?.get(key));
+    return typeof value === "string" ? value.trim().toLowerCase() : undefined;
+  };
+  const os = text("os");
+  const arch = text("arch");
+  const cpus = Number(scalar(inputs?.get("cpus")));
+  return {
+    ...(SHAPE_OSES.includes(os as ShapeOs) && { os: os as ShapeOs }),
+    ...(SHAPE_ARCHES.includes(arch as ShapeArch) && { arch: arch as ShapeArch }),
+    ...(Number.isSafeInteger(cpus) && cpus > 0 && cpus <= 1_024 && { cpus }),
+  };
 }
 
 // Reads the job message's `contextData` (src/routing/pipeline-context.ts). Returns null when
@@ -516,6 +603,7 @@ export function jobContext(contextData: unknown): JobContext | null {
   if (typeof repo !== "string" || !repo.includes("/") || !Number.isSafeInteger(runId) || runId <= 0)
     return null;
   const inputs = context(contextData, "inputs");
+  const shape = relayShape(inputs);
   const runAttempt = Number(scalar(github.get("run_attempt")));
   const workflow = scalar(github.get("workflow"));
   const startedBy = actorOf(scalar(github.get("actor")), scalar(github.get("actor_id")));
@@ -536,6 +624,7 @@ export function jobContext(contextData: unknown): JobContext | null {
     ...byRunnerKey((key) => parseLabels(scalar(inputs?.get(key)))),
     startedBy,
     triggeredBy,
+    ...(hasShape(shape) && { shape }),
   };
 }
 
@@ -584,6 +673,8 @@ import {
 } from "@relayrunner/activity";
 
 export interface SkippedStep {
+  // no_size: the platform a shaped relay asked for (RouteRequest.platform).
+  platform?: ShapePlatform;
   key: RunnerKey;
   reason: SkipReason;
   // machine_paused: the paused machines' names.
@@ -673,6 +764,10 @@ export interface RouteRequest extends RelayInputs {
   // An auto relay's size in vCPUs (src/routing/auto-jobs.ts). A provider still set to `auto` has no
   // runner that big.
   size?: number;
+  // The platform a relay's `os` and `arch` asked for, when it set a shape. Left out is Linux x64.
+  platform?: ShapePlatform;
+  // The relay's `cpus` input: a machine needs at least this many (MachineWant).
+  cpus?: number;
 }
 
 /**
@@ -799,7 +894,7 @@ export async function decideRoute(
       }
     } else if (key === "github") {
       if (job.github.length === 0) skipped.push({ key, reason: "not_configured" });
-      else if (unsized(job.github)) skipped.push({ key, reason: "no_size", vcpus: job.size });
+      else if (unsized(job.github)) skipped.push(noSize(key, job));
       else if (job.github.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else {
         const over = step.limit
@@ -832,7 +927,7 @@ export async function decideRoute(
         skipped.push({ key, reason: "public_repo" });
       else if (job.personal && SKIPS_PERSONAL_ACCOUNTS.includes(key))
         skipped.push({ key, reason: "personal_account" });
-      else if (unsized(labels)) skipped.push({ key, reason: "no_size", vcpus: job.size });
+      else if (unsized(labels)) skipped.push(noSize(key, job));
       else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
@@ -888,6 +983,19 @@ export async function decideRoute(
 // An `auto` input that no label of the job's size replaced (resolveAutoInputs).
 const unsized = (labels: string[]) => labels.length === 1 && labels[0] === AUTO;
 
+// The no_size skip of a provider with no label for the job: no runner that big on the platform,
+// or none on the platform at all (then no size to name).
+function noSize(key: RunnerKey, job: RouteRequest): SkippedStep {
+  const { platform } = job;
+  if (!platform) return { key, reason: "no_size", vcpus: job.size };
+  return {
+    key,
+    reason: "no_size",
+    platform,
+    ...(sellsPlatform(key, platform) && { vcpus: job.size }),
+  };
+}
+
 /**
  * The message a relay fails with when nothing fits, naming why each provider couldn't take it. The
  * reason someone can act on comes first: a cap or limit that was reached, then busy or unreachable
@@ -911,6 +1019,7 @@ export function noRunnerReason(job: RouteRequest, skipped: SkippedStep[]): strin
       held,
       access: cannot,
       vcpus,
+      platform,
     }) => {
       switch (reason) {
         case "not_configured":
@@ -919,10 +1028,13 @@ export function noRunnerReason(job: RouteRequest, skipped: SkippedStep[]): strin
           return publicRepoText(key);
         case "personal_account":
           return personalAccountText(key);
-        case "no_machine":
-          return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
+        case "no_machine": {
+          const labels = job.machine.filter((label) => label.toLowerCase() !== "self-hosted");
+          const wants = [...labels, ...(job.cpus ? [`${job.cpus}+ CPUs`] : [])];
+          return wants.length === 0
             ? "no self-hosted machine is online and idle"
-            : `no self-hosted machine with ${job.machine.join(", ")} is online and idle`;
+            : `no self-hosted machine with ${wants.join(", ")} is online and idle`;
+        }
         case "machine_paused":
           return paused.length === 1
             ? `the only machine that fits, ${paused[0]}, is paused`
@@ -952,7 +1064,7 @@ export function noRunnerReason(job: RouteRequest, skipped: SkippedStep[]): strin
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;
         case "no_size":
-          return noSizeText(key, vcpus);
+          return noSizeText(key, vcpus, platform);
       }
     },
   );

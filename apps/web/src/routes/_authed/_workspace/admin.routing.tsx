@@ -51,7 +51,7 @@ function RoutingPage() {
 
   return (
     <section>
-      <PageHeader title="Routing">
+      <PageHeader className="max-w-5xl" title="Routing">
         How relays ended across every workspace: whether each job got a runner right away, queued
         for a busy machine, or had nowhere to run. Our own workspaces and test accounts are left
         out.

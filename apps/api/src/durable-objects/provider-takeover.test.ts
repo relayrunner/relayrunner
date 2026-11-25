@@ -149,4 +149,26 @@ describe("ProviderTakeover", () => {
     expect(runner.complete).toHaveBeenCalledOnce();
     expect(state.data.get("phase")).toBe("takeover");
   });
+
+  test("a failed check is tried again, then given up", async () => {
+    await takeover.start(work);
+    github.workflowJobRunner.mockRejectedValue(new SyntaxError("Unexpected end of JSON input"));
+    const before = Date.now();
+    await takeover.alarm();
+    expect(state.alarm()).toBeGreaterThanOrEqual(before + 30_000);
+    expect(state.data.get("failures")).toBe(1);
+
+    github.workflowJobRunner.mockResolvedValue({ status: "in_progress", runnerName: "gbx-1" });
+    await takeover.alarm();
+    expect(providerPicked).toHaveBeenCalledWith("groundbox", 1);
+    expect(state.data.get("failures")).toBe(0);
+
+    github.workflowJobRunner.mockRejectedValue(new Error("GitHub is down"));
+    await takeover.alarm();
+    await takeover.alarm();
+    const lastRetry = state.alarm();
+    await takeover.alarm();
+    expect(state.data.get("failures")).toBe(2);
+    expect(state.alarm()).toBe(lastRetry);
+  });
 });

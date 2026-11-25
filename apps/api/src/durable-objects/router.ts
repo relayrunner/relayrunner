@@ -1,3 +1,4 @@
+import type { ShapePlatform } from "@relayrunner/providers";
 import { preferFirst, type RelayInputs, type RunnerKey } from "@relayrunner/runner-order";
 import { Recent } from "../recent.ts";
 import { accountUsage } from "../providers/actions-billing.ts";
@@ -76,7 +77,9 @@ import {
   retryOrder,
   heldSlots,
   isolatedLabels,
+  machineCpus,
   machineLabels,
+  machineWant,
   mayReroute,
   runsIsolated,
   lastPicked,
@@ -121,6 +124,9 @@ export interface PickedJob extends JobStarters, RelayInputs {
   // (src/routing/auto-jobs.ts).
   size?: number;
   first?: RunnerKey | null;
+  // A shaped relay's platform and `cpus` input (RouteRequest).
+  platform?: ShapePlatform;
+  cpus?: number;
 }
 
 const ROUTE_KEY = "route:";
@@ -839,6 +845,8 @@ export class Router extends DurableObject<Env> {
         arch: schema.machine.arch,
         isolatedOs: schema.machine.isolatedOs,
         isolatedArch: schema.machine.isolatedArch,
+        cpuCores: schema.machine.cpuCores,
+        vmCpus: schema.machine.vmCpus,
         pausedAt: schema.machine.pausedAt,
         source: schema.machine.source,
         installationId: schema.machine.installationId,
@@ -898,6 +906,7 @@ export class Router extends DurableObject<Env> {
           ? matchLabels(parseStoredLabels(machine.githubLabels))
           : machineLabels(machine),
       isolatedLabels: isolatedLabels(machine),
+      ...machineCpus(machine),
       paused: machine.pausedAt !== null,
       sharing: machine.sharing,
       ownerGithubId: githubId(machine.ownerGithubId),
@@ -921,7 +930,7 @@ export class Router extends DurableObject<Env> {
       admitted.map((machine) => {
         const entry = pool.find((e) => e.id === machine.id)!;
         if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
-        if (!fitsLabels(entry, job.machine)) return false;
+        if (!fitsLabels(entry, machineWant(job))) return false;
         return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job);
       }),
     );
@@ -965,9 +974,12 @@ export class Router extends DurableObject<Env> {
     if (rateLimited) return { rateLimited: true };
     // A re-run whose machines are offline or paused could still be taken once one is back, so it
     // waits in line (Router.reroute) instead of being refused like a re-run nothing fits.
-    if (rerun && pool.some((machine) => fitsLabels(machine, job.machine) && admits(machine, job)))
+    if (
+      rerun &&
+      pool.some((machine) => fitsLabels(machine, machineWant(job)) && admits(machine, job))
+    )
       return { offline: true };
-    return unavailableMachines(pool, job.machine, job);
+    return unavailableMachines(pool, machineWant(job), job);
   }
 
   // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
@@ -1007,7 +1019,7 @@ export class Router extends DurableObject<Env> {
       const others = candidates.filter((c) => c.id !== avoid);
       const avoided = candidates.filter((c) => c.id === avoid);
       const choose = (from: Candidate[], taken: HeldSlots) =>
-        chooseMachine(from, taken, picked, job.machine, job);
+        chooseMachine(from, taken, picked, machineWant(job), job);
       // This Router's held routes count against each machine's slots, and a machine whose
       // MachineLink refused the hold counts as full.
       const withTaken = (taken: Set<string>): HeldSlots =>
@@ -1034,13 +1046,13 @@ export class Router extends DurableObject<Env> {
           }),
       );
       if (!machine) {
-        const full = fullMachines(candidates, withTaken(refused), job.machine, job);
+        const full = fullMachines(candidates, withTaken(refused), machineWant(job), job);
         if (!full) return null;
-        const machineIds = readyMachines(candidates, job.machine, job).map((m) => m.id);
+        const machineIds = readyMachines(candidates, machineWant(job), job).map((m) => m.id);
         return { full, machineIds };
       }
       const routingLabel = routingLabels.get(machine.id);
-      const isolated = runsIsolated(machine, job.machine, job.github);
+      const isolated = runsIsolated(machine, machineWant(job), job.github);
       const os = places.get(machine.id)?.[isolated ? "vm" : "host"];
       const route: StoredRoute = {
         id: routeId,
@@ -1394,7 +1406,13 @@ function githubId(accountId: string | null): number | null {
 // Which machines a waiting job can use, as far as its line order goes: the same labels, repo and
 // starters fit the same machines.
 function wantsKey(job: PickedJob): string {
-  return JSON.stringify([job.machine, job.repositoryId, job.startedBy?.id, job.triggeredBy?.id]);
+  return JSON.stringify([
+    job.machine,
+    job.cpus,
+    job.repositoryId,
+    job.startedBy?.id,
+    job.triggeredBy?.id,
+  ]);
 }
 
 // A route's job as a waiting entry, keeping its place in line and how often it was requeued.

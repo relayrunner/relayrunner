@@ -145,10 +145,11 @@ export function pickedJobs(repo: RepoToRoute, picks: Set<string>): PickedJob[] {
 }
 
 // The steps after the agent has a checkout, shared by both prompts. Not `named`: every job init
-// finds, for a repo with no recent runs to name jobs from. `auto`: init writes `auto` in place of
-// each Linux x64 job's label, so its size is set on the Router page.
+// finds, for a repo with no recent runs to name jobs from. `auto`: init writes each job's shape
+// (`os`, plus `arch` and `cpus` when its label asks), so every provider can take it and its size
+// is set on the Router page. Otherwise `--exact` keeps each job's label.
 function routeSteps(named: boolean, auto: boolean): string[] {
-  const flags = auto ? " --auto --json" : " --json";
+  const flags = auto ? " --json" : " --exact --json";
   return [
     named
       ? "Run `npx relayrunner@latest init --plan --json`. Match the jobs listed by workflow and job name, and leave every other job alone. If init refuses the repo, say why and skip it."

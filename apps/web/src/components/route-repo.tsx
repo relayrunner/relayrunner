@@ -280,7 +280,10 @@ function RouteRepoSteps({
           onEdit={() => setStage("jobs")}
         >
           <p className="text-[13px] text-muted-foreground">
-            Pick the jobs to route. Each keeps its current runner as the fallback.
+            Pick the jobs to route.{" "}
+            {auto
+              ? "Each asks for its current runner's OS and size, so any runner that fits can take it."
+              : "Each keeps its current runner."}
           </p>
           <div className="grid gap-3">
             {repo.workflows.map((w) => (
@@ -338,14 +341,15 @@ function RouteRepoSteps({
               onChange={() => setAuto(!auto)}
             />
             <span>
-              Pick sizes on this page with <code className="font-mono">auto</code>, with no commit.{" "}
+              Let every runner on the Router take these jobs, and pick sizes on this page with no
+              commit. Off keeps each job's label.{" "}
               <a
                 href={AUTO_DOCS}
                 target="_blank"
                 rel="noreferrer"
                 className="text-go hover:text-go-hover"
               >
-                What is auto?
+                How sizes work
               </a>
             </span>
           </label>
@@ -435,7 +439,7 @@ function RouteStep({
         <CopyText primary label="Copy agent prompt" text={prompt} onCopy={onCopied} />
         <CopyText
           label="Copy command"
-          text={auto ? `${INIT_COMMAND} --auto` : INIT_COMMAND}
+          text={auto ? INIT_COMMAND : `${INIT_COMMAND} --exact`}
           onCopy={onCopied}
         />
       </div>

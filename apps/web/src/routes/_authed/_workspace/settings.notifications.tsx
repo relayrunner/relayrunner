@@ -48,7 +48,7 @@ function NotificationSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="Email">
+      <PageHeader className="max-w-3xl" title="Email">
         Choose which emails you get{user ? ` at ${user.email}` : ""}. Security emails, like someone
         else taking over your machine's connection, always send.
       </PageHeader>

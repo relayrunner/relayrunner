@@ -34,7 +34,7 @@ import {
 } from "@/lib/job-times";
 import { providerInfo } from "@/lib/provider-catalog";
 import { rangeSearch, textParam, useSetSearch } from "@/lib/search-params";
-import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_RANGE: TimeRange = "14d";
@@ -159,7 +159,6 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
   const missing = series.filter((each) =>
     job ? !report.runners.find((runner) => runner.key === each.key)?.jobs[job] : false,
   );
-  const { from, to } = resolveRange(range);
   const toggle = (key: string) =>
     setCharted((prev) => {
       const next = new Set(prev);
@@ -178,12 +177,12 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
             </h2>
             <p className="text-sm text-muted-foreground">
               {metric === "cost"
-                ? "Each dot is one passing run's cost at list prices. Lines join each runner's daily median."
+                ? "Each dot is one passing run's cost at list prices, in the order they finished. Lines follow the median of each runner's nearby runs."
                 : metric === "wait"
                   ? job
-                    ? "Each dot is how long this job waited for a runner. Lines join each runner's daily median."
-                    : "Each dot is the longest any job of one passing run waited for a runner. Lines join each runner's daily median."
-                  : "Each dot is one passing run. Lines join each runner's daily median, and break where it took no runs."}
+                    ? "Each dot is how long this job waited for a runner, in the order runs finished. Lines follow the median of each runner's nearby runs."
+                    : "Each dot is the longest any job of one passing run waited for a runner, in the order runs finished. Lines follow the median of each runner's nearby runs."
+                  : "Each dot is one passing run, in the order they finished. Lines follow the median of each runner's nearby runs."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -255,14 +254,7 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
             ))}
           </div>
         </div>
-        <WorkflowRunsChart
-          runs={report.runs}
-          series={series}
-          job={job}
-          metric={metric}
-          from={from}
-          to={to}
-        />
+        <WorkflowRunsChart runs={report.runs} series={series} job={job} metric={metric} />
         <p className="mt-2 text-xs text-muted-foreground">
           {job
             ? "Each runner's runs of this job, wherever the rest of the run went."

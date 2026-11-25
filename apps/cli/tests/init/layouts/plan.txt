@@ -1,0 +1,8 @@
+ready   build: github ubuntu-latest shape={"os":"linux"}
+ready   test: github ubuntu-latest shape={"os":"linux"}
+ready   e2e: blacksmith blacksmith-4vcpu-ubuntu-2404 shape={"cpus":4,"os":"linux"}
+ready   docs: github ubuntu-latest shape={"os":"linux"}
+ready   relay-package: github ubuntu-latest shape={"os":"linux"}
+ready   package: github ubuntu-latest shape={"os":"linux"}
+skipped deploy: looks like a deploy job (environment)
+skipped shared: calls a reusable workflow

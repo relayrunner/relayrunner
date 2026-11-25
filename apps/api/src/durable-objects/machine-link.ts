@@ -106,11 +106,11 @@ export class MachineLink extends DurableObject<Env> {
     const now = Date.now();
     const from = originFromJson(request.headers.get(MACHINE_ORIGIN_HEADER));
     let takenFrom: RequestOrigin | undefined;
-    const replaced = this.ctx.getWebSockets();
+    const replaced = this.ctx.getWebSockets().filter(isOpen);
     for (const old of replaced) {
       const session = attachment(old);
       if (session && isTakeover(session, from, now)) takenFrom = session.from;
-      close(old, CLOSE.replaced, "replaced");
+      shut(old, CLOSE.replaced, "replaced");
     }
 
     const { 0: client, 1: server } = new WebSocketPair();
@@ -137,6 +137,8 @@ export class MachineLink extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, frame: string | ArrayBuffer) {
     const session = attachment(ws);
     if (!session) return close(ws, CLOSE.policy, "unknown socket");
+    // A socket the gateway already closed (replaced, timed out) is done, whatever it still sends.
+    if (session.closedAt !== undefined) return;
     annotate({ "relayrunner.machine_id": session.machineId });
     const outcome = handleFrame(session, frame, Date.now());
     ws.serializeAttachment(outcome.state);
@@ -180,7 +182,7 @@ export class MachineLink extends DurableObject<Env> {
     if ("job" in outcome && outcome.job) await this.onJob(session.machineId, outcome.job);
     if ("reply" in outcome) {
       ws.send(outcome.reply);
-      close(ws, outcome.close.code, outcome.close.reason);
+      shut(ws, outcome.close.code, outcome.close.reason);
       await this.touch(session.machineId);
       await this.disconnected(session, "error");
     }
@@ -195,7 +197,10 @@ export class MachineLink extends DurableObject<Env> {
     await this.touch(session.machineId);
     // A close this side started (timeout, revoke, replaced, protocol error) was logged when it
     // closed, or deliberately not logged (replaced), so only the machine's own close counts here.
-    if (!OWN_CLOSE_CODES.has(code)) await this.disconnected(session, "closed");
+    // The machine may answer that close with its own code, or the socket may end with 1006 long
+    // after, so the socket's mark counts too.
+    if (session.closedAt === undefined && !OWN_CLOSE_CODES.has(code))
+      await this.disconnected(session, "closed");
   }
 
   async webSocketError(ws: WebSocket) {
@@ -212,8 +217,10 @@ export class MachineLink extends DurableObject<Env> {
     let earliest: number | undefined;
     for (const ws of this.ctx.getWebSockets()) {
       const session = attachment(ws);
+      // Closed and logged already; the machine never finished the close.
+      if (session?.closedAt !== undefined) continue;
       if (!session || isStale(session, now)) {
-        close(ws, CLOSE.timeout, "heartbeat timeout");
+        shut(ws, CLOSE.timeout, "heartbeat timeout");
         if (session) {
           await this.touch(session.machineId);
           await this.disconnected(session, "timeout");
@@ -502,9 +509,9 @@ export class MachineLink extends DurableObject<Env> {
 
   /** Closes the machine's socket for good. DELETE /api/machines/:id calls this on revoke. */
   async revoke(): Promise<void> {
-    for (const ws of this.ctx.getWebSockets()) {
-      close(ws, CLOSE.revoked, "revoked");
+    for (const ws of this.ctx.getWebSockets().filter(isOpen)) {
       const session = attachment(ws);
+      shut(ws, CLOSE.revoked, "revoked");
       if (session) await this.disconnected(session, "revoked");
     }
   }
@@ -622,6 +629,25 @@ const OWN_CLOSE_CODES = new Set<number>(Object.values(CLOSE));
 
 function attachment(ws: WebSocket) {
   return ws.deserializeAttachment() as SessionState | null;
+}
+
+// Whether the gateway hasn't closed this socket yet (shut).
+function isOpen(ws: WebSocket) {
+  return attachment(ws)?.closedAt === undefined;
+}
+
+// Closes a socket from this side and marks it closed, so the alarm, a late webSocketClose and a
+// later replace or revoke leave it alone even while the machine never answers the close.
+function shut(ws: WebSocket, code: number, reason: string) {
+  const session = attachment(ws);
+  if (session) {
+    try {
+      ws.serializeAttachment({ ...session, closedAt: Date.now() });
+    } catch {
+      // Already closed.
+    }
+  }
+  close(ws, code, reason);
 }
 
 // Closing an already-closed socket throws; that's fine here.

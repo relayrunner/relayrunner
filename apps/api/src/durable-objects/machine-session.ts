@@ -59,6 +59,9 @@ export interface SessionState {
   from?: RequestOrigin;
   // SHA-256 of the token sent in a `token` message, until the machine says it saved it.
   pendingTokenHash?: string;
+  // When the gateway closed this socket itself (CLOSE). A machine that never answers the close
+  // leaves the socket listed in getWebSockets, so this keeps it from being counted or logged again.
+  closedAt?: number;
 }
 
 export type FrameOutcome =
@@ -185,7 +188,7 @@ export const OFFLINE: MachineStatus = {
 
 // A machine is online while it holds a socket that has said hello and isn't stale.
 export function statusOf(session: SessionState | null | undefined, now: number): MachineStatus {
-  if (!session?.hello || isStale(session, now)) return OFFLINE;
+  if (!session?.hello || session.closedAt !== undefined || isStale(session, now)) return OFFLINE;
   const state = session.state ?? "idle";
   return {
     online: true,

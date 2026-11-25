@@ -19,9 +19,10 @@ import { retryDelaySeconds } from "../queue-retry.ts";
 import { WEBHOOK_DLQ, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
-import { createDb, schema } from "../db/index.ts";
+import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { forgetInstallation } from "../operator/admin-delete.ts";
+import { pingUninstall } from "../operator/operator-pings.ts";
 import { queueRunHistory } from "./run-history.ts";
 import {
   ensureWorkspace,
@@ -54,6 +55,7 @@ import { errorMessage } from "../errors.ts";
 import { log, logDispatch, withLogContext } from "../log.ts";
 import type { Fields } from "@relayrunner/log";
 import { advanceEvaluation, resumeWaitingEvaluations } from "../reports/evaluations.ts";
+import { forgetGitHubTokens } from "../github/user-tokens.ts";
 
 // The main consumer's max_retries in wrangler.jsonc. From this attempt on, a failure records its
 // error so the dead letter can say why it failed.
@@ -89,7 +91,7 @@ function processMessage(env: Env, msg: Message<WebhookMessage>) {
     };
     try {
       const outcome = await traced("webhook.process", webhookAttributes(msg), () =>
-        processWebhook(env, msg.body),
+        processWebhook(env, msg.body, { retry: msg.attempts > 1 }),
       );
       msg.ack();
       // A job that asked for one of our routes but found none is processed, but worth a look.
@@ -199,7 +201,12 @@ function webhookAttributes(msg: Message<WebhookMessage>) {
  * Do the work for one delivery. Throw to retry. Returns what handled it, for the delivery's
  * `webhook.processed` line.
  */
-export async function processWebhook(env: Env, message: WebhookMessage): Promise<Fields> {
+export async function processWebhook(
+  env: Env,
+  message: WebhookMessage,
+  // A delivery tried before, which may have been overtaken by the job's later events.
+  { retry = false } = {},
+): Promise<Fields> {
   // The RelayRunner Checks App (lint check runs) has its own installations and credentials, so its
   // deliveries never take the main App's paths below.
   // The RelayRunner Spend App (org billing) only sends installation events, which say which
@@ -249,7 +256,10 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
       if (routeId)
-        return { ...job, ...(await dispatchRoute(env, message, routeId, lookup.workspaceId)) };
+        return {
+          ...job,
+          ...(await dispatchRoute(env, message, routeId, lookup.workspaceId, retry)),
+        };
       // A job on an added runner's label: the pick may have chosen that runner for it.
       const routingLabel = routingLabelFromLabels(message.job.labels);
       if (routingLabel) return { ...job, ...(await trackRunnerJob(env, message, routingLabel)) };
@@ -296,6 +306,15 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
         );
       }
       return { handler: "repository" };
+    case "github_app_authorization": {
+      // Their tokens no longer work: forget them, so reads that need them ask for a new sign-in.
+      const forgotten = await forgetGitHubTokens(createDb(env.DB), message.senderId);
+      log.info("github.authorization_revoked", "GitHub App authorization revoked", {
+        githubUserId: message.senderId,
+        forgotten,
+      });
+      return { handler: "authorization_revoked" };
+    }
     case "pull_request":
       // Throws to retry: a check run that never posts leaves the PR without its check.
       await checkPullRequestTitle(env, message);
@@ -349,6 +368,7 @@ async function dispatchRoute(
   message: Extract<WebhookMessage, { event: "workflow_job" }>,
   routeId: string,
   workspaceId: string | null,
+  retry: boolean,
 ): Promise<Fields> {
   const handled = { handler: "route_job", routeId };
   if (!message.installationId) return handled;
@@ -369,6 +389,9 @@ async function dispatchRoute(
     if (machineId) await setJobMachine(db, message.job.id, machineId);
     return { ...handled, machineId: machineId ?? undefined };
   }
+  // A retried `queued` whose job has since ended (cancelled while GitHub refused runners, say)
+  // needs no runner.
+  if (retry && (await jobEnded(db, message.job.id))) return { ...handled, result: "job_ended" };
   // A re-run of failed jobs comes back on the earlier attempt's label: the Router routes it again.
   const route =
     (await router.claim(routeId, job)) ??
@@ -414,6 +437,16 @@ async function dispatchRoute(
   // The machine went offline after the pick chose it: the job goes back in line for another.
   if (result === "offline") await router.requeue(route.id);
   return { ...handled, result, machineId: route.machineId };
+}
+
+// Whether a later delivery stored the job as completed. Stored status never moves backwards.
+async function jobEnded(db: Db, jobId: number) {
+  const [row] = await db
+    .select({ status: schema.workflowJob.status })
+    .from(schema.workflowJob)
+    .where(eq(schema.workflowJob.id, jobId))
+    .limit(1);
+  return row?.status === "completed";
 }
 
 // Follows a job on a runner added from GitHub. GitHub delivers it to the runner itself, so there is
@@ -464,7 +497,10 @@ async function recordInstallation(
   // Uses installationId, not the summary, so a message from an ingress that predates the summary
   // still removes the org.
   if (message.event === "installation" && message.action === "deleted") {
-    if (message.installationId) await forgetInstallation(env, db, message.installationId);
+    if (message.installationId) {
+      await pingUninstall(env, db, message.installationId);
+      await forgetInstallation(env, db, message.installationId);
+    }
     return;
   }
   const installation = message.installation;
