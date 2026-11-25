@@ -678,6 +678,10 @@ function LimitChoice({
         value={text}
         disabled={disabled}
         aria-label={inputLabel}
+        // Clicking or tabbing into the number picks this choice, so it needn't be clicked too.
+        onFocus={() => {
+          if (!on) pick();
+        }}
         onChange={(event) => {
           setText(event.target.value);
           if (on) pick(event.target.value);
