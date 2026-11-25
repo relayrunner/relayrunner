@@ -353,10 +353,18 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.link-note {
-  margin-left: 10px;
-  color: var(--mute);
-  font-weight: 500;
+/* The one pre-heading left on the homepage: marks Optimized checks as not generally available. */
+.preview-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.preview-tag + h2 {
+  margin-top: 16px;
 }
 .section h2 {
   margin-top: 18px;
