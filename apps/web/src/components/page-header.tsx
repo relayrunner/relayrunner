@@ -20,7 +20,7 @@ export function PageHeader({
             page's title and subtitle at the same height. */}
         {action && <div className="-my-1.5">{action}</div>}
       </div>
-      {children && <p className="mt-2 max-w-[62ch] text-muted-foreground">{children}</p>}
+      {children && <p className="mt-2 text-muted-foreground">{children}</p>}
     </header>
   );
 }
