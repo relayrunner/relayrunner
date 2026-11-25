@@ -106,6 +106,7 @@ const API_EVENTS = [
   "takeover.checked",
   "takeover.cleanup_failed",
   "takeover.failed",
+  "takeover.retrying",
   "telemetry.batch_failed",
   "telemetry.exports_unreadable",
   "telemetry.job_log_failed",
