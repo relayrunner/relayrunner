@@ -283,6 +283,24 @@ const CHEVRON = "M6 9l6 6 6-6";
 </header>
 
 <script>
+  // Keep the menus under the header. They are popovers (in the top layer, placed against the
+  // viewport), and the header's bottom moves: the launch banner sits above it until it scrolls away.
+  const header = document.querySelector<HTMLElement>("[data-header]");
+  if (header) {
+    const place = () => {
+      const bottom = Math.max(0, header.getBoundingClientRect().bottom);
+      document.documentElement.style.setProperty("--header-bottom", `${bottom}px`);
+    };
+    for (const popover of header.querySelectorAll<HTMLElement>("[popover]")) {
+      popover.addEventListener("beforetoggle", place);
+    }
+    const placeIfOpen = () => {
+      if (header.querySelector(":popover-open")) place();
+    };
+    addEventListener("scroll", placeIfOpen, { passive: true });
+    addEventListener("resize", placeIfOpen);
+  }
+
   // Open a menu when a mouse rests on its item, and close it shortly after the mouse leaves both
   // the item and its panel (the panel sits inside the item). Clicks, touch and keys work as before.
   const OPEN_DELAY = 80;

@@ -163,9 +163,11 @@
 
 /* ---------- Header menus ---------- */
 
-/* A card under the header, centered on the page. */
+/* A card under the header, centered on the page. Popovers sit in the top layer, so they can't
+ * follow the header themselves: SiteHeader's script sets --header-bottom to where it ends (it
+ * moves when the launch banner above it shows or scrolls away). */
 .nav-panel {
-  inset: 72px auto auto 50%;
+  inset: calc(var(--header-bottom, 64px) + 8px) auto auto 50%;
   translate: -50% 0;
   width: min(880px, calc(100vw - 2 * var(--gutter)));
   margin: 0;
@@ -387,9 +389,9 @@
   display: none;
 }
 
-/* A sheet under the header. */
+/* A sheet under the header (see .nav-panel for --header-bottom). */
 .site-menu {
-  inset: 64px 0 auto;
+  inset: var(--header-bottom, 64px) 0 auto;
   width: auto;
   max-width: none;
   margin: 0;
