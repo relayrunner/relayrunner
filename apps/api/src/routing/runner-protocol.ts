@@ -126,7 +126,8 @@ export class RunnerClient {
   private sessionId: string | undefined;
 
   // GitHub refuses to send jobs to a runner that reports an old version, so `version` has to be a
-  // recent official release.
+  // recent official release. With updates disabled (see poll), github.com keeps sending jobs to a
+  // version for 63 days after a newer one comes out, so an hour-old lookup is fine.
   constructor(jit: JitConfig, version: string) {
     this.jit = jit;
     this.version = version;
@@ -348,8 +349,40 @@ export async function waitForJob(client: RunnerClient, waitMs: number) {
   return null;
 }
 
-export async function latestRunnerVersion() {
-  const response = await fetch("https://github.com/actions/runner/releases/latest", {
+const RELEASES_LATEST_URL = "https://github.com/actions/runner/releases/latest";
+/** How long a looked-up version is used before asking GitHub again. */
+export const RUNNER_VERSION_TTL_MS = 60 * 60 * 1000;
+/** How long the location's cache keeps a version to fall back on when GitHub fails. */
+const RUNNER_VERSION_KEEP_S = 7 * 24 * 60 * 60;
+
+type KnownVersion = { version: string; fetchedAt: number };
+// This isolate's copy, kept past its TTL as the last known version.
+let known: KnownVersion | undefined;
+
+/** For tests: forget the version this isolate looked up. */
+export function resetRunnerVersionCache() {
+  known = undefined;
+}
+
+// The location's cache (Cache API), shared by the isolates there. It is missing outside workerd.
+function locationCache(): Cache | undefined {
+  return (globalThis as { caches?: CacheStorage & { default?: Cache } }).caches?.default;
+}
+
+async function readLocationCache(cache: Cache | undefined) {
+  try {
+    const response = await cache?.match(RELEASES_LATEST_URL);
+    if (!response) return undefined;
+    const version = (await response.text()).trim();
+    const fetchedAt = Number(response.headers.get("x-fetched-at") ?? Number.NaN);
+    return version && Number.isFinite(fetchedAt) ? { version, fetchedAt } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchLatestRunnerVersion() {
+  const response = await fetch(RELEASES_LATEST_URL, {
     redirect: "manual",
     headers: { "user-agent": userAgent },
   });
@@ -357,6 +390,44 @@ export async function latestRunnerVersion() {
   if (!version)
     throw new Error(`Could not find the latest runner version. Status ${response.status}.`);
   return version;
+}
+
+/**
+ * The newest actions/runner release, which RunnerClient reports to GitHub. Looked up at most once
+ * an hour per isolate and location. A version up to an hour old costs nothing: GitHub keeps sending
+ * jobs to an older runner for weeks after a newer release (see RunnerClient). When GitHub fails,
+ * the last known version is used, so a GitHub outage doesn't hold up a pick.
+ */
+export async function latestRunnerVersion(now = Date.now()) {
+  if (known && now - known.fetchedAt < RUNNER_VERSION_TTL_MS) return known.version;
+  const cache = locationCache();
+  const cached = await readLocationCache(cache);
+  if (cached && (!known || cached.fetchedAt > known.fetchedAt)) known = cached;
+  if (known && now - known.fetchedAt < RUNNER_VERSION_TTL_MS) return known.version;
+  try {
+    const version = await fetchLatestRunnerVersion();
+    known = { version, fetchedAt: now };
+    await cache
+      ?.put(
+        RELEASES_LATEST_URL,
+        new Response(version, {
+          headers: {
+            "cache-control": `max-age=${RUNNER_VERSION_KEEP_S}`,
+            "x-fetched-at": String(now),
+          },
+        }),
+      )
+      .catch(() => {});
+    return version;
+  } catch (error) {
+    if (!known) throw error;
+    log.warn("runner.version_lookup_failed", "using the last known runner version", {
+      version: known.version,
+      ageMinutes: Math.round((now - known.fetchedAt) / 60_000),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return known.version;
+  }
 }
 
 export function failureAnnotation(message: string): JobAnnotation {
