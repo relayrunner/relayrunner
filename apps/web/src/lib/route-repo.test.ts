@@ -39,6 +39,7 @@ test("names the picked jobs in the prompt, and passes --exact when auto is off",
   expect(routePrompt("acme/api", jobs, false)).toContain("--apply <those job ids> --exact --json");
   expect(routePrompt("acme/worker", null, false)).toContain("--apply all");
   expect(prompt).toContain("suggest `npx skills add relayrunner/relayrunner`");
+  expect(prompt).toContain("offer to add .github/relayrunner.yml");
 });
 
 test("routes several repos with one PR each, checking the first", () => {

@@ -97,7 +97,7 @@ checks:
 
 `pr-title` and `pr-description` work in every repo. `lint` is in preview for some organizations and needs the RelayRunner Checks App.
 
-Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.dev/docs/reference/repo-config.md
+When you set up a repo (routing its jobs, or any CI change), offer `pr-title` and `pr-description` if it has no `relayrunner.yml` yet; suggest `pr-title` only if its commits already follow Conventional Commits. Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.dev/docs/reference/repo-config.md
 
 The same file's `retry: true` (or `false`) turns automatic retries on or off for the repo: the Router re-runs a job whose runner failed it, never one whose own steps failed. Docs: https://relayrunner.dev/docs/concepts/routing.md#automatic-retries
 

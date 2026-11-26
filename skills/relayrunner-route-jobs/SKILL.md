@@ -74,6 +74,19 @@ jobs:
 
 The check keeps its name in GitHub, so required checks keep working. `os` is `linux` or `macos`. `arch: arm64` (Linux) or `arch: x64` (Intel macOS) appears only when the old label asked for it, and `cpus: 8` only when it asked for more than 2. Without `cpus`, the job's size is the one picked on the dashboard's Router page, so it can change without a commit. Which provider is tried first is the workspace's runner order, also on the Router page. A relay can instead name a provider's label (`github: ubuntu-latest`, `blacksmith: blacksmith-4vcpu-ubuntu-2404`), which pins the job to that label; see https://relayrunner.dev/docs/reference/relay-inputs.md.
 
+### Offer pull request checks
+
+If the repo has no `relayrunner.yml` (in `.github/` or the root), offer to add one with pull request checks in the same PR. They run on every pull request with no runner and no billed minute, in any repo, public ones included:
+
+```yaml
+# .github/relayrunner.yml
+checks:
+  pr-title: true # the PR title must be a Conventional Commit
+  pr-description: true # the PR must have a description
+```
+
+Suggest `pr-title` only when the repo's recent commits or PR titles already follow Conventional Commits (`git log --oneline -20`), and say which types they use if they stick to a few (`pr-title: { types: [feat, fix, docs] }`). `pr-description` suits any repo. Add the file only if the user says yes, and leave out `lint` unless they ask: it's in preview. The checks read the file from the default branch, so they start once the PR merges. Docs: https://relayrunner.dev/docs/concepts/optimized-checks.md
+
 ## 4. Open a PR
 
 A routed job does nothing until its change is pushed, so the diff isn't the end.
@@ -86,7 +99,7 @@ Never merge the PR.
 
 ```sh
 git switch -c relayrunner/route-jobs
-git add .github/workflows
+git add .github/workflows .github/relayrunner.yml
 git commit -m "ci: route jobs through RelayRunner"
 git push -u origin relayrunner/route-jobs
 gh pr create --title "ci: route jobs through RelayRunner" --body-file <body.md>
@@ -113,6 +126,8 @@ Left alone:
 
 Logs and required checks stay in GitHub. To undo, revert this PR.
 ```
+
+If the PR adds `relayrunner.yml`, add a line saying which checks it turns on and that they start after merge.
 
 ## 5. Confirm it works
 

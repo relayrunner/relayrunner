@@ -20,7 +20,7 @@ changing any file.
    https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner/SKILL.md
 2. **Route the repo's jobs.** Follow
    https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner-route-jobs/SKILL.md
-   from Plan to Apply. For skipped jobs, it links to
+   from Plan to Apply, including Offer pull request checks. For skipped jobs, it links to
    https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner-route-jobs/references/skipped-jobs.md
 3. **Show the diff and open a PR.** Run `git diff`, say what each change does, then follow the
    Open a PR section of the second skill: offer a PR, and commit and push only when the user says
