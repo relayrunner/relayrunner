@@ -119,8 +119,10 @@
   //   cf r2 buckets lifecycle update relayrunner-webhook-dead-letters --rules '[{"id":"expire-30d","enabled":true,"conditions":{"prefix":""},"deleteObjectsTransition":{"condition":{"type":"Age","maxAge":2592000}}}]'
   "r2_buckets": [{ "binding": "DEAD_LETTERS", "bucket_name": "relayrunner-webhook-dead-letters" }],
   // Hourly dead-letter growth check (src/ingest/dead-letter-alert.ts), and the 15-minute Actions usage
-  // poll (src/providers/actions-billing.ts) plus the relay sweep (src/routing/pick-sweep.ts). src/index.ts tells them apart by the cron string.
-  "triggers": { "crons": ["0 * * * *", "*/15 * * * *", "30 6 * * *"] },
+  // poll (src/providers/actions-billing.ts) plus the relay sweep (src/routing/pick-sweep.ts), the daily price
+  // check, and the operator digests at 13:00 UTC, 8 AM US Eastern in winter and 9 AM in summer
+  // (src/operator/operator-digest.ts). src/index.ts tells them apart by the cron string.
+  "triggers": { "crons": ["0 * * * *", "*/15 * * * *", "30 6 * * *", "0 13 * * *"] },
   // From the account's Secrets Store (default_secrets_store), not a Worker secret.
   // GITHUB_APP_PRIVATE_KEY is the App's private key converted to PKCS#8 PEM, which is what
   // WebCrypto imports (GitHub downloads PKCS#1):

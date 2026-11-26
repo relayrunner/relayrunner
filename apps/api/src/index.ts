@@ -8,6 +8,7 @@ import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./ingest/job-timings.ts";
 import { loadCatalog } from "./providers/provider-catalog.ts";
+import { sendOperatorDigests } from "./operator/operator-digest.ts";
 import { sendOperatorPings } from "./operator/operator-pings.ts";
 import { sendProductEvents } from "./operator/product-events.ts";
 import { checkPrices } from "./providers/price-check.ts";
@@ -40,9 +41,10 @@ export { Router } from "./durable-objects/router.ts";
 export { StrandedJob } from "./durable-objects/stranded-job.ts";
 export { ProviderTakeover } from "./durable-objects/provider-takeover.ts";
 
-// Match the second and third entries of triggers.crons in wrangler.jsonc.
+// Match the second, third and fourth entries of triggers.crons in wrangler.jsonc.
 const USAGE_CRON = "*/15 * * * *";
 const PRICE_CRON = "30 6 * * *";
+const DIGEST_CRON = "0 13 * * *";
 
 export default {
   fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
@@ -73,7 +75,7 @@ export default {
   // provider account and drop its old usage (src/providers/provider-sync.ts), drop expired cached AI
   // answers (src/ingest/retention.ts), and queue each installation's
   // signals (src/reports/signals.ts), and save new actions/runner releases (src/machines/runner-releases.ts). Daily: check providers' price pages
-  // (src/providers/price-check.ts).
+  // (src/providers/price-check.ts), and post the operator digests to Slack (src/operator/operator-digest.ts).
   async scheduled(controller, env) {
     const at = new Date(controller.scheduledTime);
     const db = createDb(env.DB);
@@ -91,22 +93,24 @@ export default {
         }
       : controller.cron === PRICE_CRON
         ? { checkPrices: checkPrices(env, at) }
-        : {
-            checkDeadLetterGrowth: checkDeadLetterGrowth(env),
-            purgeOldJobTimings: purgeOldJobTimings(db),
-            purgeOldWorkflowRuns: purgeOldWorkflowRuns(db),
-            purgeOldActivity: purgeOldActivity(db),
-            syncSpendInstallations: syncSpendInstallations(env, at),
-            syncEnterpriseInstallations: syncEnterpriseInstallations(env, db, at),
-            syncProviderConnections: syncProviderConnections(env),
-            purgeOldProviderUsage: purgeOldProviderUsage(db, at),
-            purgeExpiredAiAnswers: purgeExpiredAiAnswers(db, at.getTime()),
-            enqueueSignalRollups: enqueueSignalRollups(env),
-            checkIntegrations: checkIntegrations(env, db, at),
-            syncRunnerReleases: releasesToken(env, db).then((token) =>
-              syncRunnerReleases(db, token),
-            ),
-          };
+        : controller.cron === DIGEST_CRON
+          ? { sendOperatorDigests: sendOperatorDigests(env, at) }
+          : {
+              checkDeadLetterGrowth: checkDeadLetterGrowth(env),
+              purgeOldJobTimings: purgeOldJobTimings(db),
+              purgeOldWorkflowRuns: purgeOldWorkflowRuns(db),
+              purgeOldActivity: purgeOldActivity(db),
+              syncSpendInstallations: syncSpendInstallations(env, at),
+              syncEnterpriseInstallations: syncEnterpriseInstallations(env, db, at),
+              syncProviderConnections: syncProviderConnections(env),
+              purgeOldProviderUsage: purgeOldProviderUsage(db, at),
+              purgeExpiredAiAnswers: purgeExpiredAiAnswers(db, at.getTime()),
+              enqueueSignalRollups: enqueueSignalRollups(env),
+              checkIntegrations: checkIntegrations(env, db, at),
+              syncRunnerReleases: releasesToken(env, db).then((token) =>
+                syncRunnerReleases(db, token),
+              ),
+            };
     // Each runs even if another throws; a failure still fails the invocation, and one that keeps
     // failing reaches operators (src/operator/health-issues.ts).
     await runCronTasks(db, tasks);
