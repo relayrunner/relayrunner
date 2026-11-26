@@ -24,6 +24,7 @@ import { StatTile } from "@/components/stat-tile";
 import { RecentEvaluations, useRecentEvaluations } from "@/components/recent-evaluations";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { type ExportColumn, seconds } from "@/lib/table-export";
 import { WorkflowLink } from "@/components/workflow-link";
 import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
@@ -345,6 +346,19 @@ function Totals({ report }: { report: ProviderReport }) {
 
 const [RunnerReport, useRunnerReport] = createCellContext<ProviderReport>("Runner types");
 
+// A runner type's export: its jobs, times in seconds, rate and cost in USD.
+const RUNNER_EXPORT_COLUMNS: ExportColumn<ProviderRunner>[] = [
+  { header: "Runner", value: (runner) => runner.label },
+  { header: "Jobs", value: (runner) => runner.jobs },
+  { header: "Failed", value: (runner) => runner.failures },
+  { header: "Typical job (s)", value: (runner) => seconds(runner.stat.medianMs) },
+  { header: "p90 job (s)", value: (runner) => seconds(runner.stat.p90Ms) },
+  { header: "Queue wait (s)", value: (runner) => seconds(runner.stat.waitMs) },
+  { header: "Billed minutes", value: (runner) => runner.billedMinutes },
+  { header: "Rate (USD/min)", value: (runner) => runner.perMinute },
+  { header: "Est. cost (USD)", value: (runner) => runner.cost },
+];
+
 const runnerColumn = dataTableColumns<ProviderRunner>();
 const runnerColumns = runnerColumn.columns([
   runnerColumn.accessor((runner) => runner.label, {
@@ -445,6 +459,7 @@ function Runners({ report }: { report: ProviderReport }) {
         columns={runnerColumns}
         data={report.runners}
         getRowId={(runner) => runner.key}
+        exportAs={{ name: `${report.provider}-runners`, columns: RUNNER_EXPORT_COLUMNS }}
       />
     </RunnerReport>
   );

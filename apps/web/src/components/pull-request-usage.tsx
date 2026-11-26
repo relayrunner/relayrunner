@@ -13,6 +13,7 @@ import {
   summarize,
 } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
+import type { ExportColumn } from "@/lib/table-export";
 import type { TimeRange } from "@/lib/time-range";
 import { money } from "@/lib/usage";
 import { percent } from "@/lib/utils";
@@ -87,6 +88,10 @@ export function PullRequestUsage({
             data={pullRequests}
             getRowId={(pr) => `${pr.repository}#${pr.number}`}
             initialSorting={[{ id: "minutes", desc: true }]}
+            exportAs={{
+              name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
+              columns: EXPORT_COLUMNS,
+            }}
           />
         </>
       )}
@@ -100,6 +105,18 @@ export function PullRequestUsage({
     </div>
   );
 }
+
+// An export names each pull request in full, with its link, and keeps spend in USD.
+const EXPORT_COLUMNS: ExportColumn<PullRequestMinutes>[] = [
+  { header: "Repo", value: (pr) => pr.repository },
+  { header: "Number", value: (pr) => pr.number },
+  { header: "Title", value: (pr) => pr.title },
+  { header: "URL", value: (pr) => pullRequestUrl(pr.repository, pr.number) },
+  { header: "Minutes", value: (pr) => pr.minutes },
+  { header: "Re-run minutes", value: (pr) => pr.rerunMinutes },
+  { header: "Commits", value: (pr) => pr.commits },
+  { header: "Est. spend (USD)", value: (pr) => pr.cost },
+];
 
 const column = dataTableColumns<PullRequestMinutes>();
 const columns = column.columns([
