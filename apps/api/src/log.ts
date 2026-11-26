@@ -57,6 +57,7 @@ const API_EVENTS = [
   "github.enterprise_read_failed",
   "github.membership_sync_skipped",
   "github.rate_limit_read_failed",
+  "github.repo_checks_failed",
   "github.run_history_failed",
   "github.runner_group_check_failed",
   "installation_task.job_types_failed",

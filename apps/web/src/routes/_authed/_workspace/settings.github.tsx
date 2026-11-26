@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ExternalLink } from "lucide-react";
+import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { ActionsMinutes, OverageBanner, useActionsUsage } from "@/components/actions-minutes";
 import { PageHeader } from "@/components/page-header";
+import { PublicRepoMark } from "@/components/public-repo";
+import { DOCS_URL } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +12,12 @@ import { type AccountUsage, type ActionsUsage } from "@/lib/actions-usage";
 import { authDisabled, signIn } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { githubOutcomes as outcomes, isGitHubOutcome, type GitHubOutcome } from "@/lib/github";
+import {
+  checkLabels,
+  getRepoChecks,
+  type RepoChecks,
+  type RepoChecksView,
+} from "@/lib/repo-checks";
 import {
   getRateLimits,
   type Installation,
@@ -75,6 +83,10 @@ function GitHubSettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {installation && !installation.suspendedAt && (
+          <PullRequestChecks workspaceId={workspace.id} />
+        )}
       </div>
     </section>
   );
@@ -158,6 +170,120 @@ function ConnectedOrg({
         />
       )}
       {!suspendedAt && <ApiUsage installationId={installation.id} />}
+    </li>
+  );
+}
+
+type ChecksState =
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "ready"; view: RepoChecksView };
+
+/**
+ * The pull request checks each repo turns on in its relayrunner.yml. Read-only: a repo changes
+ * its checks in the file, which a pull request can't change for itself.
+ */
+function PullRequestChecks({ workspaceId }: { workspaceId: string }) {
+  const [state, setState] = useState<ChecksState>({ kind: "loading" });
+  useEffect(() => {
+    let live = true;
+    getRepoChecks(workspaceId).then(
+      (view) => live && setState({ kind: "ready", view }),
+      () => live && setState({ kind: "error" }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+
+  return (
+    <Card className="py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="text-sm">Pull request checks</CardTitle>
+        <CardDescription>
+          Each repo turns on its checks in <code>relayrunner.yml</code> on its default branch. To
+          change them, edit that file.{" "}
+          <a
+            className="text-foreground underline underline-offset-2"
+            href={`${DOCS_URL}/concepts/optimized-checks`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Optimized checks
+          </a>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-4 text-sm">
+        {state.kind === "loading" && (
+          <p className="text-muted-foreground">Reading each repo's relayrunner.yml…</p>
+        )}
+        {state.kind === "error" && (
+          <p className="text-muted-foreground">Couldn't read the repos' checks from GitHub.</p>
+        )}
+        {state.kind === "ready" && <RepoChecksList view={state.view} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RepoChecksList({ view }: { view: RepoChecksView }) {
+  const { repositories, checked, total, lintAvailable } = view;
+  return (
+    <div className="grid gap-3">
+      {repositories.length === 0 ? (
+        <p className="text-muted-foreground">
+          No repo has a relayrunner.yml yet. Add one with <code>checks: pr-title: true</code> to
+          start.
+        </p>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {repositories.map((repo) => (
+            <RepoChecksRow key={repo.repository} repo={repo} lintAvailable={lintAvailable} />
+          ))}
+        </ul>
+      )}
+      {checked < total && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {count(checked)} of {count(total)} repos by name.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RepoChecksRow({ repo, lintAvailable }: { repo: RepoChecks; lintAvailable: boolean }) {
+  const labels = checkLabels(repo);
+  return (
+    <li className="grid gap-1.5 px-3 py-2.5">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        <span className="truncate font-mono">{repo.repository}</span>
+        <PublicRepoMark repository={repo.repository} className="ml-0" />
+        <span className="font-mono text-xs text-muted-foreground">{repo.path}</span>
+      </div>
+      {repo.error ? (
+        <p className="flex gap-1.5 text-muted-foreground">
+          <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-run" />
+          <span>
+            The file is invalid, so the PR title check fails with this reason: {repo.error}
+          </span>
+        </p>
+      ) : labels.length === 0 ? (
+        <p className="text-muted-foreground">No checks on.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-x-4 gap-y-1">
+          {labels.map((label) => (
+            <li key={label} className="flex items-center gap-1.5">
+              <CircleCheck aria-hidden className="size-3.5 text-go" />
+              {label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {repo.lint && !lintAvailable && (
+        <p className="text-xs text-muted-foreground">
+          Lint is in preview and isn't on for this account yet, so it doesn't run.
+        </p>
+      )}
     </li>
   );
 }

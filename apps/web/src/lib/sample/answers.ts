@@ -41,6 +41,7 @@ import {
 } from "./router";
 import { sampleAutoJobs, sampleRouterSetup, sampleRunnerGroupCheck } from "./router-setup";
 import { sampleParam } from "./param";
+import { sampleRepoChecks } from "./repo-checks";
 import { sampleWorkflowReport } from "./workflow";
 
 type Answer = (match: RegExpMatchArray, query: URLSearchParams) => unknown;
@@ -214,6 +215,7 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/workspaces\/[^/]+\/route-outcomes$/, () => sampleRouteOutcomes()],
   [/^\/workspaces\/[^/]+\/router-setup$/, () => sampleRouterSetup()],
   [/^\/workspaces\/[^/]+\/public-repos$/, () => ({ repositories: ["acme/docs"] })],
+  [/^\/workspaces\/[^/]+\/repo-checks$/, () => sampleRepoChecks()],
   [/^\/workspaces\/[^/]+\/runner-group-check$/, () => ({ check: sampleRunnerGroupCheck() })],
   [/^\/workspaces\/[^/]+\/auto-jobs$/, () => sampleAutoJobs()],
   [/^\/workspaces\/[^/]+\/retry-settings$/, () => DEFAULT_RETRY_SETTINGS],
