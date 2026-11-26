@@ -1,9 +1,15 @@
 import { api } from "@/lib/api";
-import { addPhases, type PhaseTimes } from "./job-phases.ts";
-import { DAY_MS, hasTrend, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
-import { startOfDay, zoneOffset } from "./time-zone.ts";
+import {
+  addInside,
+  addParts,
+  emptyInside,
+  type Inside,
+  type PartTimes,
+  type SetupItem,
+} from "./job-phases.ts";
+import { DAY_MS, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
+import { zoneOffset } from "./time-zone.ts";
 import { reportQuery, type TimeRange } from "./time-range.ts";
-
 /** One job's run time over the window (GET /api/job-times/types). */
 export type JobTypeTime = {
   repository: string;
@@ -18,9 +24,11 @@ export type JobTypeTime = {
   priorMs: number | null;
   /** Run time on each day of the window, oldest first. */
   byDay: number[];
-  /** Runs that reported their steps, and those steps' time by phase. */
+  /** Runs that reported their steps, and those steps' time by part. */
   stepped: number;
-  phases: PhaseTimes;
+  parts: PartTimes;
+  /** The setup the job has a cache step for. */
+  cached: SetupItem[];
 };
 
 export type JobTypeTimes = {
@@ -68,14 +76,14 @@ export type TypeTotal = {
   /** Its jobs with runs, the most time first. */
   jobs: JobTypeTime[];
   stepped: number;
-  phases: PhaseTimes;
+  inside: Inside;
 };
 
 export type TypeSummary = {
   ms: number;
   runs: number;
   stepped: number;
-  phases: PhaseTimes;
+  inside: Inside;
   /** Types with time in the window, in TYPE_ORDER. */
   types: TypeTotal[];
   /** Each day's local midnight, its run time by type and in all. */
@@ -102,14 +110,14 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
         priorMs: report.compare ? 0 : null,
         jobs: [],
         stepped: 0,
-        phases: {},
+        inside: emptyInside(),
       };
       totals.set(key, total);
     }
     total.ms += job.ms;
     total.runs += job.runs;
     total.stepped += job.stepped;
-    addPhases(total.phases, job.phases);
+    addParts(total.inside, job.parts, job.cached);
     if (total.priorMs !== null) total.priorMs += job.priorMs ?? 0;
     if (job.runs > 0) total.jobs.push(job);
     job.byDay.forEach((ms, i) => {
@@ -127,7 +135,7 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
     ms: types.reduce((sum, type) => sum + type.ms, 0),
     runs: types.reduce((sum, type) => sum + type.runs, 0),
     stepped: types.reduce((sum, type) => sum + type.stepped, 0),
-    phases: types.reduce((sum, type) => addPhases(sum, type.phases), {} as PhaseTimes),
+    inside: types.reduce((sum, type) => addInside(sum, type.inside), emptyInside()),
     types,
     days,
   };
@@ -137,66 +145,4 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
 export function change(total: TypeTotal) {
   if (total.priorMs === null || total.priorMs < 60_000) return null;
   return Math.round(((total.ms - total.priorMs) / total.priorMs) * 100);
-}
-
-/** Dev preview: a made-up report for `VITE_AUTH_DISABLED=true` builds, which have no API. */
-export function sampleJobTypeTimes(days: number): JobTypeTimes {
-  let seed = 11;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  const start = startOfDay(Date.now(), 1 - days);
-  const compare = hasTrend(days);
-  // [repo, workflow, job, type, runs a day, minutes a run]
-  const specs: [string, string, string, JobType | null, number, number][] = [
-    ["acme/app", "CI", "test", "test", 24, 6.5],
-    ["acme/api", "CI", "integration", "test", 12, 8],
-    ["acme/app", "CI", "unit", "test", 30, 1.5],
-    ["acme/app", "CI", "build", "build", 26, 3.2],
-    ["acme/api", "Docker", "image", "build", 6, 7],
-    ["acme/app", "CI", "lint", "lint", 40, 0.6],
-    ["acme/api", "CI", "typecheck", "lint", 18, 0.9],
-    ["acme/app", "E2E", "playwright", "e2e", 8, 11],
-    ["acme/app", "Release", "publish", "deploy", 3, 4],
-    ["acme/api", "Deploy", "deploy", "deploy", 4, 3],
-    ["acme/app", "Labeler", "label", "other", 20, 0.3],
-    ["acme/api", "Nightly", "benchmarks", null, 1, 14],
-  ];
-  const jobs = specs.map(([repository, workflow, job, type, perDay, minutes]) => {
-    const byDay = Array.from({ length: days }, (_, i) => {
-      const weekday = new Date(start + i * DAY_MS).getUTCDay();
-      const busy = weekday === 0 || weekday === 6 ? 0.25 : 1;
-      return Math.round(perDay * busy * (0.6 + random() * 0.8) * minutes * 60_000);
-    });
-    const ms = byDay.reduce((sum, each) => sum + each, 0);
-    const runs = Math.round(ms / (minutes * 60_000));
-    return {
-      repository,
-      workflow,
-      job,
-      type,
-      runs,
-      ms,
-      priorMs: compare ? Math.round(ms * (0.75 + random() * 0.5)) : null,
-      byDay,
-      stepped: Math.round(runs * 0.8),
-      phases: samplePhases(type, ms * 0.8, random),
-    };
-  });
-  jobs.sort((a, b) => b.ms - a.ms);
-  return { days, start, ai: true, compare, jobs };
-}
-
-// Dev preview: a made-up split of `ms` of step time, the shares by type.
-function samplePhases(type: JobType | null, ms: number, random: () => number): PhaseTimes {
-  const work = type === "lint" || type === "other" ? 0.35 : type === "e2e" ? 0.7 : 0.55;
-  const shares = { setup: 0.12, checkout: 0.05, dependencies: 0.15, cache: 0.08, cleanup: 0.02 };
-  const rest = Object.values(shares).reduce((sum, each) => sum + each, 0);
-  const phases: PhaseTimes = { work: Math.round(ms * work) };
-  for (const [phase, share] of Object.entries(shares))
-    phases[phase as keyof typeof shares] = Math.round(
-      ((ms * (1 - work) * share) / rest) * (0.7 + random() * 0.6),
-    );
-  return phases;
 }

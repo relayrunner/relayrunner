@@ -13,15 +13,21 @@ let package = Package(
     // What the app reads from and says to `relayrunner connect --events`, kept apart from the UI so
     // `swift test` covers it.
     .target(name: "RelayRunnerKit"),
-    .executableTarget(
-      name: "RelayRunner",
-      dependencies: ["RelayRunnerKit", .product(name: "Sparkle", package: "Sparkle")],
-      // build-app.sh puts Sparkle.framework in Contents/Frameworks.
-      linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
-    ),
     .testTarget(
       name: "RelayRunnerKitTests",
       dependencies: ["RelayRunnerKit"]
     ),
   ]
 )
+
+// The app itself needs macOS. Elsewhere (Linux CI) the package is just RelayRunnerKit and its
+// tests, so `swift test` checks the CLI's events on every pull request.
+#if os(macOS)
+  package.targets.append(
+    .executableTarget(
+      name: "RelayRunner",
+      dependencies: ["RelayRunnerKit", .product(name: "Sparkle", package: "Sparkle")],
+      // build-app.sh puts Sparkle.framework in Contents/Frameworks.
+      linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+    ))
+#endif

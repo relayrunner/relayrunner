@@ -1,0 +1,45 @@
+name: Hosted
+
+on: push
+
+jobs:
+  blacksmith-default:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - run: make
+  blacksmith-big-arm:
+    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    steps:
+      - run: make
+  depot:
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - run: make
+  depot-16:
+    runs-on: depot-ubuntu-24.04-16
+    steps:
+      - run: make
+  depot-mac:
+    runs-on: depot-macos-latest
+    steps:
+      - run: make
+  warp:
+    runs-on: warp-ubuntu-latest-x64-4x
+    steps:
+      - run: make
+  ubicloud:
+    runs-on: ubicloud-standard-8
+    steps:
+      - run: make
+  namespace:
+    runs-on: nscloud-ubuntu-22.04-amd64-4x16
+    steps:
+      - run: make
+  boat:
+    runs-on: boat-large
+    steps:
+      - run: make
+  groundbox:
+    runs-on: groundbox-4vcpu
+    steps:
+      - run: make

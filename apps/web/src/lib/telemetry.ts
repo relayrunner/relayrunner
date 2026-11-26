@@ -2,7 +2,6 @@ import type { JobLogChoice as LogChoice } from "@relayrunner/activity";
 import { api } from "@/lib/api";
 
 export type { LogChoice };
-
 /** Whose logs a choice sends, for status lines: "failed jobs' logs". */
 export const LOGS_OF: Record<Exclude<LogChoice, "off">, string> = {
   failed: "failed jobs' logs",
@@ -91,23 +90,6 @@ export const PRESETS = [
   },
 ] as const;
 
-/** Previews without an API: sending to Honeycomb. */
-export function sampleTelemetry(): Telemetry {
-  return {
-    configured: true,
-    endpoint: "https://api.honeycomb.io",
-    headers: [{ name: "x-honeycomb-team", hint: "x7Qa" }],
-    serviceName: "github-actions",
-    enabled: true,
-    lastSentAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-    error: null,
-    failingSince: null,
-    pausedAt: null,
-    logs: "failed",
-    logsSkipped: null,
-  };
-}
-
 /** Settings → Telemetry → Bucket (GET /api/log-bucket). The secret never comes back. */
 export type LogBucket = ExportStatus & {
   configured: boolean;
@@ -180,21 +162,3 @@ export const BUCKET_PRESETS = [
     help: "Any service that speaks the S3 API, such as MinIO, Backblaze B2 or Wasabi.",
   },
 ] as const;
-
-/** Previews without an API: archiving to R2. */
-export function sampleLogBucket(): LogBucket {
-  return {
-    configured: true,
-    endpoint: "https://0123456789abcdef.r2.cloudflarestorage.com",
-    bucket: "ci-logs",
-    region: "auto",
-    prefix: "github/",
-    keyHint: "9f2c",
-    logs: "failed",
-    lastSentAt: new Date(Date.now() - 6 * 60_000).toISOString(),
-    error: null,
-    failingSince: null,
-    pausedAt: null,
-    logsSkipped: null,
-  };
-}

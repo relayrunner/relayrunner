@@ -1,5 +1,34 @@
 # relayrunner
 
+## 0.21.0
+
+### Minor Changes
+
+- 6adaf44: `relayrunner init` now writes what each job needs instead of its old provider's label: `os`, plus `arch` when the label isn't the usual one (such as `ubuntu-24.04-arm` or `macos-13`) and `cpus` when it asks for more than 2 (such as `blacksmith-8vcpu-ubuntu-2404`). Every runner on your Router page can then take the job. `--exact` keeps the old label as before. `--auto` is no longer needed and does nothing. Routed jobs use relay.yml `v1.0.0-beta.10`.
+
+### Patch Changes
+
+- 0a5d76d: `relayrunner init` pins the relay to `relay.yml@v1`, the stable major tag, instead of a beta release, so routed workflows pick up 1.x fixes without edits.
+
+## 0.20.1
+
+### Patch Changes
+
+- 9f2b67d: `relayrunner blacksmith connect` reads which organization Blacksmith made the token for again, so it connects the workspace on that organization without asking. When it still has to ask, the list starts on the workspace named like the organization.
+
+## 0.20.0
+
+### Minor Changes
+
+- ad9d8a3: `relayrunner feedback "…"` sends a message to the RelayRunner team with your name and email, so we can reply, or without them with `--anonymous`. `--file` sends a file's text and `--category` marks it as a bug, something confusing or a feature request.
+
+## 0.19.1
+
+### Patch Changes
+
+- 91d2368: `init` now points to the agent skills after it routes jobs.
+- 4b71127: `relayrunner jobs --help` lists the `--since`, `--repo`, `--workflow` and `--result` filters.
+
 ## 0.19.0
 
 ### Minor Changes

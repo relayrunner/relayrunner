@@ -22,3 +22,6 @@ export const tracing = {
   enterSpan: (_name: string, callback: (s: typeof span) => unknown) => callback(span),
   getActiveSpan: () => span,
 };
+
+// The Worker's bindings at module scope. Tests pass their own env to handlers instead.
+export const env = {};

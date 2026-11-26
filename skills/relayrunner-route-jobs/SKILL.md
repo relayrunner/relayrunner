@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Route jobs through RelayRunner
 
-Routing a job is one change: a relay job in front of it, and a `runs-on` that points at the relay's answer. The relay asks RelayRunner where the job should run and finishes in about a second without a runner. The job's old label stays as the fallback.
+Routing a job is one change: a relay job in front of it, and a `runs-on` that points at the relay's answer. The relay asks RelayRunner where the job should run and finishes in about a second without a runner. It says what the job needs (its OS, and its arch and CPUs when they aren't standard), read from the job's old label, so any of the user's machines or providers on the Router page can take it.
 
 `relayrunner init` makes that change. It decides which jobs are safe to route and writes the YAML, keeping comments and formatting. Use it instead of writing relay YAML from memory, and only hand-edit a job `init` skipped when the user asks.
 
@@ -23,7 +23,7 @@ relayrunner init --plan --json
 This changes nothing. It returns the repo, its `visibility`, the `relay` version, and one entry per job:
 
 ```json
-{ "file": ".github/workflows/ci.yml", "job": "test", "verdict": "ready", "provider": "github", "label": "ubuntu-latest", "machine": "self-hosted", "warnings": [] }
+{ "file": ".github/workflows/ci.yml", "job": "test", "verdict": "ready", "provider": "github", "label": "ubuntu-latest", "machine": "self-hosted", "shape": { "os": "linux" }, "warnings": [] }
 { "file": ".github/workflows/deploy.yml", "job": "deploy", "verdict": "skipped", "reason": "looks like a deploy job (environment)", "warnings": [] }
 ```
 
@@ -36,7 +36,7 @@ This changes nothing. It returns the repo, its `visibility`, the `relay` version
 
 Group them by `verdict`, in plain words:
 
-- **ready**: can be routed. Say where it runs when no machine is free: `label` on `provider`. A job with `machine` `macOS` only goes to Macs that take macOS jobs. Read out each warning, such as a job that needs Docker.
+- **ready**: can be routed. Say what it will ask for, from `shape`: `os`, plus `arch` when it isn't the usual one and `cpus` when the old `label` was bigger than a standard 2 CPU runner. A macOS job only goes to Macs and to providers with macOS runners. Read out each warning, such as a job that needs Docker.
 - **routed**: already goes through RelayRunner.
 - **skipped**: left alone, with its `reason`. For each, say whether it can be routed anyway, using [references/skipped-jobs.md](references/skipped-jobs.md). Deploy jobs, and jobs pinned to a label list such as `[self-hosted, m1, macmini]` or a runner group, often can.
 
@@ -48,7 +48,7 @@ Suggest every ready job, minus any whose warnings the user would rather not deal
 relayrunner init --apply test,lint --json
 ```
 
-Name jobs by id (`test`), or `file:id` (`ci.yml:test`) when an id is in more than one workflow. `all` routes every ready job. Add `--auto` when the user wants to set sizes on the Router page: Linux x64 jobs get `auto` instead of their label, and each routed job's `auto` field says which did.
+Name jobs by id (`test`), or `file:id` (`ci.yml:test`) when an id is in more than one workflow. `all` routes every ready job. Each routed job's `with` field lists the relay inputs it got. Add `--exact` only when the user wants a job kept on its old provider: the relay then gets `machine` and the old label under its provider (such as `github: ubuntu-latest`), and no other provider takes it.
 
 To route a job skipped as a deploy job, once the user has said its machine may have the job's secrets and cloud access, name it in `--allow-deploy` as well as `--apply`:
 
@@ -63,17 +63,16 @@ Then show `git diff` and explain it. Each routed job looks like this:
 ```yaml
 jobs:
   relay-test:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.9
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
-      machine: self-hosted
-      github: ubuntu-latest
+      os: linux
 
   test:
     needs: relay-test
     runs-on: ${{ needs.relay-test.outputs.runner }}
 ```
 
-The check keeps its name in GitHub, so required checks keep working. The relay takes one input per provider the job may use (`machine`, `github`, or a hosted provider such as `depot`); see https://relayrunner.dev/docs/reference/relay-inputs.md. Which provider is tried first is the workspace's runner order, set on the dashboard's Router page. A provider set to `auto` (such as `blacksmith: auto`) lets the Router page pick the job's size, so it can change without a commit; a label written there runs as written.
+The check keeps its name in GitHub, so required checks keep working. `os` is `linux` or `macos`. `arch: arm64` (Linux) or `arch: x64` (Intel macOS) appears only when the old label asked for it, and `cpus: 8` only when it asked for more than 2. Without `cpus`, the job's size is the one picked on the dashboard's Router page, so it can change without a commit. Which provider is tried first is the workspace's runner order, also on the Router page. A relay can instead name a provider's label (`github: ubuntu-latest`, `blacksmith: blacksmith-4vcpu-ubuntu-2404`), which pins the job to that label; see https://relayrunner.dev/docs/reference/relay-inputs.md.
 
 ## 4. Open a PR
 
@@ -98,12 +97,12 @@ Follow the repo's own branch, commit and PR template conventions where it has th
 The PR body lists what changed and what didn't, from the `--apply` and `--plan` output:
 
 ```md
-Routes these jobs through RelayRunner. Each runs on a connected machine when one is free, and on its old label otherwise.
+Routes these jobs through RelayRunner. Each runs on a connected machine when one is free, and otherwise on the next runner in the workspace's runner order that fits.
 
-| Job             | Falls back to | Check first                               |
-| --------------- | ------------- | ----------------------------------------- |
-| ci.yml › test   | ubuntu-latest |                                           |
-| ci.yml › checks | ubuntu-latest | can request OIDC tokens (id-token: write) |
+| Job             | Asks for       | Was           | Check first                               |
+| --------------- | -------------- | ------------- | ----------------------------------------- |
+| ci.yml › test   | Linux          | ubuntu-latest |                                           |
+| ci.yml › checks | Linux, 4+ CPUs | ubuntu-latest | can request OIDC tokens (id-token: write) |
 
 Left alone:
 
@@ -121,4 +120,4 @@ The PR's own checks are the first routed run. With `relayrunner connect` running
 
 ## Undo
 
-Delete the relay job and its `needs` entry, and put the old label back in `runs-on`. Leaving it is also fine: with no machine online, jobs run on their fallback label.
+Delete the relay job and its `needs` entry, and put the old label back in `runs-on`. Leaving it is also fine: with no machine online, jobs run on the providers in the runner order.

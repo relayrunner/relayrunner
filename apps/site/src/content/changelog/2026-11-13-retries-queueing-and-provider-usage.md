@@ -1,6 +1,7 @@
 ---
 title: Retries, queueing and provider usage
 date: 2026-11-13
+type: Feature
 description: The Router retries jobs whose runner failed them, waits for busy machines and skips stuck providers, and the dashboard syncs real usage from your providers.
 ---
 

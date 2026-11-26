@@ -62,7 +62,6 @@ const jobs = [
 
   <section class="sol-band" aria-labelledby="how-h">
     <div class="wrap">
-      <p class="kicker">How it works</p>
       <h2 id="how-h">Jobs use your machines first and hosted runners only when they're busy.</h2>
       <ol class="sol-steps">
         <li>
@@ -91,7 +90,6 @@ const jobs = [
   </section>
 
   <section class="section wrap" aria-labelledby="busy-h">
-    <p class="kicker">Dashboard</p>
     <h2 id="busy-h">See which machines are busy and which jobs are waiting.</h2>
     <p class="body">
       The Runners page shows every job running and queued right now, and tells you when a machine
@@ -105,7 +103,6 @@ const jobs = [
 
   <section class="section wrap feature">
     <div class="feature-copy">
-      <p class="kicker">Optimized checks</p>
       <h2>Run lint checks without a runner.</h2>
       <p class="body">
         PR title checks and lint finish in seconds but still bill a whole minute and wait for a
@@ -142,6 +139,20 @@ const jobs = [
         <p>
           GitHub-hosted, or a provider like Blacksmith, Depot or Namespace on your own account. See
           <a href="/docs/runners/providers">all providers</a>.
+        </p>
+      </details>
+      <details>
+        <summary>Can my coding agents check on CI?</summary>
+        <p>
+          Yes. Connect the <a href="/docs/reference/mcp">MCP server</a> and your agent can see runs,
+          failures and waits for a runner. Where you allow it, it can change the runner order too.
+        </p>
+      </details>
+      <details>
+        <summary>What if a machine goes offline mid-job?</summary>
+        <p>
+          Turn on <a href="/docs/concepts/routing#automatic-retries">automatic retries</a> and the job
+          runs again on the next free runner in your order.
         </p>
       </details>
       <details>

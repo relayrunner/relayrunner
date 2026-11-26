@@ -7,7 +7,8 @@
 // Administration, or when the org only allows org-level runners. The caller then falls back to the
 // installation's own scope (the org), logging it so the gap stays visible.
 
-import { generateJitConfig, type RunnerScope } from "../github/github-app.ts";
+import { generateJitConfig, type RunnerScope } from "../github/runners-api.ts";
+import { log } from "../log.ts";
 
 type Runner = Parameters<typeof generateJitConfig>[2];
 type Jit = Awaited<ReturnType<typeof generateJitConfig>>;
@@ -45,7 +46,8 @@ export async function mintRepoFirst(
     if (status === null) throw error;
     const scope = await options.fallbackScope();
     if (scope.kind === "repo") throw error;
-    console.warn(JSON.stringify({ ...options.log, status, repo }));
+    const { msg, ...fields } = options.log;
+    log.warn("runner.registered_on_org", msg, { ...fields, status, repo });
     await options.beforeFallback?.(scope);
     return { jit: await mint(token, scope, runner), scope };
   }

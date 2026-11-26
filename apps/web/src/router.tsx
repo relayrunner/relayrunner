@@ -1,6 +1,7 @@
 import { createRouter } from "@tanstack/react-router";
 import { RouteError } from "./components/error-boundary";
 import { PagePending } from "./components/page-pending";
+import { queryClient } from "./lib/query";
 import { forgetSession, isWorkspacePage, setOnSessionChange } from "./lib/session";
 import { clearWorkspaceCaches } from "./lib/workspace-cache";
 import { routeTree } from "./routeTree.gen";
@@ -23,11 +24,13 @@ export function getRouter() {
   });
 
   // The guards keep the session and workspace (lib/session.ts). Invalidating after a change,
-  // such as switching workspace or changing a role, reads them fresh too.
+  // such as switching workspace or changing a role, reads them fresh too. So do the pages' queries
+  // (lib/query.ts): a page that reads through one, such as Runners after renaming a machine,
+  // shows the change instead of its cached answer.
   const invalidate = router.invalidate.bind(router);
-  router.invalidate = (opts) => {
+  router.invalidate = async (opts) => {
     forgetSession();
-    return invalidate(opts);
+    await Promise.all([invalidate(opts), queryClient.invalidateQueries()]);
   };
   // A background check found the session or workspace changed: re-run the guards with the new
   // copy, which redirect if they need to. When another tab switched workspace, the pages kept

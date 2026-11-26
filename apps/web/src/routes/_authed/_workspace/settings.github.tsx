@@ -40,7 +40,7 @@ function GitHubSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="GitHub">
+      <PageHeader className="max-w-3xl" title="GitHub">
         {workspace.name} is the RelayRunner GitHub App installed on this account. Its repos' jobs
         are what this workspace routes.
       </PageHeader>
@@ -171,7 +171,6 @@ type UsageState = { kind: "loading" } | { kind: "error" } | { kind: "ready"; lim
 function ApiUsage({ installationId }: { installationId: number }) {
   const [state, setState] = useState<UsageState>({ kind: "loading" });
   useEffect(() => {
-    if (authDisabled) return setState({ kind: "error" });
     let live = true;
     getRateLimits(installationId).then(
       (limits) => live && setState({ kind: "ready", limits }),

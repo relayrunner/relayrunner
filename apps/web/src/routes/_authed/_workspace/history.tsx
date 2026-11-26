@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useMemo, useRef } from "react";
 import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
-import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
+import { PublicRepoMark } from "@/components/public-repo";
+import { HISTORY_TABS as TABS, PageTabs, viewOf } from "@/components/page-tabs";
 import {
   providerStyle,
   type Provider,
@@ -15,7 +16,7 @@ import {
   runnerName,
 } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
-import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
+import { type Environments, RunLink, RunSheet, runJobsQuery } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SECTION_HEADING } from "@/components/ui/data-table";
@@ -30,27 +31,26 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { type Environment, JOB_RANGES, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
+import { loadPage, queryClient, usePageReport } from "@/lib/query";
 import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
-  getRuns,
   HISTORY_DEFAULT_RANGE,
   isFailure,
   type JobsReport,
   parseRunParam,
   type Run,
   type RunsReport,
-  loadJobs,
-  loadRuns,
   runParam,
   triggerText,
+  jobsQuery,
+  runsQuery,
 } from "@/lib/runs";
 import {
   optionParam,
   rangeSearch,
   textParam,
   unlessDefault,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
@@ -62,10 +62,6 @@ const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 const LIST_REFRESH_MS = 15_000;
 const HOVER_INTENT_MS = 120;
 
-const TABS = [
-  { value: "workflows", label: "Workflows" },
-  { value: "jobs", label: "Jobs" },
-] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 const RESULTS = ["all", "failed", "running"] as const;
 const ROUTED = ["all", "routed"] as const;
@@ -112,8 +108,8 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     const range = ranges.rangeOf(location.search as HistorySearch);
-    if (view === "jobs") return { view, jobs: await loadJobs(range) };
-    return { view, runs: await loadRuns(range) };
+    if (view === "jobs") return { view, jobs: await loadPage(jobsQuery(range)) };
+    return { view, runs: await loadPage(runsQuery(range)) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
@@ -184,10 +180,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const first = useRangeReport(loaded, range, loadRuns);
-  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
-  const [report, setReport] = useState(first);
-  useEffect(() => setReport(first), [first]);
+  const { report, refetch } = usePageReport(runsQuery(range), loaded);
   const repository = search.repo ?? "all";
   const result = search.result ?? "all";
   const routed = search.routed ?? "all";
@@ -221,16 +214,12 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     () => (sort === "newest" ? runs.map((run) => dayHeading(run.updatedAt)) : null),
     [runs, sort],
   );
-  useLiveRefresh(
-    () =>
-      getRuns(range)
-        .then(setReport)
-        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
-    {
-      intervalMs: LIST_REFRESH_MS,
-      enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
-    },
-  );
+  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
+  // A failed refetch keeps the last answer up; the next tick retries.
+  useLiveRefresh(() => refetch(), {
+    intervalMs: LIST_REFRESH_MS,
+    enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
+  });
   const environments = useMemo(() => byKey(report), [report]);
 
   return (
@@ -351,7 +340,12 @@ const RunRow = memo(function RunRow({
   const superseded = run.supersededBy ? "Superseded by a newer run" : undefined;
   const meta = [
     run.title ? run.workflow : null,
-    showRepository ? run.repository : null,
+    showRepository && (
+      <>
+        {run.repository}
+        <PublicRepoMark repository={run.repository} />
+      </>
+    ),
     triggerText(run),
     run.branch,
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
@@ -362,7 +356,7 @@ const RunRow = memo(function RunRow({
   // the panel opens with them in place. A hover only counts once it rests, so sweeping the pointer
   // down the list doesn't fetch every run.
   const hover = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const prefetch = () => void fetchRunJobs(run, run.status).catch(() => undefined);
+  const prefetch = () => void queryClient.prefetchQuery(runJobsQuery(run, run.status));
 
   return (
     <li>
@@ -401,7 +395,14 @@ const RunRow = memo(function RunRow({
           </span>
           <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
             <CommitBy actor={run.actor} sha={run.sha} className="shrink-0" />
-            <span className="truncate">{meta.join(" · ")}</span>
+            <span className="truncate">
+              {meta.map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 && " · "}
+                  {part}
+                </Fragment>
+              ))}
+            </span>
           </span>
         </span>
         <RanOn keys={run.environments} environments={environments} />

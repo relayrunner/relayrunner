@@ -15,20 +15,13 @@ import {
   type RoutingBucket,
   type RoutingHealth,
   type RoutingRange,
-  sampleRoutingHealth,
 } from "@/lib/admin-routing";
-import { authDisabled } from "@/lib/auth-client";
 import { cn, elapsed, exact } from "@/lib/utils";
 import { formatTime } from "@/lib/time-zone";
 
-function load(range: RoutingRange): Promise<RoutingHealth> {
-  if (authDisabled) return Promise.resolve(sampleRoutingHealth(range));
-  return getRoutingHealth(range);
-}
-
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
 export const Route = createFileRoute("/_authed/_workspace/admin/routing")({
-  loader: () => load("24h"),
+  loader: () => getRoutingHealth("24h"),
   component: RoutingPage,
 });
 
@@ -48,7 +41,7 @@ function RoutingPage() {
 
   function chooseRange(next: RoutingRange) {
     setRange(next);
-    load(next)
+    getRoutingHealth(next)
       .then(setHealth)
       .catch(() => undefined);
   }
@@ -58,7 +51,7 @@ function RoutingPage() {
 
   return (
     <section>
-      <PageHeader title="Routing">
+      <PageHeader className="max-w-5xl" title="Routing">
         How relays ended across every workspace: whether each job got a runner right away, queued
         for a busy machine, or had nowhere to run. Our own workspaces and test accounts are left
         out.

@@ -8,6 +8,14 @@ export const MAX_ATTEMPTS = 4;
 // How long a replacement runner waits before checking its job still needs one, so the job's own
 // webhook can say it started and GitHub needn't be asked.
 export const RECHECK_AFTER_MS = 10_000;
+// A runner that fails on GitHub's side (a 5xx, during an incident) is tried again with backoff
+// without using up one of the job's attempts, up to this many times (about 20 minutes of retries).
+export const MAX_TRANSIENT_RETRIES = 12;
+
+/** How long to wait before the `retry`th retry after a transient failure: 15s, doubling, up to 2 min. */
+export function transientRetryDelayMs(retry: number) {
+  return Math.min(15_000 * 2 ** Math.max(0, retry - 1), 2 * 60_000);
+}
 // A run that started longer ago than this was cut off (a deploy evicts the object mid-wait).
 export const RUN_STALE_MS = WAIT_FOR_JOB_MS + 2 * 60_000;
 const PICK_RUNNER_PREFIX = "relayrunner-pick-";

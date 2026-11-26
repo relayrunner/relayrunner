@@ -152,7 +152,11 @@ export type WebhookMessage =
       event: "check_suite";
       repository: { id: number; fullName: string };
       checkSuite: CheckSuite;
-    });
+    })
+  // Someone revoked the App's authorization to act as them (GitHub › Settings › Applications), so
+  // their sign-in tokens stop working. GitHub sends it to every App whatever it subscribes to; it
+  // has no installation. The only action is `revoked`.
+  | (Base & { event: "github_app_authorization"; senderId: number });
 
 // The pull_request actions that give a PR a new title or head commit. `edited` counts only when
 // the title changed (a body edit doesn't need a new check).
@@ -209,11 +213,13 @@ export function toWebhookMessage(
           headBranch: stringOrNull(job.head_branch),
           headSha: String(job.head_sha ?? ""),
           // GitHub sends "" for both when a job ended before any runner took it (cancelled while
-          // queued), with started_at set anyway: no runner, not one named "".
+          // queued): no runner, not one named "".
           runnerName: stringOrNull(job.runner_name) || null,
           runnerGroupName: stringOrNull(job.runner_group_name) || null,
           createdAt: String(job.created_at ?? ""),
-          startedAt: stringOrNull(job.started_at),
+          // GitHub sets started_at before any runner takes the job, so a job still waiting for a
+          // busy runner would read as running. It has started once a runner has it.
+          startedAt: job.runner_name ? stringOrNull(job.started_at) : null,
           completedAt: stringOrNull(job.completed_at),
           ranSteps: ranSteps(job.steps),
           ...(job.status === "completed" && { steps: jobSteps(job.steps) }),
@@ -282,6 +288,10 @@ export function toWebhookMessage(
         added: repos(payload.repositories_added),
         removed: repos(payload.repositories_removed),
       };
+    case "github_app_authorization": {
+      if (!isRecord(payload.sender) || typeof payload.sender.id !== "number") return null;
+      return { ...base, event, senderId: payload.sender.id };
+    }
     case "repository": {
       const repo = payload.repository;
       if (!isRecord(repo) || typeof repo.id !== "number" || typeof repo.full_name !== "string")

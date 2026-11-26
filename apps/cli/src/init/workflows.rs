@@ -9,11 +9,15 @@
 //!   relay-test:
 //!     uses: relayrunner/actions/.github/workflows/relay.yml@<relay version>
 //!     with:
-//!       machine: self-hosted
-//!       github: ubuntu-latest
+//!       os: linux
 //!   test:
 //!     needs: relay-test
 //!     runs-on: ${{ needs.relay-test.outputs.runner }}
+//!
+//! The relay gets the job's shape, read from its old `runs-on` label: `os` always, `arch` when the
+//! label isn't the OS's usual one, and `cpus` when it asks for more than a standard runner. Every
+//! provider on the Router can then take it. With `exact`, it gets the old label instead, under its
+//! provider's input, plus a `machine` input.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -83,9 +87,118 @@ pub struct WorkflowJob {
     pub provider: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// For a ready job: the relay's `machine` input.
+    /// For a ready job: the relay's `machine` input, written with `exact`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine: Option<&'static str>,
+    /// For a ready job: what it needs, read from its label. The relay's inputs unless `exact`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+}
+
+/// A job's machine shape: the relay's `os`, `arch` and `cpus` inputs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Shape {
+    /// `linux` or `macos`.
+    pub os: &'static str,
+    /// Only when the label isn't the OS's usual arch (x64 for Linux, Apple silicon for macOS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arch: Option<&'static str>,
+    /// Only when the label asks for more than a standard 2 CPU runner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<u32>,
+}
+
+impl Shape {
+    /// Such as `Linux`, `Linux arm64, 4+ CPUs` or `macOS x64`.
+    pub fn describe(&self) -> String {
+        let mut out = if self.os == "macos" { "macOS" } else { "Linux" }.to_string();
+        if let Some(arch) = self.arch {
+            out.push(' ');
+            out.push_str(arch);
+        }
+        if let Some(cpus) = self.cpus {
+            out.push_str(&format!(", {cpus}+ CPUs"));
+        }
+        out
+    }
+}
+
+/// CPUs a standard runner has. A label that asks for more gets `cpus`.
+const STANDARD_CPUS: u32 = 2;
+
+/// The shape a lowercase, non-Windows runner label asks for. `github` labels never carry a size
+/// (GitHub's larger runners have names their owners pick), so only hosted providers' labels are
+/// read for CPUs.
+pub fn shape_of(lower: &str, provider: &str) -> Shape {
+    let os = if lower.contains("macos") {
+        "macos"
+    } else {
+        "linux"
+    };
+    let tokens: Vec<&str> = lower
+        .split(['-', '_', '=', '/', ' '])
+        .filter(|t| !t.is_empty())
+        .collect();
+    let arm = tokens
+        .iter()
+        .any(|t| t.starts_with("arm") || *t == "aarch64");
+    let intel = tokens
+        .iter()
+        .any(|t| matches!(*t, "intel" | "x64" | "amd64" | "x86"));
+    let arch = match os {
+        "macos" if intel || (provider == "github" && macos_on_intel(&tokens)) => Some("x64"),
+        "linux" if arm => Some("arm64"),
+        _ => None,
+    };
+    let cpus = if provider == "github" {
+        None
+    } else {
+        cpus_of(&tokens)
+    }
+    .filter(|&n| n > STANDARD_CPUS);
+    Shape { os, arch, cpus }
+}
+
+/// GitHub's Intel macOS labels: macos-13 and older, and the `-large` ones.
+fn macos_on_intel(tokens: &[&str]) -> bool {
+    tokens.contains(&"large")
+        || tokens
+            .iter()
+            .skip_while(|t| **t != "macos")
+            .nth(1)
+            .and_then(|v| v.parse::<u32>().ok())
+            .is_some_and(|v| v <= 13)
+}
+
+/// The CPUs a hosted provider's label names, such as `4vcpu`, `8cpu`, `4-cores`, `4x`, `4x16`, or a
+/// bare count at the end (`ubicloud-standard-4`, `depot-ubuntu-24.04-8`).
+fn cpus_of(tokens: &[&str]) -> Option<u32> {
+    let number = |t: &str| t.parse::<u32>().ok().filter(|n| (1..=512).contains(n));
+    for (i, t) in tokens.iter().enumerate() {
+        for suffix in ["vcpus", "vcpu", "cpus", "cpu", "cores", "core", "x"] {
+            if let Some(n) = t.strip_suffix(suffix).and_then(number) {
+                return Some(n);
+            }
+        }
+        if let Some((n, mem)) = t.split_once('x')
+            && let Some(n) = number(n)
+            && mem.parse::<u32>().is_ok()
+        {
+            return Some(n);
+        }
+        if matches!(tokens.get(i + 1), Some(&"core" | &"cores"))
+            && let Some(n) = number(t)
+        {
+            return Some(n);
+        }
+    }
+    // A bare count: the last all-digit token, unless it's an OS version (ubuntu-22, macos-15).
+    let os_names = ["ubuntu", "macos", "debian", "linux", "windows"];
+    tokens.iter().enumerate().rev().find_map(|(i, t)| {
+        let n = number(t)?;
+        let after_os = i > 0 && os_names.contains(&tokens[i - 1]);
+        (!after_os && t.len() <= 3 && i > 0).then_some(n)
+    })
 }
 
 pub struct WorkflowFile {
@@ -206,6 +319,7 @@ fn judge(
         provider: None,
         label: None,
         machine: None,
+        shape: None,
     };
     let skip = |reason: &str| WorkflowJob {
         reason: Some(reason.to_string()),
@@ -298,6 +412,7 @@ fn judge(
         provider: Some(provider),
         label: Some(label.to_string()),
         machine: Some(machine),
+        shape: Some(shape_of(&lower, provider)),
         ..base
     }
 }
@@ -549,34 +664,42 @@ fn job_warnings(job: &Hash, options: &Options) -> Vec<String> {
     warnings
 }
 
-/// Whether the Router can size this ready job: auto sizes are Linux x64 only.
-pub fn auto_sizable(job: &WorkflowJob) -> bool {
-    let label = job.label.as_deref().unwrap_or_default().to_lowercase();
-    job.machine == Some("self-hosted") && !label.contains("arm") && !label.contains("macos")
+/// The relay inputs a ready job gets: its shape, or with `exact`, its machine and old label.
+pub fn relay_inputs(job: &WorkflowJob, exact: bool) -> Option<Vec<(String, String)>> {
+    let (Verdict::Ready, Some(provider), Some(label)) = (job.verdict, job.provider, &job.label)
+    else {
+        return None;
+    };
+    if exact {
+        return Some(vec![
+            (
+                "machine".into(),
+                job.machine.unwrap_or("self-hosted").into(),
+            ),
+            (provider.into(), label.clone()),
+        ]);
+    }
+    let shape = job.shape.as_ref()?;
+    let mut inputs = vec![("os".to_string(), shape.os.to_string())];
+    if let Some(arch) = shape.arch {
+        inputs.push(("arch".into(), arch.into()));
+    }
+    if let Some(cpus) = shape.cpus {
+        inputs.push(("cpus".into(), cpus.to_string()));
+    }
+    Some(inputs)
 }
 
 /// Routes the given jobs of one workflow file through the relay, and returns the new contents.
-/// Each job must have come back ready from `analyze` for this same source. With `auto`, a job the
-/// Router can size gets `auto` in place of its label. Fails, with why, on a layout it can't edit
-/// safely, such as jobs written inline.
-pub fn route_jobs(source: &str, jobs: &[WorkflowJob], auto: bool) -> Result<String, String> {
+/// Each job must have come back ready from `analyze` for this same source. Each relay gets the
+/// job's shape, or with `exact`, its old label. Fails, with why, on a layout it can't edit safely,
+/// such as jobs written inline.
+pub fn route_jobs(source: &str, jobs: &[WorkflowJob], exact: bool) -> Result<String, String> {
     let mut text = source.to_string();
     for job in jobs {
-        let (Verdict::Ready, Some(provider), Some(label)) = (job.verdict, job.provider, &job.label)
-        else {
-            return Err(format!("{} isn't ready to route.", job.job));
-        };
-        text = route_job(
-            &text,
-            &job.job,
-            provider,
-            if auto && auto_sizable(job) {
-                "auto"
-            } else {
-                label
-            },
-            job.machine.unwrap_or("self-hosted"),
-        )?;
+        let inputs =
+            relay_inputs(job, exact).ok_or_else(|| format!("{} isn't ready to route.", job.job))?;
+        text = route_job(&text, &job.job, &inputs)?;
     }
     // The edit is only as good as what GitHub will read back from it.
     let (after, errors) = analyze(
@@ -680,13 +803,7 @@ fn yaml_scalar(value: &str) -> String {
     }
 }
 
-fn route_job(
-    source: &str,
-    id: &str,
-    provider: &str,
-    label: &str,
-    machine: &str,
-) -> Result<String, String> {
+fn route_job(source: &str, id: &str, inputs: &[(String, String)]) -> Result<String, String> {
     let eol = if source.contains("\r\n") {
         "\r\n"
     } else {
@@ -838,7 +955,7 @@ fn route_job(
     // The relay goes in front of the job, after any comment above it, with a blank line between
     // them, and one before it unless it's the first job.
     let pad = |n: usize| " ".repeat(n);
-    let block = [
+    let mut block = vec![
         format!("{}{relay}:{eol}", pad(ji)),
         format!(
             "{}uses: {}@{}{eol}",
@@ -847,18 +964,13 @@ fn route_job(
             relay_ref()
         ),
         format!("{}with:{eol}", pad(ji + step)),
-        format!(
-            "{}machine: {}{eol}",
-            pad(ji + 2 * step),
-            yaml_scalar(machine)
-        ),
-        format!(
-            "{}{provider}: {}{eol}",
-            pad(ji + 2 * step),
-            yaml_scalar(label)
-        ),
-        eol.to_string(),
     ];
+    block.extend(
+        inputs.iter().map(|(key, value)| {
+            format!("{}{key}: {}{eol}", pad(ji + 2 * step), yaml_scalar(value))
+        }),
+    );
+    block.push(eol.to_string());
     let mut above = key_line;
     while above > jobs_at + 1 && comment(&lines[above - 1]) {
         above -= 1;
@@ -1169,8 +1281,7 @@ jobs:
   relay-test:
     uses: relayrunner/actions/.github/workflows/relay.yml@REF
     with:
-      machine: self-hosted
-      github: ubuntu-latest
+      os: linux
 
   test:
     needs: relay-test
@@ -1188,8 +1299,7 @@ jobs:
   relay-build:
     uses: relayrunner/actions/.github/workflows/relay.yml@REF
     with:
-      machine: self-hosted
-      github: ubuntu-24.04
+      os: linux
 
   build:
     needs: [test, lint, relay-build]
@@ -1208,17 +1318,105 @@ jobs:
     }
 
     #[test]
-    fn auto_writes_auto_for_linux_x64_jobs_only() {
-        let source = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  arm:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: npm test\n  mac:\n    runs-on: macos-15\n    steps:\n      - run: npm test\n";
+    fn exact_keeps_the_label() {
+        let source = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  mac:\n    runs-on: macos-15\n    steps:\n      - run: npm test\n";
         let jobs = judge(source, "macos", false);
-        assert_eq!(
-            jobs.iter().map(auto_sizable).collect::<Vec<_>>(),
-            [true, false, false]
-        );
         let out = route_jobs(source, &jobs, true).unwrap();
-        assert!(out.contains("      machine: self-hosted\n      github: auto\n"));
-        assert!(out.contains("      github: ubuntu-24.04-arm\n"));
+        assert!(out.contains("      machine: self-hosted\n      github: ubuntu-latest\n"));
         assert!(out.contains("      machine: macOS\n      github: macos-15\n"));
+        assert!(
+            judge(&out, "macos", false)
+                .iter()
+                .all(|j| j.verdict == Verdict::Routed)
+        );
+    }
+
+    #[test]
+    fn shapes_from_labels() {
+        let shape = |label: &str, provider: &str| {
+            let s = shape_of(label, provider);
+            (s.os, s.arch, s.cpus)
+        };
+        for (label, provider, want) in [
+            ("ubuntu-latest", "github", ("linux", None, None)),
+            ("ubuntu-24.04", "github", ("linux", None, None)),
+            ("ubuntu-24.04-arm", "github", ("linux", Some("arm64"), None)),
+            ("macos-15", "github", ("macos", None, None)),
+            ("macos-latest-xlarge", "github", ("macos", None, None)),
+            ("macos-13", "github", ("macos", Some("x64"), None)),
+            ("macos-latest-large", "github", ("macos", Some("x64"), None)),
+            ("macos-15-intel", "github", ("macos", Some("x64"), None)),
+            (
+                "blacksmith-2vcpu-ubuntu-2404",
+                "blacksmith",
+                ("linux", None, None),
+            ),
+            (
+                "blacksmith-4vcpu-ubuntu-2404",
+                "blacksmith",
+                ("linux", None, Some(4)),
+            ),
+            (
+                "blacksmith-8vcpu-ubuntu-2404-arm",
+                "blacksmith",
+                ("linux", Some("arm64"), Some(8)),
+            ),
+            ("depot-ubuntu-24.04", "depot", ("linux", None, None)),
+            ("depot-ubuntu-24.04-8", "depot", ("linux", None, Some(8))),
+            (
+                "depot-ubuntu-24.04-arm-16",
+                "depot",
+                ("linux", Some("arm64"), Some(16)),
+            ),
+            ("depot-macos-latest", "depot", ("macos", None, None)),
+            (
+                "warp-ubuntu-latest-x64-4x",
+                "warpbuild",
+                ("linux", None, Some(4)),
+            ),
+            (
+                "warp-ubuntu-latest-arm64-2x",
+                "warpbuild",
+                ("linux", Some("arm64"), None),
+            ),
+            ("ubicloud-standard-2", "ubicloud", ("linux", None, None)),
+            (
+                "ubicloud-standard-8-arm",
+                "ubicloud",
+                ("linux", Some("arm64"), Some(8)),
+            ),
+            (
+                "nscloud-ubuntu-22.04-amd64-4x16",
+                "namespace",
+                ("linux", None, Some(4)),
+            ),
+            (
+                "namespace-profile-default",
+                "namespace",
+                ("linux", None, None),
+            ),
+            (
+                "starsling-ubuntu-24.04-4",
+                "starsling",
+                ("linux", None, Some(4)),
+            ),
+            ("groundbox-4vcpu", "groundbox", ("linux", None, Some(4))),
+            ("boat-large", "boat", ("linux", None, None)),
+            ("lizard-medium-ubuntu-2404", "lizard", ("linux", None, None)),
+        ] {
+            assert_eq!(shape(label, provider), want, "{label}");
+        }
+    }
+
+    #[test]
+    fn writes_the_shape() {
+        let source = "on: push\njobs:\n  arm:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: npm test\n  mac:\n    runs-on: macos-13\n    steps:\n      - run: npm test\n  big:\n    runs-on: blacksmith-8vcpu-ubuntu-2404\n    steps:\n      - run: npm test\n";
+        let jobs = judge(source, "macos", false);
+        let out = route_jobs(source, &jobs, false).unwrap();
+        assert!(out.contains("    with:\n      os: linux\n      arch: arm64\n\n  arm:"));
+        assert!(out.contains("    with:\n      os: macos\n      arch: x64\n\n  mac:"));
+        assert!(out.contains("    with:\n      os: linux\n      cpus: 8\n\n  big:"));
+        assert!(!out.contains("machine:"));
         assert!(
             judge(&out, "macos", false)
                 .iter()
@@ -1244,7 +1442,7 @@ jobs:
             .unwrap();
         let out = route_jobs(input, &[test], false).unwrap();
         assert!(out.contains("\n\n  relay-test-2:\n"));
-        assert!(out.contains("      blacksmith: blacksmith-4vcpu-ubuntu-2404\n"));
+        assert!(out.contains("      os: linux\n      cpus: 4\n"));
         assert!(out.contains("    needs: [build, relay-test-2]\n"));
 
         let block = "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    needs:\n      - a\n    runs-on: ubuntu-latest\n";
@@ -1265,7 +1463,7 @@ jobs:
         assert_eq!(
             out,
             format!(
-                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {}@{}\r\n        with:\r\n            machine: self-hosted\r\n            github: ubuntu-latest\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi",
+                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {}@{}\r\n        with:\r\n            os: linux\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi",
                 relay_workflow(),
                 relay_ref()
             )

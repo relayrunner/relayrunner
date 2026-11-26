@@ -21,7 +21,8 @@ import {
   sql,
 } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
-import { appInstallationToken, type JobStep, workflowJobSteps } from "../github/github-app.ts";
+import { type JobStep, workflowJobSteps } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import type { Env } from "../env.ts";
 import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
 import { Recent } from "../recent.ts";

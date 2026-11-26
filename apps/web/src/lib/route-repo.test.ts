@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { sampleRouterSetup } from "./router-sample.ts";
+import { sampleRouterSetup } from "./sample/router-setup.ts";
 import {
   defaultPicks,
   firstRouted,
@@ -31,12 +31,12 @@ test("starts with jobs that ship something unchecked", () => {
   ]);
 });
 
-test("names the picked jobs in the prompt, and passes --auto when on", () => {
+test("names the picked jobs in the prompt, and passes --exact when auto is off", () => {
   const jobs = [{ workflow: "CI", job: "test" }];
   const prompt = routePrompt("acme/api", jobs, true);
   expect(prompt).toContain("- CI / test");
-  expect(prompt).toContain("--apply <those job ids> --auto --json");
-  expect(routePrompt("acme/api", jobs, false)).not.toContain("--auto");
+  expect(prompt).toContain("--apply <those job ids> --json");
+  expect(routePrompt("acme/api", jobs, false)).toContain("--apply <those job ids> --exact --json");
   expect(routePrompt("acme/worker", null, false)).toContain("--apply all");
   expect(prompt).toContain("suggest `npx skills add relayrunner/relayrunner`");
 });

@@ -10,12 +10,8 @@ import {
   type JobMessage,
   type QueueEntry,
 } from "@relayrunner/machine-protocol";
-import {
-  appInstallationToken,
-  deleteRunner,
-  runnerOnline,
-  type RunnerScope,
-} from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner, runnerOnline, type RunnerScope } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import { setJobUsage } from "../ingest/jobs.ts";
 import { runJob } from "../reports/run-job.ts";
@@ -28,6 +24,7 @@ import {
   issuePendingToken,
   pausedByName,
   promotePendingToken,
+  recordMacAppFirstUse,
 } from "../machines/machines.ts";
 import {
   placeNow,
@@ -37,7 +34,6 @@ import {
   type Route,
 } from "../routing/routing.ts";
 import { jobStillQueued, LOST_GRACE_MS } from "../routing/stranded-jobs.ts";
-import { errorMessage } from "../errors.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
   CLOSE,
@@ -53,6 +49,7 @@ import {
   type MachineStatus,
   type SessionState,
 } from "./machine-session.ts";
+import { log } from "../log.ts";
 
 // "wrong_place": the machine reconnected without the place the job was routed to (placeNow).
 export type RunResult = "sent" | "already_sent" | "offline" | "wrong_place";
@@ -110,11 +107,11 @@ export class MachineLink extends DurableObject<Env> {
     const now = Date.now();
     const from = originFromJson(request.headers.get(MACHINE_ORIGIN_HEADER));
     let takenFrom: RequestOrigin | undefined;
-    const replaced = this.ctx.getWebSockets();
+    const replaced = this.ctx.getWebSockets().filter(isOpen);
     for (const old of replaced) {
       const session = attachment(old);
       if (session && isTakeover(session, from, now)) takenFrom = session.from;
-      close(old, CLOSE.replaced, "replaced");
+      shut(old, CLOSE.replaced, "replaced");
     }
 
     const { 0: client, 1: server } = new WebSocketPair();
@@ -129,13 +126,10 @@ export class MachineLink extends DurableObject<Env> {
     if (takenFrom && from)
       this.ctx.waitUntil(
         this.reportTakeover(machineId, takenFrom, from, now).catch((error: unknown) =>
-          console.error(
-            JSON.stringify({
-              msg: "machine takeover not reported",
-              machineId,
-              error: String(error),
-            }),
-          ),
+          log.error("machine.takeover_not_reported", "machine takeover not reported", {
+            machineId,
+            error,
+          }),
         ),
       );
     return new Response(null, { status: 101, webSocket: client });
@@ -144,6 +138,8 @@ export class MachineLink extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, frame: string | ArrayBuffer) {
     const session = attachment(ws);
     if (!session) return close(ws, CLOSE.policy, "unknown socket");
+    // A socket the gateway already closed (replaced, timed out) is done, whatever it still sends.
+    if (session.closedAt !== undefined) return;
     annotate({ "relayrunner.machine_id": session.machineId });
     const outcome = handleFrame(session, frame, Date.now());
     ws.serializeAttachment(outcome.state);
@@ -187,7 +183,7 @@ export class MachineLink extends DurableObject<Env> {
     if ("job" in outcome && outcome.job) await this.onJob(session.machineId, outcome.job);
     if ("reply" in outcome) {
       ws.send(outcome.reply);
-      close(ws, outcome.close.code, outcome.close.reason);
+      shut(ws, outcome.close.code, outcome.close.reason);
       await this.touch(session.machineId);
       await this.disconnected(session, "error");
     }
@@ -202,7 +198,10 @@ export class MachineLink extends DurableObject<Env> {
     await this.touch(session.machineId);
     // A close this side started (timeout, revoke, replaced, protocol error) was logged when it
     // closed, or deliberately not logged (replaced), so only the machine's own close counts here.
-    if (!OWN_CLOSE_CODES.has(code)) await this.disconnected(session, "closed");
+    // The machine may answer that close with its own code, or the socket may end with 1006 long
+    // after, so the socket's mark counts too.
+    if (session.closedAt === undefined && !OWN_CLOSE_CODES.has(code))
+      await this.disconnected(session, "closed");
   }
 
   async webSocketError(ws: WebSocket) {
@@ -219,8 +218,10 @@ export class MachineLink extends DurableObject<Env> {
     let earliest: number | undefined;
     for (const ws of this.ctx.getWebSockets()) {
       const session = attachment(ws);
+      // Closed and logged already; the machine never finished the close.
+      if (session?.closedAt !== undefined) continue;
       if (!session || isStale(session, now)) {
-        close(ws, CLOSE.timeout, "heartbeat timeout");
+        shut(ws, CLOSE.timeout, "heartbeat timeout");
         if (session) {
           await this.touch(session.machineId);
           await this.disconnected(session, "timeout");
@@ -283,13 +284,7 @@ export class MachineLink extends DurableObject<Env> {
     } catch (error) {
       const checkAt = now + LOST_GRACE_MS;
       await this.ctx.storage.put<SentRoute>(key, { ...route, checkAt });
-      console.warn(
-        JSON.stringify({
-          msg: "relayrunner sent job not checked",
-          routeId,
-          error: errorMessage(error),
-        }),
-      );
+      log.warn("machine.sent_job_not_checked", "sent job not checked", { routeId, error });
       return checkAt;
     }
   }
@@ -319,14 +314,11 @@ export class MachineLink extends DurableObject<Env> {
     }
     await deleteRunner(await getToken(), runner.scope, runner.id);
     await this.ctx.storage.delete([key, HOLD_KEY + routeId]);
-    console.warn(
-      JSON.stringify({
-        msg: "relayrunner job never reached its runner",
-        routeId,
-        jobId,
-        runnerGone: Boolean(sent.runnerGone),
-      }),
-    );
+    log.warn("machine.job_not_reached_runner", "job never reached its runner", {
+      routeId,
+      jobId,
+      runnerGone: Boolean(sent.runnerGone),
+    });
     await this.env.ROUTER.getByName(sent.workspaceId).requeueSent(routeId, jobId, runner.machineId);
   }
 
@@ -412,14 +404,11 @@ export class MachineLink extends DurableObject<Env> {
             jobId: route.jobId,
             machineId: route.machineId,
           }).catch((error) => {
-            console.error(
-              JSON.stringify({
-                msg: "relayrunner run job not read",
-                routeId: route.id,
-                jobId: route.jobId,
-                error: errorMessage(error),
-              }),
-            );
+            log.error("machine.run_job_not_read", "run job not read", {
+              routeId: route.id,
+              jobId: route.jobId,
+              error,
+            });
             return undefined;
           });
     let jit, scope;
@@ -465,19 +454,6 @@ export class MachineLink extends DurableObject<Env> {
         scope,
       },
     });
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner run sent",
-        routeId: route.id,
-        machineId: route.machineId,
-        repo: route.repo,
-        runId: route.runId,
-        jobId: route.jobId,
-        installationId: route.installationId,
-        runnerId: jit.runnerId,
-        runnerLabels: jit.labels,
-      }),
-    );
     return "sent";
   }
 
@@ -534,9 +510,9 @@ export class MachineLink extends DurableObject<Env> {
 
   /** Closes the machine's socket for good. DELETE /api/machines/:id calls this on revoke. */
   async revoke(): Promise<void> {
-    for (const ws of this.ctx.getWebSockets()) {
-      close(ws, CLOSE.revoked, "revoked");
+    for (const ws of this.ctx.getWebSockets().filter(isOpen)) {
       const session = attachment(ws);
+      shut(ws, CLOSE.revoked, "revoked");
       if (session) await this.disconnected(session, "revoked");
     }
   }
@@ -556,16 +532,13 @@ export class MachineLink extends DurableObject<Env> {
   private async onJob(machineId: string, job: JobMessage) {
     const key = SENT_KEY + job.routeId;
     const sent = await this.ctx.storage.get<SentRoute>(key);
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner machine job",
-        machineId,
-        routeId: job.routeId,
-        state: job.state,
-        message: job.message,
-        known: Boolean(sent),
-      }),
-    );
+    log.info("machine.job", "machine job", {
+      machineId,
+      routeId: job.routeId,
+      state: job.state,
+      message: job.message,
+      known: Boolean(sent),
+    });
     await this.ctx.storage.delete(HOLD_KEY + job.routeId);
     if (!sent) return;
     const jobId = await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
@@ -604,13 +577,10 @@ export class MachineLink extends DurableObject<Env> {
     now: RequestOrigin,
     at: number,
   ) {
-    console.warn(
-      JSON.stringify({
-        msg: "machine connection taken over from another address",
-        machineId,
-        was,
-        now,
-      }),
+    log.warn(
+      "machine.connection_taken_over",
+      "machine connection taken over from another address",
+      { machineId, was, now },
     );
     const db = createDb(this.env.DB);
     const [row] = await db
@@ -662,6 +632,25 @@ function attachment(ws: WebSocket) {
   return ws.deserializeAttachment() as SessionState | null;
 }
 
+// Whether the gateway hasn't closed this socket yet (shut).
+function isOpen(ws: WebSocket) {
+  return attachment(ws)?.closedAt === undefined;
+}
+
+// Closes a socket from this side and marks it closed, so the alarm, a late webSocketClose and a
+// later replace or revoke leave it alone even while the machine never answers the close.
+function shut(ws: WebSocket, code: number, reason: string) {
+  const session = attachment(ws);
+  if (session) {
+    try {
+      ws.serializeAttachment({ ...session, closedAt: Date.now() });
+    } catch {
+      // Already closed.
+    }
+  }
+  close(ws, code, reason);
+}
+
 // Closing an already-closed socket throws; that's fine here.
 function close(ws: WebSocket, code: number, reason: string) {
   try {
@@ -690,8 +679,10 @@ async function saveHello(
     .from(schema.machine)
     .where(eq(schema.machine.id, machineId))
     .limit(1);
-  const columns = helloColumns(hello, new Date());
+  const now = new Date();
+  const columns = helloColumns(hello, now);
   if (machine && helloChanged(machine, columns))
     await db.update(schema.machine).set(columns).where(eq(schema.machine.id, machineId));
+  if (machine) await recordMacAppFirstUse(db, machine, hello.macAppVersion, now);
   return machine;
 }

@@ -222,6 +222,40 @@ describe("pollInstallation", () => {
     });
   });
 
+  test("keeps each day's private minutes, and the dashboard's read projects the cycle from them", async () => {
+    const { db, installationId, org } = await connectedOrg();
+    fakeGitHub({
+      plan: "free",
+      usage: [
+        item("2026-11-03", "app", 100),
+        item("2026-11-03", "unmirrored", 20),
+        item("2026-11-03", "site", 500), // public: doesn't count
+        item("2026-11-05", "app", 5, "Actions macOS"),
+        item("2026-10-31", "app", 999), // last cycle
+      ],
+    });
+    await pollInstallation(db, "tok", { id: installationId, accountLogin: org }, NOW);
+
+    const days = await db
+      .select({ day: schema.actionsUsageDay.day, usedMinutes: schema.actionsUsageDay.usedMinutes })
+      .from(schema.actionsUsageDay)
+      .where(eq(schema.actionsUsageDay.installationId, installationId))
+      .orderBy(schema.actionsUsageDay.day);
+    expect(days).toEqual([
+      { day: "2026-11-03", usedMinutes: 120 },
+      { day: "2026-11-05", usedMinutes: 51.7 },
+    ]);
+
+    // Routing's read skips it; the dashboard's carries it.
+    expect(await accountUsage(db, installationId, NOW)).not.toHaveProperty("projection");
+    const usage = await accountUsage(db, installationId, NOW, { withProjection: true });
+    expect(usage?.projection).toMatchObject({
+      outlook: "surplus",
+      resetsAt: "2026-12-01T00:00:00.000Z",
+      runsOutAt: null,
+    });
+  });
+
   test("replaces the month's rows on each poll and gets a burn rate from consecutive readings", async () => {
     const { db, installationId, org } = await connectedOrg();
     const installation = { id: installationId, accountLogin: org };
@@ -550,6 +584,32 @@ describe("pollActionsUsage", () => {
 
   test("a personal account whose owner isn't in the workspace needs a sign-in", async () => {
     const { db, installationId, org } = await connectedOrg("User", { ownerIsAccount: false });
+    const calls = fakeGitHub({});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await runActionsUsagePoll(env, NOW);
+    expect(calls.some((call) => call.startsWith(`/users/${org}/`))).toBe(false);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
+  });
+
+  test("a personal token GitHub no longer accepts needs a sign-in, and doesn't log an error", async () => {
+    const { db, installationId } = await connectedOrg("User");
+    fakeGitHub({ usageStatus: 401 });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await runActionsUsagePoll(env, NOW);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
+    const logged = errors.mock.calls.flat().map(String);
+    expect(logged.filter((line) => line.includes(`"installationId":${installationId},`))).toEqual(
+      [],
+    );
+  });
+
+  test("an owner's token that couldn't be renewed needs a sign-in, without asking GitHub", async () => {
+    const { db, installationId, org } = await connectedOrg("User");
+    // Expired, with no refresh token: getAccessToken hands back the expired token as it is.
+    await db
+      .update(schema.account)
+      .set({ accessTokenExpiresAt: new Date(Date.now() - 60_000), refreshToken: null })
+      .where(eq(schema.account.providerId, "github"));
     const calls = fakeGitHub({});
     vi.spyOn(console, "error").mockImplementation(() => {});
     await runActionsUsagePoll(env, NOW);

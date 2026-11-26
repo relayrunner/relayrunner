@@ -32,17 +32,15 @@ import {
 } from "drizzle-orm";
 import { recordOverage } from "../reports/activity.ts";
 import { createAuth } from "../auth/auth.ts";
-import { createDb, type Db, prepare, schema } from "../db/index.ts";
+import { createDb, type Db, isMissingTable, prepare, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { linkEnterpriseOrganizations } from "../github/enterprise.ts";
 import { userGitHubToken } from "../github/installations.ts";
 import { spendAppToken, spendInstallationId } from "../github/spend-app.ts";
 import {
-  appInstallationToken,
   enterpriseBillingUsage,
   enterpriseBudgets,
-  GitHubAccessError,
   orgBillingUsage,
   orgBudgets,
   orgPlan,
@@ -50,13 +48,22 @@ import {
   userPlan,
   type BillingBudget,
   type BillingUsageItem,
-} from "../github/github-app.ts";
+} from "../github/billing-api.ts";
+import { GitHubAccessError, GitHubError } from "../github/github-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { log } from "../log.ts";
+import { isTransient } from "../transient.ts";
+import { type DayUsage, type MinutesProjection, projectMinutes } from "./minutes-projection.ts";
 
 /**
  * Included Actions minutes per plan. GitHub counts them in Linux 2-core minutes; other runners use
  * the quota faster, in proportion to their price. Personal accounts use the same names (free, pro).
  */
-export const PLAN_QUOTA_MINUTES: Record<string, number> = { free: 2000, pro: 3000, team: 3000 };
+export const PLAN_QUOTA_MINUTES: Record<string, number> = {
+  free: 2000,
+  pro: 3000,
+  team: 3000,
+};
 
 // Enterprise orgs share their enterprise's pooled quota, which an org-level read can't see. Shown
 // as "not available" until the App is installed on the enterprise too.
@@ -124,6 +131,9 @@ export interface AccountUsage {
   // The enterprise whose shared minutes these are (its slug), when the org is in one we read.
   // Every number above is then the enterprise's.
   enterprise: string | null;
+  // Where the cycle is headed at the recent pace. Only on the dashboard's reads (withProjection),
+  // not routing's; null without a quota or on the cycle's first day.
+  projection?: MinutesProjection | null;
 }
 
 /** The start of the billing cycle `now` is in: the UTC calendar month. */
@@ -184,7 +194,11 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
     );
   await enqueueInstallationTasks(
     env,
-    accounts.map((account) => ({ kind: "actions-usage", account, at: now.toISOString() })),
+    accounts.map((account) => ({
+      kind: "actions-usage",
+      account,
+      at: now.toISOString(),
+    })),
   );
   await db
     .delete(schema.actionsUsageReading)
@@ -287,7 +301,10 @@ export async function pollInstallation(
   const kind = accountKind(installation.accountType ?? "Organization");
   const enterprise = kind === "enterprise";
   const start = cycleStart(now);
-  const month = { year: start.getUTCFullYear(), month: start.getUTCMonth() + 1 };
+  const month = {
+    year: start.getUTCFullYear(),
+    month: start.getUTCMonth() + 1,
+  };
   const [plan, budgets, usage] = await Promise.allSettled([
     kind === "enterprise" ? "enterprise" : kind === "user" ? userPlan(token) : orgPlan(token, org),
     kind === "enterprise"
@@ -305,25 +322,33 @@ export async function pollInstallation(
   if (usage.status === "rejected") {
     const refused = usage.reason instanceof GitHubAccessError;
     if (refused && fallback) return pollInstallation(db, await fallback(), installation, now);
+    // A personal account reads with its owner's token, which GitHub rejects once it expires or
+    // is revoked: the owner has to sign in again.
+    const signedOut =
+      kind === "user" && usage.reason instanceof GitHubError && usage.reason.status === 401;
     await recordFailure(
       db,
       installation.id,
-      refused ? (enterprise ? "enterprise_permission" : "missing_permission") : "error",
+      signedOut
+        ? "sign_in_needed"
+        : refused
+          ? enterprise
+            ? "enterprise_permission"
+            : "missing_permission"
+          : "error",
       usage.reason,
       now,
       { plan: plan.status === "fulfilled" ? plan.value : undefined },
     );
-    // A refusal is the account's setup, not a fault: the dashboard says how to fix it, and the poll
-    // backs off (REFUSED_RETRY_MS). Only unexpected failures log as errors.
-    if (refused)
-      console.log(
-        JSON.stringify({ msg: "actions billing not shared", installationId: installation.id }),
-      );
-    else logFailure(installation.id, usage.reason);
+    // A refusal or a signed-out owner is the account's setup, not a fault: it's recorded above, the
+    // dashboard says how to fix it, and the poll backs off (REFUSED_RETRY_MS). Only unexpected
+    // failures log.
+    if (!refused && !signedOut) logFailure(installation.id, usage.reason);
     return;
   }
 
-  const rows = aggregate(usage.value, start, enterprise);
+  const items = cycleItems(usage.value, start, enterprise);
+  const rows = aggregate(items);
   // Linked first: the enterprise's repo privacy comes from its orgs' installs.
   if (enterprise)
     await linkEnterpriseOrganizations(
@@ -395,6 +420,8 @@ export async function pollInstallation(
     ),
   ]);
 
+  await saveDays(db, installation.id, dailyMinutes(items, privacy));
+
   // GitHub billed overage: the account went past its included minutes. The Activity log says so
   // once per cycle, and the dashboard shows a banner while netAmount stays above 0 (#117).
   if (totals.netAmount > 0 && installation.workspaceId)
@@ -407,22 +434,76 @@ export async function pollInstallation(
     });
 }
 
+// Replaces the installation's daily minutes with this cycle's. Older cycles go with them. Apart from
+// the poll's main batch so a missing actions_usage_day (code deployed before its migration, which
+// both run on merge) can't fail the poll. TODO: fold into the main batch once migrated.
+async function saveDays(db: Db, installationId: number, days: DayUsage[]) {
+  const d1 = db.$client;
+  await d1
+    .batch([
+      prepare(
+        db,
+        db
+          .delete(schema.actionsUsageDay)
+          .where(eq(schema.actionsUsageDay.installationId, installationId)),
+      ),
+      d1
+        .prepare(
+          `INSERT INTO actions_usage_day (installation_id, day, used_minutes)
+          SELECT ?1, value ->> 'day', value ->> 'usedMinutes' FROM json_each(?2)`,
+        )
+        .bind(installationId, JSON.stringify(days)),
+    ])
+    .catch((error: unknown) => {
+      if (!isMissingTable(error)) throw error;
+    });
+}
+
+// The cycle's daily minutes, oldest first. None before the table exists.
+async function readDays(db: Db, installationId: number, start: Date): Promise<DayUsage[]> {
+  return db
+    .select({ day: schema.actionsUsageDay.day, usedMinutes: schema.actionsUsageDay.usedMinutes })
+    .from(schema.actionsUsageDay)
+    .where(
+      and(
+        eq(schema.actionsUsageDay.installationId, installationId),
+        gte(schema.actionsUsageDay.day, dayOf(start)),
+      ),
+    )
+    .orderBy(asc(schema.actionsUsageDay.day))
+    .catch((error: unknown) => {
+      if (isMissingTable(error)) return [];
+      throw error;
+    });
+}
+
 type UsageRow = Omit<
   typeof schema.actionsUsage.$inferInsert,
   "id" | "installationId" | "cycleStart" | "createdAt" | "updatedAt"
 >;
 
+type CycleItem = BillingUsageItem & { repositoryName: string };
+
+// The cycle's Actions items. An enterprise's span orgs, so their repos are named "org/repo".
+function cycleItems(items: BillingUsageItem[], start: Date, enterprise: boolean): CycleItem[] {
+  return items
+    .filter(
+      (item) => item.product.toLowerCase() === "actions" && item.date.slice(0, 10) >= dayOf(start),
+    )
+    .map((item) => ({
+      ...item,
+      repositoryName:
+        enterprise && item.organizationName && item.repositoryName
+          ? `${item.organizationName}/${item.repositoryName}`
+          : (item.repositoryName ?? ""),
+    }));
+}
+
 // The cycle's Actions rows, summed over its days per repo and SKU.
-function aggregate(items: BillingUsageItem[], start: Date, enterprise: boolean): UsageRow[] {
+function aggregate(items: CycleItem[]): UsageRow[] {
   const rows = new Map<string, UsageRow>();
   for (const item of items) {
-    if (item.product.toLowerCase() !== "actions") continue;
-    if (item.date.slice(0, 10) < dayOf(start)) continue;
-    // An enterprise's rows span orgs, so they're kept as "org/repo".
-    const repositoryName =
-      enterprise && item.organizationName && item.repositoryName
-        ? `${item.organizationName}/${item.repositoryName}`
-        : (item.repositoryName ?? "");
+    const { repositoryName } = item;
     const key = JSON.stringify([repositoryName, item.sku]);
     const row = rows.get(key) ?? {
       repositoryName,
@@ -482,6 +563,27 @@ async function enterpriseRepoPrivacy(db: Db, installationId: number) {
 
 // Runner minutes count toward the quota only in private repos. A repo we don't mirror (a
 // select-repos install) counts as private, so a gap never hides usage.
+const countsTowardQuota = (
+  row: Pick<UsageRow, "repositoryName" | "unitType">,
+  privacy: Map<string, boolean>,
+) =>
+  row.unitType.toLowerCase() === "minutes" &&
+  privacy.get(row.repositoryName.toLowerCase()) !== false;
+
+// Each day's quota minutes, for the run-out projection.
+function dailyMinutes(items: CycleItem[], privacy: Map<string, boolean>): DayUsage[] {
+  const days = new Map<string, number>();
+  for (const item of items) {
+    if (!countsTowardQuota(item, privacy)) continue;
+    const day = item.date.slice(0, 10);
+    days.set(day, (days.get(day) ?? 0) + item.grossAmount);
+  }
+  return [...days].map(([day, gross]) => ({
+    day,
+    usedMinutes: round(gross / LINUX_MINUTE_USD, 1),
+  }));
+}
+
 function cycleTotals(
   rows: Pick<UsageRow, "repositoryName" | "unitType" | "grossAmount" | "netAmount">[],
   privacy: Map<string, boolean>,
@@ -490,9 +592,7 @@ function cycleTotals(
   let netAmount = 0;
   for (const row of rows) {
     netAmount += row.netAmount;
-    if (row.unitType.toLowerCase() !== "minutes") continue;
-    if (privacy.get(row.repositoryName.toLowerCase()) === false) continue;
-    grossAmount += row.grossAmount;
+    if (countsTowardQuota(row, privacy)) grossAmount += row.grossAmount;
   }
   return {
     usedMinutes: round(grossAmount / LINUX_MINUTE_USD, 1),
@@ -538,13 +638,16 @@ async function recordFailure(
     });
 }
 
+// The poll runs again next cycle, so a GitHub blip or D1 shedding load is a warning. The failure is
+// also recorded on the account, so the dashboard says why its usage is stale.
 function logFailure(installationId: number, error: unknown) {
-  console.error(
-    JSON.stringify({
-      msg: "actions usage poll failed",
+  (isTransient(error) ? log.warn : log.error)(
+    "provider.actions_usage_failed",
+    "actions usage poll failed",
+    {
       installationId,
-      error: error instanceof Error ? error.message : String(error),
-    }),
+      error,
+    },
   );
 }
 
@@ -553,6 +656,7 @@ export async function accountUsage(
   db: Db,
   installationId: number,
   now = new Date(),
+  { withProjection = false } = {},
 ): Promise<AccountUsage | null> {
   const [installation] = await db
     .select({
@@ -591,7 +695,9 @@ export async function accountUsage(
 
   // An org in an enterprise we read is judged against the enterprise's shared minutes.
   if (installation.enterpriseInstallationId !== null) {
-    const shared = await accountUsage(db, installation.enterpriseInstallationId, now);
+    const shared = await accountUsage(db, installation.enterpriseInstallationId, now, {
+      withProjection,
+    });
     if (shared)
       return {
         ...shared,
@@ -608,7 +714,7 @@ export async function accountUsage(
   const plan = billing?.plan ?? null;
   const readThisCycle = !!billing?.readAt && billing.readAt >= start;
 
-  const [totals, readings] = await Promise.all([
+  const [totals, readings, days] = await Promise.all([
     // An enterprise's report spans every org's repos, so its routing reads take the totals the
     // last poll worked out rather than adding them up again on every job.
     enterprise ? latestTotals(db, installationId, start) : currentTotals(db, installation, start),
@@ -626,6 +732,7 @@ export async function accountUsage(
         ),
       )
       .orderBy(asc(schema.actionsUsageReading.readAt)),
+    withProjection ? readDays(db, installationId, start) : null,
   ]);
 
   const reason: AccountUsageReason | null = billing?.failure
@@ -640,6 +747,11 @@ export async function accountUsage(
             ? "unknown_plan"
             : null;
 
+  const quotaMinutes = enterprise
+    ? ENTERPRISE_QUOTA_MINUTES
+    : plan
+      ? (PLAN_QUOTA_MINUTES[plan] ?? null)
+      : null;
   return {
     installationId,
     accountLogin: installation.accountLogin,
@@ -647,11 +759,7 @@ export async function accountUsage(
     status: reason ? "not_available" : "ok",
     reason,
     plan,
-    quotaMinutes: enterprise
-      ? ENTERPRISE_QUOTA_MINUTES
-      : plan
-        ? (PLAN_QUOTA_MINUTES[plan] ?? null)
-        : null,
+    quotaMinutes,
     ...totals,
     burnRatePerHour: burnRate(readings),
     budget:
@@ -665,6 +773,17 @@ export async function accountUsage(
     readAt: billing?.readAt?.toISOString() ?? null,
     spendApp,
     enterprise: null,
+    ...(days && {
+      projection: reason
+        ? null
+        : projectMinutes({
+            days,
+            usedMinutes: totals.usedMinutes,
+            quotaMinutes,
+            cycleStart: start,
+            now,
+          }),
+    }),
   };
 }
 
@@ -787,7 +906,10 @@ export async function refreshWorkspaceUsage(env: Env, workspaceId: string, now =
     ...enterprises.map((enterprise) => ({ ...enterprise, workspaceId: null })),
   ];
   const checked = await db
-    .select({ id: schema.actionsBilling.installationId, at: schema.actionsBilling.checkedAt })
+    .select({
+      id: schema.actionsBilling.installationId,
+      at: schema.actionsBilling.checkedAt,
+    })
     .from(schema.actionsBilling)
     .where(
       inArray(
@@ -813,7 +935,9 @@ export async function workspaceActionsUsage(db: Db, workspaceId: string, now = n
     .where(eq(schema.workspace.id, workspaceId))
     .orderBy(asc(schema.githubInstallation.accountLogin));
   const accounts = await Promise.all(
-    installations.map((installation) => accountUsage(db, installation.id, now)),
+    installations.map((installation) =>
+      accountUsage(db, installation.id, now, { withProjection: true }),
+    ),
   );
   return { accounts: accounts.filter((account) => account !== null) };
 }

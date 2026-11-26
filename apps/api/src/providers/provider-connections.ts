@@ -17,6 +17,7 @@ import { type AdapterContext, ADAPTERS, ProviderAuthError } from "../provider-bi
 import { adapterTools, byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
 import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 const DAY_MS = 86_400_000;
 // The connection list sums this much recent usage.
@@ -248,9 +249,7 @@ export async function connectProvider(
     });
   // The hourly cron syncs it anyway, so a queue hiccup only delays the first numbers.
   await enqueueInstallationTasks(env, [syncTask(workspaceId, provider)]).catch((error) =>
-    console.warn(
-      JSON.stringify({ msg: "couldn't queue provider sync", error: errorMessage(error) }),
-    ),
+    log.warn("provider.sync_not_queued", "couldn't queue provider sync", { error }),
   );
   return { ok: true, connection: await connectionView(db, workspaceId, provider) };
 }
@@ -328,8 +327,9 @@ export async function managedWorkspaces(db: Db, userId: string): Promise<Managed
 
 /**
  * Which workspace a connection from the CLI goes to: the one it names (by id, slug or name), else
- * the only one installed on the token's GitHub organization. Without an organization, the user's
- * only workspace. Null when that's none or more than one, for the CLI to ask.
+ * the only one installed on the token's GitHub organization, else the only one whose slug or name
+ * is the organization. Without an organization, the user's only workspace. Null when that's none
+ * or more than one, for the CLI to ask.
  */
 export function chooseWorkspace(
   workspaces: ManagedWorkspace[],
@@ -345,8 +345,12 @@ export function chooseWorkspace(
       null
     );
   }
-  const candidates = organization
-    ? workspaces.filter((w) => w.accountLogin && sameLogin(w.accountLogin, organization))
-    : workspaces;
-  return candidates.length === 1 ? candidates[0]! : null;
+  if (!organization) return workspaces.length === 1 ? workspaces[0]! : null;
+  const only = (matches: ManagedWorkspace[]) => (matches.length === 1 ? matches[0]! : null);
+  return (
+    only(workspaces.filter((w) => w.accountLogin && sameLogin(w.accountLogin, organization))) ??
+    only(
+      workspaces.filter((w) => sameLogin(w.slug, organization) || sameLogin(w.name, organization)),
+    )
+  );
 }

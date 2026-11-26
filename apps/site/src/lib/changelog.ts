@@ -8,8 +8,10 @@ import type { Loader } from "astro/loaders";
  * /docs/changelog merges three lists by date:
  * - CLI releases, from the CLI's CHANGELOG.md, which the Release workflow writes from changesets.
  * - Mac app releases, from the Mac app's CHANGELOG.md, also written from changesets.
- * - Platform updates, hand-written in src/content/changelog/*.md (a title and a date in the
- *   frontmatter, a few lines of Markdown under it), only for changes worth announcing.
+ * - Platform updates, hand-written in src/content/changelog/*.md (a title, date and type in the
+ *   frontmatter, a few lines of Markdown under it), only for changes worth announcing. The
+ *   homepage's What's new lists the latest ones (latestUpdates). A Mac or CLI release that brings
+ *   something new gets a platform update too.
  * /docs/changelog/platform, /docs/changelog/cli and /docs/changelog/mac show one list each, and
  * each platform update also gets its own page at /docs/changelog/<slug> (the file name without its
  * date) to share. The
@@ -35,6 +37,9 @@ const HEADINGS: Record<string, string> = {
 const DATE = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" });
 
 type Kind = "CLI" | "Mac" | "Platform";
+/** What a platform update is, shown next to it on the homepage. */
+export const UPDATE_TYPES = ["Feature", "Integration", "Agents", "Mac app", "Reliability"] as const;
+export type UpdateType = (typeof UPDATE_TYPES)[number];
 const LABELS: Record<Kind, string> = {
   CLI: "CLI release",
   Mac: "Mac app release",
@@ -48,6 +53,7 @@ type Entry = {
   body: string;
   slug?: string;
   description?: string;
+  type?: UpdateType;
 };
 
 const PAGES: { id: string; kind?: Kind; label: string; title: string; description: string }[] = [
@@ -124,34 +130,37 @@ async function releases({ kind, prefix, file }: (typeof RELEASES)[number]): Prom
 }
 
 /**
- * Hand-written platform updates: `title`, `date` (YYYY-MM-DD) and optional `description` (the share
- * card's subtitle) frontmatter over a Markdown body. The file name without its date is the slug.
+ * Hand-written platform updates: `title`, `date` (YYYY-MM-DD), `type` (one of UPDATE_TYPES) and
+ * optional `description` (the share card's subtitle) frontmatter over a Markdown body. The file name without its date is the slug.
  */
 async function platformUpdates(): Promise<Entry[]> {
   const files = (await readdir(UPDATES).catch(() => [])).filter((file) => file.endsWith(".md"));
   return Promise.all(
-    files.map(async (file) => {
-      const raw = await readFile(new URL(file, UPDATES), "utf8");
-      const [, frontmatter = "", body = raw] =
-        raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/) ?? [];
-      const field = (key: string) =>
-        frontmatter
-          .match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]
-          .trim()
-          .replace(/^(["'])(.*)\1$/, "$2");
-      const title = field("title");
-      const date = new Date(`${field("date")}T00:00:00Z`);
-      if (!title || Number.isNaN(date.getTime())) {
-        throw new Error(`src/content/changelog/${file} needs a title and a date (YYYY-MM-DD)`);
-      }
-      const slug = file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "");
-      if (PAGES.some((page) => page.id === `${CHANGELOG_ID}/${slug}`)) {
-        throw new Error(`src/content/changelog/${file}: "${slug}" is taken by a changelog view`);
-      }
-      const description = field("description");
-      return { kind: "Platform" as const, title, date, body: body.trim(), slug, description };
-    }),
+    files.map(async (file) => parseUpdate(file, await readFile(new URL(file, UPDATES), "utf8"))),
   );
+}
+
+function parseUpdate(file: string, raw: string): Entry {
+  const [, frontmatter = "", body = raw] = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/) ?? [];
+  const field = (key: string) =>
+    frontmatter
+      .match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2");
+  const title = field("title");
+  const date = new Date(`${field("date")}T00:00:00Z`);
+  const type = UPDATE_TYPES.find((name) => name === field("type"));
+  if (!title || Number.isNaN(date.getTime()) || !type) {
+    throw new Error(
+      `src/content/changelog/${file} needs a title, a date (YYYY-MM-DD) and a type (${UPDATE_TYPES.join(", ")})`,
+    );
+  }
+  const slug = file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "");
+  if (PAGES.some((page) => page.id === `${CHANGELOG_ID}/${slug}`)) {
+    throw new Error(`src/content/changelog/${file}: "${slug}" is taken by a changelog view`);
+  }
+  const description = field("description");
+  return { kind: "Platform", title, date, body: body.trim(), slug, description, type };
 }
 
 /** Newest first. A release with no known date (a shallow clone) keeps its place after the newer one. */
@@ -164,6 +173,27 @@ function byDate(entries: Entry[]) {
     }),
   );
   return entries.sort((a, b) => time.get(b)! - time.get(a)!);
+}
+
+/**
+ * The newest platform updates, for the homepage's What's new. Pages are bundled, so the files come
+ * from Vite's glob rather than a path relative to this module, which points into dist/ at build.
+ */
+export function latestUpdates(count: number) {
+  const files = import.meta.glob<string>("../content/changelog/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  });
+  const all = Object.entries(files).map(([path, raw]) => parseUpdate(path.split("/").pop()!, raw));
+  if (!all.length) throw new Error("What's new found no platform updates in src/content/changelog");
+  const updates = byDate(all).slice(0, count);
+  return updates.map(({ title, date, slug, type }) => ({
+    title,
+    date: date!,
+    href: `/${CHANGELOG_ID}/${slug}`,
+    type: type!,
+  }));
 }
 
 const metaLine = (entry: Entry) => {

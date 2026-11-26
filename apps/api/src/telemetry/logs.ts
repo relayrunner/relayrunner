@@ -11,12 +11,8 @@ import { retryDelaySeconds } from "../queue-retry.ts";
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  jobLog,
-  type RateLimitBucket,
-  rateLimits,
-} from "../github/github-app.ts";
+import { jobLog } from "../github/actions-api.ts";
+import { appInstallationToken, type RateLimitBucket, rateLimits } from "../github/github-app.ts";
 import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
 import { Recent } from "../recent.ts";
 import { jobUrl } from "../reports/run-job.ts";
@@ -46,6 +42,7 @@ import {
   runIds,
   SCOPE,
 } from "./spans.ts";
+import { log } from "../log.ts";
 
 export const JOB_LOG_QUEUE = "relayrunner-job-logs";
 
@@ -103,7 +100,7 @@ export async function queueJobLog(env: Env, exporting: Exporting, message: Workf
   try {
     await env.JOB_LOG_QUEUE.sendBatch(messages, { delaySeconds: FIRST_DELAY_SECONDS });
   } catch (error) {
-    console.warn(JSON.stringify({ msg: "couldn't queue a job log", error: errorMessage(error) }));
+    log.warn("telemetry.job_log_not_queued", "couldn't queue a job log", { error });
   }
 }
 
@@ -310,15 +307,12 @@ export async function handleJobLogBatch(batch: MessageBatch<JobLogMessage>, env:
         await deliver(env, db, body, tries);
         msg.ack();
       } catch (error) {
-        console.warn(
-          JSON.stringify({
-            msg: "job log failed",
-            workspaceId: body.workspaceId,
-            to: body.to ?? "otlp",
-            jobId: body.job.id,
-            error: errorMessage(error),
-          }),
-        );
+        log.warn("telemetry.job_log_failed", "job log failed", {
+          workspaceId: body.workspaceId,
+          to: body.to ?? "otlp",
+          jobId: body.job.id,
+          error,
+        });
         if (tries >= MAX_TRIES) {
           // Say so in Settings, which would otherwise look healthy.
           const table = body.to === "bucket" ? schema.logBucket : schema.telemetryExport;

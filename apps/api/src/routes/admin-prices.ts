@@ -23,6 +23,7 @@ import { checkPrices } from "../providers/price-check.ts";
 import { forgetPriceBook, readPriceBook } from "../providers/prices.ts";
 import { readCatalog } from "../providers/provider-catalog.ts";
 import { AppError } from "@relayrunner/errors";
+import { log } from "../log.ts";
 
 const PriceBody = z.object({
   provider: z.string(),
@@ -83,17 +84,14 @@ function logPrice(
   row: { provider: string; rate: string; usd: number; from: string },
 ) {
   const { provider, rate, usd, from } = row;
-  console.log(
-    JSON.stringify({
-      msg,
-      by: c.var.user!.email,
-      access: who(c.var.accessIdentity),
-      provider,
-      rate,
-      usd,
-      from,
-    }),
-  );
+  log.info("admin.change", msg, {
+    byUserId: c.var.user!.id,
+    accessId: who(c.var.accessIdentity),
+    provider,
+    rate,
+    usd,
+    from,
+  });
 }
 
 // Every rate a price can be recorded for: the ones in RATES, then one per provider operators added.
@@ -178,7 +176,7 @@ export const adminPriceRoutes = new Hono<AppEnv>()
   })
   // Runs the daily price check now.
   .post("/check", async (c) => {
-    console.log(JSON.stringify({ msg: "price check run by hand", by: c.var.user!.email }));
+    log.info("admin.price_check_run", "price check run by hand", { userId: c.var.user!.id });
     await checkPrices(c.env);
     return c.json({ ok: true });
   })

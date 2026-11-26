@@ -39,7 +39,6 @@ import Screenshot from "../../components/Screenshot.astro";
   </div>
 
   <section class="section wrap" aria-labelledby="compare-h">
-    <p class="kicker">Self-hosted runners</p>
     <h2 id="compare-h">How this differs from a GitHub self-hosted runner.</h2>
     <p class="body">
       A GitHub self-hosted runner is a server you install, register and keep online. Here, your Mac
@@ -71,7 +70,6 @@ import Screenshot from "../../components/Screenshot.astro";
 
   <section class="sol-band" aria-labelledby="how-h">
     <div class="wrap">
-      <p class="kicker">How it works</p>
       <h2 id="how-h">Run CI jobs on a Mac you already own.</h2>
       <ol class="sol-steps">
         <li>
@@ -93,7 +91,8 @@ import Screenshot from "../../components/Screenshot.astro";
           <h3>Use hosted runners when your Mac is busy</h3>
           <p>
             Your Mac is one step in your runner order. When it's busy or asleep, the next job goes to
-            GitHub-hosted or another provider, so nothing waits.
+            GitHub-hosted or another provider, so nothing waits. Close the lid mid-job and automatic
+            retries run it again there.
           </p>
         </li>
       </ol>
@@ -116,7 +115,6 @@ import Screenshot from "../../components/Screenshot.astro";
       </div>
     </div>
     <div class="feature-copy">
-      <p class="kicker">macOS builds</p>
       <h2>Run macOS jobs on your Mac too.</h2>
       <p class="body">
         macOS minutes on GitHub cost about ten times Linux. Add <code>--macos</code>, or switch on macOS
@@ -128,7 +126,6 @@ import Screenshot from "../../components/Screenshot.astro";
   </section>
 
   <section class="section wrap" aria-labelledby="app-h">
-    <p class="kicker">Mac app</p>
     <h2 id="app-h">Or turn it on from the menu bar.</h2>
     <p class="body">
       The Mac app takes jobs with one switch. See what's running, how long it has left and what ran
@@ -139,7 +136,6 @@ import Screenshot from "../../components/Screenshot.astro";
   </section>
 
   <section class="section wrap" aria-labelledby="speed-h">
-    <p class="kicker">Performance</p>
     <h2 id="speed-h">Compare your Mac with GitHub-hosted runners.</h2>
     <p class="body">
       The Performance page compares how long the same jobs take on each runner, so you can see how
@@ -149,6 +145,7 @@ import Screenshot from "../../components/Screenshot.astro";
       name="performance"
       alt="The Performance page's runner table, with a MacBook Pro 2.7 times faster than ubuntu-latest."
     />
+    <a class="sol-link" href="/docs/dashboard/performance">Read about the Performance page →</a>
   </section>
 
   <section class="section wrap sol-faq" aria-labelledby="faq-h">

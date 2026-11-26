@@ -12,6 +12,12 @@ export function onApiError(listener: (error: AppError, path: string) => void) {
  * dashboard's origin. Sends cookies so Better Auth sessions apply.
  */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  // The dev preview (VITE_AUTH_DISABLED) has no API behind it: sample data answers instead. Checked
+  // here, not through authDisabled, so the build drops the sample module.
+  if (import.meta.env.DEV && import.meta.env.VITE_AUTH_DISABLED === "true") {
+    const { sampleAnswer } = await import("@/lib/sample/answers");
+    return sampleAnswer(path, init) as T;
+  }
   const res = await fetch(`/api${path}`, {
     credentials: "include",
     ...init,

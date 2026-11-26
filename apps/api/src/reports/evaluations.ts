@@ -36,18 +36,14 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  cancelRun,
-  dispatchWorkflow,
-  findDispatchedRun,
-  repoDefaultBranch,
-  rerunRun,
-} from "../github/github-app.ts";
+import { cancelRun, dispatchWorkflow, findDispatchedRun, rerunRun } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { repoDefaultBranch } from "../github/repos-api.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { hostedRunner } from "../ingest/runner-waits.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;
 import type { JobContext } from "../routing/routing.ts";
+import { log } from "../log.ts";
 
 const table = schema.evaluation;
 
@@ -89,7 +85,8 @@ export interface EvaluationWorkflow {
   /** The median passing default-branch run, start to finish, or null with none. */
   medianMs: number | null;
   /** Whether any of its runs had a relay job, so an evaluation can steer its jobs. */
-  relayed: boolean;
+  /** Whether its jobs go through a relay; null while the run history is still importing. */
+  relayed: boolean | null;
   /** Whether it was ever started with workflow_dispatch lately: then it surely can be. */
   dispatched: boolean;
 }
@@ -155,6 +152,8 @@ export interface StartRequest {
   workflowPath: string;
   provider: string;
   vcpus: number;
+  /** The workflow's name, when the dashboard knows it from GitHub rather than from runs. */
+  workflowName?: string | null;
 }
 
 /**
@@ -209,7 +208,7 @@ export async function startEvaluation(env: Env, db: Db, request: StartRequest) {
     repositoryId: request.repositoryId,
     repositoryFullName: repo.fullName,
     workflowPath: request.workflowPath,
-    workflowName: latestName?.name ?? null,
+    workflowName: latestName?.name ?? request.workflowName ?? null,
     provider: request.provider,
     vcpus: request.vcpus,
     label,
@@ -301,7 +300,10 @@ export async function resumeWaitingEvaluations(env: Env, db: Db, message: Workfl
   }
 }
 
-/** Stops an evaluation: no more attempts, and the one running is cancelled. */
+/**
+ * Stops an evaluation: no more attempts, and the one running is cancelled. The attempts that
+ * finished stay in its comparison (evaluationReport), so stopping early still has results.
+ */
 export async function cancelEvaluation(env: Env, db: Db, workspaceId: string, id: string) {
   const row = await db
     .select()
@@ -314,7 +316,7 @@ export async function cancelEvaluation(env: Env, db: Db, workspaceId: string, id
   if (row.runId) {
     const token = await appInstallationToken(env, row.installationId);
     const error = await cancelRun(token, row.repositoryFullName, row.runId);
-    if (error) console.warn(JSON.stringify({ msg: "evaluation cancel failed", id, error }));
+    if (error) log.warn("evaluation.cancel_failed", "evaluation cancel failed", { id, error });
   }
 }
 
@@ -477,6 +479,8 @@ export interface EvaluationReport {
   cold: { ms: number | null; waitMs: number | null; usd: number | null };
   warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
+  /** Runs of the workflow on the provider since the evaluation (routedRunsSince). */
+  routedRuns: number;
 }
 
 type JobRow = Pick<
@@ -527,6 +531,129 @@ export async function listEvaluations(db: Db, workspaceId: string, provider?: st
   }));
 }
 
+/** How long an evaluation stays on its provider's page: after that, Performance says more. */
+export const RECENT_DAYS = 30;
+
+export interface RecentEvaluation {
+  id: string;
+  state: State;
+  provider: string;
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  workflowPath: string;
+  vcpus: number;
+  attempt: number;
+  runs: number;
+  createdAt: number;
+  /** Attempts that finished, and their median time and cost (warm runs, else the cold one). */
+  finished: number;
+  ms: number | null;
+  usd: number | null;
+  /** The workflow's recent runs the evaluation compares against. */
+  baselineMs: number | null;
+  baselineUsd: number | null;
+  /** Runs of the workflow on the provider since, evaluations left out: it's been adopted. */
+  routedRuns: number;
+}
+
+/**
+ * A provider's evaluations from the last RECENT_DAYS days, and any still going, newest first, each
+ * with its headline numbers. Reads each one's report, so it's kept to a few.
+ */
+export async function recentEvaluations(
+  db: Db,
+  workspaceId: string,
+  provider: string,
+  now = Date.now(),
+): Promise<RecentEvaluation[]> {
+  const rows = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(
+      and(
+        eq(table.workspaceId, workspaceId),
+        eq(table.provider, provider),
+        sql`(${table.createdAt} >= ${now - RECENT_DAYS * DAY_MS} or ${inArray(table.state, ACTIVE)})`,
+      ),
+    )
+    .orderBy(desc(table.createdAt))
+    .limit(RECENT_LIMIT);
+  const reports = await Promise.all(rows.map((row) => evaluationReport(db, workspaceId, row.id)));
+  return reports.map((report) => {
+    const finished = report.attempts.filter((attempt) => attempt.status === "done").length;
+    const side = report.warm.ms !== null ? report.warm : report.cold;
+    return {
+      id: report.id,
+      state: report.state,
+      provider: report.provider,
+      repositoryId: report.repositoryId,
+      repository: report.repository,
+      workflow: report.workflow,
+      workflowPath: report.workflowPath,
+      vcpus: report.vcpus,
+      attempt: Math.min(
+        report.attempts.find((a) => a.status !== "done")?.attempt ?? finished,
+        report.runs,
+      ),
+      runs: report.runs,
+      createdAt: report.createdAt,
+      finished,
+      ms: side.ms,
+      usd: side.usd,
+      baselineMs: report.baseline.medianMs,
+      baselineUsd: report.baseline.usd,
+      routedRuns: report.routedRuns,
+    };
+  });
+}
+
+/** Most evaluations recentEvaluations lists. */
+export const RECENT_LIMIT = 10;
+/** Most jobs routedRunsSince reads; past this the count is a floor, which is plenty to say "adopted". */
+const ROUTED_JOB_LIMIT = 2000;
+
+/**
+ * How many runs of a workflow ran a job on `provider` since `since`, leaving out every evaluation's
+ * runs: the evaluation's workflow in real CI. Reads job_timing_job_idx (repository, workflow).
+ */
+export async function routedRunsSince(
+  db: Db,
+  workspaceId: string,
+  ref: { repositoryId: number; workflow: string | null; provider: string; since: Date },
+): Promise<number> {
+  const [rows, evaluated] = await Promise.all([
+    db
+      .select({ runId: jobs.runId, labels: jobs.labels, runnerGroupName: jobs.runnerGroupName })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.repositoryId, ref.repositoryId),
+          ref.workflow === null
+            ? sql`${jobs.workflowName} is null`
+            : eq(jobs.workflowName, ref.workflow),
+          gte(jobs.completedAt, ref.since),
+          inWorkspace(workspaceId),
+          sql`${jobs.startedAt} is not null and not ${PICK}`,
+        ),
+      )
+      .limit(ROUTED_JOB_LIMIT),
+    db
+      .select({ runId: table.runId })
+      .from(table)
+      .where(and(eq(table.workspaceId, workspaceId), eq(table.repositoryId, ref.repositoryId))),
+  ]);
+  const skip = new Set(evaluated.map((row) => row.runId));
+  const runIds = new Set<number>();
+  for (const row of rows)
+    if (
+      !skip.has(row.runId) &&
+      hostedRunner(row.labels, row.runnerGroupName)?.provider === ref.provider
+    )
+      runIds.add(row.runId);
+  return runIds.size;
+}
+
 export async function evaluationReport(
   db: Db,
   workspaceId: string,
@@ -539,7 +666,7 @@ export async function evaluationReport(
     .get();
   if (!row) throw new AppError("NOT_FOUND");
 
-  const [ownJobs, baseline, book, repository] = await Promise.all([
+  const [ownJobs, baseline, book, repository, routedRuns] = await Promise.all([
     row.runId
       ? db
           .select(jobColumns)
@@ -553,6 +680,12 @@ export async function evaluationReport(
       .from(schema.githubRepository)
       .where(eq(schema.githubRepository.id, row.repositoryId))
       .get(),
+    routedRunsSince(db, workspaceId, {
+      repositoryId: row.repositoryId,
+      workflow: row.workflowName,
+      provider: row.provider,
+      since: row.createdAt,
+    }),
   ]);
   const usdOf = (rows: JobRow[]) => runUsd(book, rows, repository?.private);
   const real = (rows: JobRow[]) => rows.filter((job) => !isPick(job));
@@ -561,7 +694,13 @@ export async function evaluationReport(
 
   const attempts: Attempt[] = Array.from({ length: row.runs }, (_, i) => {
     const attempt = i + 1;
-    const attemptJobs = byAttempt.get(attempt) ?? [];
+    // Stopping cancels the attempt going then: it never finished, so it counts as not run, and
+    // the comparison keeps only the attempts before it.
+    const stoppedMidway =
+      row.state === "cancelled" &&
+      attempt === row.attempt &&
+      runConclusion(byAttempt.get(attempt) ?? []) !== "success";
+    const attemptJobs = stoppedMidway ? [] : (byAttempt.get(attempt) ?? []);
     const done =
       attemptJobs.length > 0 &&
       attemptJobs.every((job) => job.completedAt) &&
@@ -641,6 +780,7 @@ export async function evaluationReport(
         attempt.jobs.some((job) => job.name === name && job.onProvider),
       ),
     })),
+    routedRuns,
   };
 }
 

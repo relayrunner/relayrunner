@@ -3,7 +3,8 @@ import { LayersIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
-import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
+import { PublicRepoMark } from "@/components/public-repo";
+import { PageTabs, PERFORMANCE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { JobTypes } from "@/components/job-type-time";
 import { PerformanceWorkflows } from "@/components/performance-workflows";
 import { RunnerLink } from "@/components/runner-link";
@@ -27,10 +28,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { authDisabled } from "@/lib/auth-client";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   clock,
-  DAY_MS,
   environmentColor,
   type EnvironmentSummary,
   getJobRuns,
@@ -45,20 +45,13 @@ import {
   type Stat,
   EMPTY_STAT,
   JOB_RANGES,
-  sampleJobTimes,
   p90Text,
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
-import {
-  rangeSearch,
-  textParam,
-  unlessDefault,
-  useRangeReport,
-  useSetSearch,
-} from "@/lib/search-params";
+import { rangeSearch, textParam, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
-import { rangeDays, rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { shortDate } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
@@ -70,16 +63,6 @@ const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
 // Whether the Runners tab groups runners by provider, kept per browser.
 const GROUPED_KEY = "relayrunner:performance:by-provider";
 
-function load(range: TimeRange) {
-  return authDisabled ? Promise.resolve(sampleJobTimes(rangeDays(range))) : getJobTimes(range);
-}
-
-// An old link's `?view=jobs` lands on Workflows, whose rows open each workflow's jobs.
-const TABS = [
-  { value: "workflows", label: "Workflows" },
-  { value: "runners", label: "Runners" },
-  { value: "types", label: "Job types" },
-] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
 // `range` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one
@@ -104,9 +87,13 @@ const validateSearch = (search: Record<string, unknown>): Search => {
   };
 };
 
+const jobTimesQuery = (range: TimeRange) =>
+  pageQuery(["job-times", range], () => getJobTimes(range));
+
 export const Route = createFileRoute("/_authed/_workspace/performance")({
   validateSearch,
-  loader: ({ location }) => load(ranges.rangeOf(validateSearch(location.search))),
+  loader: ({ location }) =>
+    loadPage(jobTimesQuery(ranges.rangeOf(validateSearch(location.search)))),
   // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
   // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -133,7 +120,7 @@ function PerformancePage() {
   const range = ranges.rangeOf(search);
   const repository = search.repos ?? "all";
   const setSearch = useSetSearch<Search>();
-  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), range, load);
+  const { report } = usePageReport(jobTimesQuery(range), Route.useLoaderData());
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const detail = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   function closeDetail() {
@@ -582,10 +569,6 @@ function JobDetail({
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (authDisabled) {
-      setResult({ runs: sampleRuns(job, rangeDays(range)), steps: sampleSteps(job) });
-      return;
-    }
     let live = true;
     getJobRuns(range, {
       repositoryId: workflow.repositoryId,
@@ -616,7 +599,9 @@ function JobDetail({
             {workflow.workflow ?? "Unnamed workflow"} › {job.name}
           </DialogTitle>
           <DialogDescription>
-            {workflow.repository} · {rangeName(range)} · each dot is one run
+            {workflow.repository}
+            <PublicRepoMark repository={workflow.repository} /> · {rangeName(range)} · each dot is
+            one run
           </DialogDescription>
         </DialogHeader>
         <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
@@ -773,50 +758,4 @@ function RunChart({
       )}
     </svg>
   );
-}
-
-// For local development without an API (auth disabled).
-function sampleRuns(job: JobRow, days: number): JobRun[] {
-  const now = Date.now();
-  let id = 0;
-  let seed = 7;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  return Object.entries(job.byEnvironment).flatMap(([environment, stat]) =>
-    Array.from({ length: stat.samples }, () => {
-      id += 1;
-      const completedAt = now - random() * days * DAY_MS;
-      const runMs = (stat.medianMs ?? 0) * (0.8 + random() * 0.4);
-      return {
-        id,
-        runId: id,
-        runAttempt: 1,
-        environment,
-        conclusion: random() > 0.95 ? "failure" : "success",
-        queuedAt: null,
-        startedAt: completedAt - runMs,
-        completedAt,
-      };
-    }),
-  );
-}
-
-// For local development without an API: a typical Node job's steps, scaled to its median.
-function sampleSteps(job: JobRow): RunStep[] {
-  const medianMs = Object.values(job.byEnvironment)[0]?.medianMs ?? 180_000;
-  const steps: [string, RunStep["phase"], number][] = [
-    ["Set up job", "setup", 0.03],
-    ["Run actions/checkout@v4", "checkout", 0.04],
-    ["Run pnpm/action-setup@v4", "setup", 0.02],
-    ["Run actions/setup-node@v4", "setup", 0.09],
-    ["Run pnpm install --frozen-lockfile", "dependencies", 0.18],
-    ["Run pnpm build", "work", 0.22],
-    ["Run pnpm test", "work", 0.34],
-    ["Post Run actions/setup-node@v4", "cache", 0.07],
-    ["Post Run actions/checkout@v4", "cleanup", 0.002],
-    ["Complete job", "cleanup", 0.003],
-  ];
-  return steps.map(([name, phase, share]) => ({ name, phase, ms: Math.round(medianMs * share) }));
 }

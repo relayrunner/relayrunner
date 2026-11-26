@@ -13,7 +13,7 @@ Cloudflare API token in the page.
 ## Add a flag
 
 1. Add its key to `FLAG_KEYS` in `packages/api-types/src/flags.ts`. Keys use letters, numbers and
-   hyphens, such as `provider-evaluations`.
+   hyphens, such as `new-router`.
 2. Create a boolean flag with the same key in the Flagship app, with `off` (false) as its default
    variant. A flag that doesn't exist in Flagship yet reads as off, so you can merge the code
    first.
@@ -29,11 +29,11 @@ import { isFlagOn, requireFlag } from "../flags.ts";
 
 // A whole router: anyone without the flag gets 404, as if the routes didn't exist.
 export const evaluationRoutes = new Hono<AppEnv>()
-  .use("*", requireUser, requireWorkspace, requireFlag("provider-evaluations"))
+  .use("*", requireUser, requireWorkspace, requireFlag("new-router"))
   .get("/", …);
 
 // Or one branch inside a handler.
-if (await isFlagOn(c, "provider-evaluations")) { … }
+if (await isFlagOn(c, "new-router")) { … }
 ```
 
 Run `requireFlag` after `requireUser` and `requireWorkspace`, so targeting rules see who is asking.
@@ -46,15 +46,15 @@ The workspace layout loads the flags with the workspace, so pages check them syn
 ```tsx
 import { Flag, requireFlagRoute, useFlag } from "@/lib/flags";
 
-const on = useFlag("provider-evaluations");
+const on = useFlag("new-router");
 
-<Flag name="provider-evaluations">
+<Flag name="new-router">
   <Button>Evaluate</Button>
 </Flag>;
 
 // A whole page: anyone without the flag lands on Runners.
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider_/evaluate")({
-  beforeLoad: requireFlagRoute("provider-evaluations"),
+  beforeLoad: requireFlagRoute("new-router"),
   …
 });
 ```

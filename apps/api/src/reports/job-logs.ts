@@ -1,7 +1,8 @@
 // Step logs for a job a PickRunner answers itself. GitHub's own runner sends each step's status
 // and log to the results service named in the job message; without them the job has annotations
 // but `gh run view --log` and the job page's log view find nothing. This sends the same three
-// things: the steps, a log per step, and the job's whole log.
+// things: the steps, a log per step, and the job's whole log. A step can also carry a summary, the
+// Markdown a step writes to $GITHUB_STEP_SUMMARY, which shows on the run's summary page.
 //
 // The contract is the runner's ResultsHttpClient (actions/runner, src/Sdk/WebApi/WebApi): twirp
 // endpoints with snake_case JSON, and a signed blob URL to PUT each log to.
@@ -16,6 +17,8 @@ export interface StepLog {
   // Null for a step that never ran, which shows as skipped.
   ok: boolean | null;
   lines: string[];
+  // Markdown for the run's summary page.
+  summary?: string;
 }
 
 export interface JobLogTarget {
@@ -36,20 +39,22 @@ const STEPS_UPDATE =
 
 /**
  * The steps of a native job with what each check logged. `reports[i]` is step i's outcome; a step
- * with none didn't run. A job that ran no step at all (one we can't run natively) puts `reason`
- * on its first step, so the log still says why the job failed.
+ * with none didn't run. A job that ran no step at all (one we can't run natively, or a relay with
+ * no runner) puts `reason` on its first step, so the log still says why the job failed, along with
+ * any `extra` log lines and `summary`.
  */
 export function jobStepLogs(
   steps: { id?: string; name: string }[],
   reports: ({ ok: boolean; lines: string[] } | undefined)[],
   reason?: string,
+  { extra = [], summary }: { extra?: string[]; summary?: string } = {},
 ): StepLog[] {
   const ranNone = reports.every((report) => report === undefined);
   return steps.flatMap((step, index) => {
     if (!step.id) return [];
+    const failed = ranNone && index === 0 && reason;
     const report =
-      reports[index] ??
-      (ranNone && index === 0 && reason ? { ok: false, lines: [`##[error]${reason}`] } : null);
+      reports[index] ?? (failed ? { ok: false, lines: [`##[error]${reason}`, ...extra] } : null);
     return [
       {
         id: step.id,
@@ -57,8 +62,35 @@ export function jobStepLogs(
         name: step.name,
         ok: report ? report.ok : null,
         lines: report?.lines ?? [],
+        ...(failed && summary ? { summary } : {}),
       },
     ];
+  });
+}
+
+/** The dashboard page that fixes a failed pick, as a link. */
+export interface FixLink {
+  name: string;
+  url: string;
+}
+
+/**
+ * A relay's steps when no runner fits: the reason in its log and on the run's summary page, with a
+ * link to the dashboard page that fixes it (`fix`) when there is one.
+ */
+export function noRunnerLogs(
+  steps: { id?: string; name: string }[],
+  reason: string,
+  fix?: FixLink,
+): StepLog[] {
+  const summary = [
+    "### This job couldn't be routed",
+    reason,
+    ...(fix ? [`[Open ${fix.name}](${fix.url})`] : []),
+  ].join("\n\n");
+  return jobStepLogs(steps, [], reason, {
+    extra: fix ? [`Open ${fix.name}: ${fix.url}`] : [],
+    summary: `${summary}\n`,
   });
 }
 
@@ -87,6 +119,20 @@ export async function uploadJobLogs(
       throw new Error(`${path.split("/").pop()} failed with status ${response.status}`);
     return (text ? JSON.parse(text) : {}) as T;
   };
+  // Writes a blob to the signed URL the results service handed out.
+  const put = async (url: string | undefined, storage: string | undefined, body: string) => {
+    if (!url) throw new Error("The results service returned no upload URL");
+    const response = await fetch(url, {
+      method: "PUT",
+      signal,
+      headers: {
+        "content-type": "text/plain",
+        ...(storage === "BLOB_STORAGE_TYPE_AZURE" ? { "x-ms-blob-type": "BlockBlob" } : {}),
+      },
+      body,
+    });
+    if (!response.ok) throw new Error(`Upload failed with status ${response.status}`);
+  };
   // Asks for a signed URL, writes the log there as one block, then records it as uploaded.
   const upload = async (kind: "Step" | "Job", lines: string[], stepId?: string) => {
     const text = logText(lines, times.completedAt);
@@ -95,17 +141,7 @@ export async function uploadJobLogs(
       logs_url?: string;
       blob_storage_type?: string;
     }>(`${RECEIVER}Get${kind}LogsSignedBlobURL`, { ...ids, ...step });
-    if (!url) throw new Error(`Get${kind}LogsSignedBlobURL returned no URL`);
-    const put = await fetch(url, {
-      method: "PUT",
-      signal,
-      headers: {
-        "content-type": "text/plain",
-        ...(storage === "BLOB_STORAGE_TYPE_AZURE" ? { "x-ms-blob-type": "BlockBlob" } : {}),
-      },
-      body: text,
-    });
-    if (!put.ok) throw new Error(`${kind} log upload failed with status ${put.status}`);
+    await put(url, storage, text);
     await post(`${RECEIVER}Create${kind}LogsMetadata`, {
       ...ids,
       ...step,
@@ -128,8 +164,24 @@ export async function uploadJobLogs(
         step.ok === null ? CONCLUSION.skipped : step.ok ? CONCLUSION.success : CONCLUSION.failure,
     })),
   });
+  // The same three calls for a step's summary: a signed URL, the upload, then its metadata.
+  const uploadSummary = async (stepId: string, markdown: string) => {
+    const step = { ...ids, step_backend_id: stepId };
+    const { summary_url: url, blob_storage_type: storage } = await post<{
+      summary_url?: string;
+      blob_storage_type?: string;
+    }>(`${RECEIVER}GetStepSummarySignedBlobURL`, step);
+    await put(url, storage, markdown);
+    await post(`${RECEIVER}CreateStepSummaryMetadata`, {
+      ...step,
+      size: new TextEncoder().encode(markdown).length,
+      uploaded_at: new Date().toISOString(),
+    });
+  };
+
   const logged = steps.filter((step) => step.lines.length > 0);
   await Promise.all([
+    ...steps.flatMap((step) => (step.summary ? [uploadSummary(step.id, step.summary)] : [])),
     ...logged.map((step) => upload("Step", step.lines, step.id)),
     upload(
       "Job",

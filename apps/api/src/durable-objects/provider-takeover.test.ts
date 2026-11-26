@@ -11,8 +11,17 @@ const github = vi.hoisted(() => ({
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/actions-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/actions-api.ts")>()),
   runAttemptTriggeringActor: async () => ({ id: 1, login: "atticoos" }),
-  ...github,
+  workflowJobRunner: github.workflowJobRunner,
+  runAttemptStatus: github.runAttemptStatus,
+  rerunJob: github.rerunJob,
+}));
+vi.mock("../github/runners-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/runners-api.ts")>()),
+  deleteRunner: github.deleteRunner,
 }));
 const runner = vi.hoisted(() => ({ request: {} as unknown, complete: vi.fn() }));
 vi.mock("../routing/repo-runner.ts", () => ({
@@ -139,5 +148,27 @@ describe("ProviderTakeover", () => {
     await takeover.alarm();
     expect(runner.complete).toHaveBeenCalledOnce();
     expect(state.data.get("phase")).toBe("takeover");
+  });
+
+  test("a failed check is tried again, then given up", async () => {
+    await takeover.start(work);
+    github.workflowJobRunner.mockRejectedValue(new SyntaxError("Unexpected end of JSON input"));
+    const before = Date.now();
+    await takeover.alarm();
+    expect(state.alarm()).toBeGreaterThanOrEqual(before + 30_000);
+    expect(state.data.get("failures")).toBe(1);
+
+    github.workflowJobRunner.mockResolvedValue({ status: "in_progress", runnerName: "gbx-1" });
+    await takeover.alarm();
+    expect(providerPicked).toHaveBeenCalledWith("groundbox", 1);
+    expect(state.data.get("failures")).toBe(0);
+
+    github.workflowJobRunner.mockRejectedValue(new Error("GitHub is down"));
+    await takeover.alarm();
+    await takeover.alarm();
+    const lastRetry = state.alarm();
+    await takeover.alarm();
+    expect(state.data.get("failures")).toBe(2);
+    expect(state.alarm()).toBe(lastRetry);
   });
 });

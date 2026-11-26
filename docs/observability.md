@@ -32,20 +32,67 @@ These land on the request's root span (or on the custom span that ran), and Work
 
 To add a span, wrap the work in `traced(name, attributes, fn)`. Use `annotate(attributes)` to tag whichever span is active. In tests, `cloudflare:workers` resolves to `tests/cloudflare-workers.ts`, whose tracing does nothing.
 
-## Export to an OTLP backend
+## Logs
 
-1. In the Cloudflare dashboard, go to **Observability** > **Destinations** and add one destination for traces and one for logs, with the backend's OTLP endpoints and auth header. Cloudflare sends OTLP over HTTP with JSON, not protobuf.
-2. List the destination names in each Worker's `wrangler.jsonc`:
+The API logs through `@relayrunner/log` (`apps/api/src/log.ts`), never `console.*` directly (oxlint's `no-console` rule enforces it outside tests and scripts). Each line is one JSON object:
 
-   ```jsonc
-   "observability": {
-     "enabled": true,
-     "logs": { "enabled": true, "invocation_logs": true, "destinations": ["grafana-logs"] },
-     "traces": { "enabled": true, "destinations": ["grafana-traces"] },
-     "issues": { "enabled": true },
-   },
-   ```
+```json
+{
+  "level": "info",
+  "event": "routing.decision",
+  "msg": "job routed",
+  "service": "api",
+  "env": "production",
+  "version": "4f1c…",
+  "requestId": "8f3c…-IAD",
+  "workspaceId": "ws_…",
+  "repo": "acme/app",
+  "runId": 654,
+  "result": "routed",
+  "step": "github",
+  "runnerKind": "github",
+  "decideMs": 38
+}
+```
 
-3. Deploy. Data takes a few minutes to show up.
+- `event` is the stable name dashboards and alerts filter on. It never changes once it ships. `msg` is for people and can change at any time. Every event is listed in `API_EVENTS` (`apps/api/src/log.ts`), so a typo fails the typecheck.
+- `level` is `debug`, `info`, `warn` or `error`, and each goes to its own `console` method, so the Workers Observability level filter works. `LOG_LEVEL` drops lines below it (default `info`).
+- `error` means a person should look. Workers Issues alerts on error lines, so work that tries again logs a failure as `warn` and keeps `error` for when it gives up: a pick runner that rearms or gives way logs `warn`, and one that gives up logs `error`. `isTransient` (`apps/api/src/transient.ts`) names the failures a retry usually fixes: GitHub 5xx, timeouts, dropped connections, D1 overloaded.
+- Error messages stay the same for every customer, so Issues groups them into one issue. A failed GitHub call reads `POST /repos/:owner/:repo/actions/runners/generate-jitconfig failed with 500` (`pathPattern` in `apps/api/src/github/github-api.ts`), and the line carries the repo or installation as fields.
+- Ids use one set of names: `workspaceId`, `installationId`, `userId`, `machineId`, `repo` (owner/name), `jobId`, `runId`, `routeId`, `deliveryId`, `provider`. Log user ids, never emails, names or logins.
+- Durations are milliseconds and end in `Ms` (`waitMs`, `lagMs`). Fields a chart groups by take a short, fixed set of snake_case values.
+- An `error` field takes anything thrown and is logged as `{ name, message, stack, cause }`. Only `error` lines keep the stack. Workers Issues alerts on any line with a stack trace, so use `warn` for a failure the code handles (a retry or a fallback) and `error` for one someone should look at.
 
-The auth header lives in the destination, never in the repo. Exports go out alongside Workers Observability, which keeps working. Add `"persist": false` to stop storing a signal in Cloudflare once the backend has replaced it. Every request is traced today. If volume outgrows the backend's plan, set `traces.head_sampling_rate` (for example `0.1`).
+Each entry point sets the ids its lines share with `withLogContext`: a request (its Ray ID as `requestId`), a webhook delivery (its delivery id), a routing decision. `annotate` adds the ids it puts on the span (user, workspace, machine) to the log context too. Run `pnpm dev` with `LOG_FORMAT=pretty` (in `.dev.vars.example`) to read lines in the terminal.
+
+### Wide events
+
+A wide event is one line per unit of work, written when its outcome is known, with every field a chart groups or filters by. Dashboards count these. Other lines are warnings, errors and detail for debugging.
+
+| Event               | Written when                                                                                        | Group by                                                                                                  | Measures                          |
+| ------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `routing.decision`  | The Router decides where a run's job goes (`Router.route`, and `Router.reroute` with `rerun: true`) | `result` (`routed`, `waiting`, `no_runner`), `step`, `runnerKind`, `reason`                               | `decideMs`                        |
+| `pick.finished`     | A pick runner ends (`PickRunner` alarm)                                                             | `result` (`routed`, `no_runner`, `not_needed`, `error`...), `runner`, `next` (`rearm`, `done`, `give_up`) | `durationMs`                      |
+| `webhook.processed` | The queue consumer finishes or retries a GitHub delivery                                            | `app`, `githubEvent`, `action`, `status` (`processed`, `retrying`), `handler`, `result`                   | `lagMs`, `durationMs`, `attempts` |
+| `machine.dispatch`  | A job is handed to a machine, from its webhook or the waiting line                                  | `source`, `result` (`sent`, `offline`, `wrong_place`, `error`)                                            | `sendMs`, `waitMs`                |
+
+Never sample wide events, so their counts stay exact. In Grafana, count them with LogQL, for example routing decisions by hour:
+
+```logql
+sum by (result) (count_over_time({service_name="relayrunner-api"} | json | event="routing.decision" [1h]))
+```
+
+Only `service_name` (and the level) are stream labels. Ids stay in the line, so filter on them after `| json` rather than grouping by them.
+
+## Grafana Cloud
+
+The API exports its logs and traces to RelayRunner's Grafana Cloud stack over OTLP, alongside Workers Observability, which keeps its own copy (`persist: true`). Logs land in Loki, and traces in Tempo.
+
+### Export
+
+1. In the Cloudflare dashboard, go to **Observability** > **Destinations** and add `grafana-logs` and `grafana-traces`, with the stack's OTLP endpoints (`<otlp gateway>/v1/logs` and `/v1/traces`) and an `Authorization: Basic <base64 of instanceId:token>` header. The token is a Grafana Cloud access policy token with `logs:write` and `traces:write`. Cloudflare sends OTLP over HTTP with JSON, not protobuf.
+2. `apps/api/wrangler.jsonc` names both destinations, so they have to exist before it deploys.
+
+The token lives in the destination, never in the repo. Every request is traced today. If volume outgrows the plan, set `traces.head_sampling_rate` (for example `0.1`).
+
+Logs from the API have `service_name="relayrunner-api"`. Query them by selecting the stream with `{service_name="relayrunner-api"}` and read the line's fields after `| json`.

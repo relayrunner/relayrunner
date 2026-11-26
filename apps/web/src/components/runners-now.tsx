@@ -11,6 +11,7 @@ import type { Machine } from "@/lib/machines";
 import { formatTime } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 // Rows each list shows before "and N more".
 const SHOWN = 5;
@@ -28,7 +29,7 @@ export function RunnersNow({
 }: {
   machines: Machine[];
   live: LiveJobs;
-  /** When the page last heard back about its runners (epoch ms), for the freshness line. */
+  /** When the page last heard back about its runners (epoch ms), to dim the strip once stale. */
   updatedAt: number;
   /** The Needs attention list, beside the strip when there's anything in it. */
   attention?: ReactNode;
@@ -41,12 +42,6 @@ export function RunnersNow({
   return (
     <section aria-label="Right now" className="grid gap-6">
       <div className="grid gap-2">
-        <Freshness
-          updatedAt={updatedAt}
-          githubAt={githubCheckedAt(machines)}
-          githubDown={machines.some((machine) => machine.github?.unreachable)}
-          stale={stale}
-        />
         <Card
           className={cn(
             "grid grid-cols-2 gap-0 divide-line-soft overflow-hidden py-0 transition-colors sm:grid-cols-4 sm:divide-x",
@@ -94,7 +89,10 @@ export function RunnersNow({
               from={job.startedAt!}
               detail={
                 <>
-                  <span className="truncate">{job.repository}</span>
+                  <span className="truncate">
+                    {job.repository}
+                    <PublicRepoMark repository={job.repository} />
+                  </span>
                   <span aria-hidden>·</span>
                   <RunnerLink
                     runner={envs.get(job.environment)!}
@@ -129,7 +127,10 @@ export function RunnersNow({
                       <span className="sm:truncate">{reason.text}</span>
                     </span>
                     <span aria-hidden>·</span>
-                    <span className="truncate">{job.repository}</span>
+                    <span className="truncate">
+                      {job.repository}
+                      <PublicRepoMark repository={job.repository} />
+                    </span>
                   </>
                 }
               />
@@ -170,6 +171,24 @@ function useStale(updatedAt: number) {
 
 const CLOCK: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 const CLOCK_SECONDS: Intl.DateTimeFormatOptions = { ...CLOCK, second: "2-digit" };
+
+/** The page's freshness line, for the Runners header beside Add runner. */
+export function RunnersFreshness({
+  machines,
+  updatedAt,
+}: {
+  machines: Machine[];
+  updatedAt: number;
+}) {
+  return (
+    <Freshness
+      updatedAt={updatedAt}
+      githubAt={githubCheckedAt(machines)}
+      githubDown={machines.some((machine) => machine.github?.unreachable)}
+      stale={useStale(updatedAt)}
+    />
+  );
+}
 
 /**
  * One quiet word while the page is current: "Live", with the exact times on hover. It only says

@@ -1,19 +1,29 @@
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { AUTO_SIZE_MESSAGE, isAutoSize } from "@relayrunner/providers";
 import {
   RETRY_RUNNERS,
   RUNNER_KEYS,
   type RetrySettings,
   runnerStepSchema,
+  stepText,
 } from "@relayrunner/runner-order";
 import { z } from "zod";
-import { answer, findNamed, repositoryArg, type ToolContext, workspaceArg } from "./context.ts";
+import {
+  answer,
+  confirmFirst,
+  findNamed,
+  repositoryArg,
+  type ToolContext,
+  workspaceArg,
+} from "./context.ts";
 
 // Tools that change a workspace's routing settings, each through the same API route the dashboard
 // uses, so the API checks the person's role and logs the change in Activity with the agent's name.
 // They work only where the person turned on Allow changes for this agent in Settings →
 // Agents (apps/api/src/auth/agent-auth.ts); elsewhere the API answers AGENT_CHANGES_OFF. Each answers
-// the new value and the one it replaced (`previous`), so a change can be undone.
+// the new value and the one it replaced (`previous`), so a change can be undone. Changes that stop
+// or drop something (a new runner order, pausing a runner, turning AI off) ask the person first
+// where the client can (confirmFirst).
 
 // Clients ask before running a tool that isn't read-only or is destructive.
 const CHANGES = {
@@ -29,7 +39,7 @@ const ALLOW_CHANGES =
   "Needs Allow changes for this agent in the workspace (see list_workspaces' canWrite), and works only where the person could make the change in the dashboard.";
 
 export function registerWriteTools(server: McpServer, context: ToolContext) {
-  const { request, workspaceId, workspacePath: route } = context;
+  const { request, workspaceId, workspaceName, workspacePath: route } = context;
   const put = <T>(
     workspace: string | undefined,
     path: string,
@@ -75,8 +85,18 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
       }),
       annotations: CHANGES,
     },
-    ({ workspace, repository, version, steps }) =>
-      answer(() => put(workspace, "runner-order", { steps, version }, { repo: repository })),
+    ({ workspace, repository, version, steps }, ctx) =>
+      answer(async () => {
+        const order = steps.map(stepText).join(", then ");
+        const asked = confirmFirst(
+          ctx,
+          repository
+            ? `Give ${repository} its own runner order: ${order}?`
+            : `Change the runner order in ${workspaceName(workspace)} to ${order}? Providers left out get no jobs.`,
+        );
+        if (asked) return asked;
+        return put(workspace, "runner-order", { steps, version }, { repo: repository });
+      }),
   );
 
   server.registerTool(
@@ -90,13 +110,18 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
       }),
       annotations: CHANGES,
     },
-    ({ workspace, repository }) =>
-      answer(() =>
-        request(route(workspace, "runner-order"), {
+    ({ workspace, repository }, ctx) =>
+      answer(async () => {
+        const asked = confirmFirst(
+          ctx,
+          `Put ${repository} back on the runner order in ${workspaceName(workspace)}?`,
+        );
+        if (asked) return asked;
+        return request(route(workspace, "runner-order"), {
           method: "DELETE",
           query: { repo: repository },
-        }),
-      ),
+        });
+      }),
   );
 
   server.registerTool(
@@ -159,7 +184,17 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
       inputSchema: z.object({ workspace: workspaceArg, enabled: z.boolean() }),
       annotations: CHANGES,
     },
-    ({ workspace, enabled }) => answer(() => put(workspace, "ai", { enabled })),
+    ({ workspace, enabled }, ctx) =>
+      answer(async () => {
+        const asked =
+          !enabled &&
+          confirmFirst(
+            ctx,
+            `Turn AI off in ${workspaceName(workspace)}? This also deletes the AI answers saved so far.`,
+          );
+        if (asked) return asked;
+        return put(workspace, "ai", { enabled });
+      }),
   );
 
   // Pausing is global: every workspace stops routing to the machine. Only its owner may pause a
@@ -170,7 +205,7 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
   });
   const setPaused =
     (action: "pause" | "resume") =>
-    ({ workspace, runner }: z.infer<typeof runnerArg>) =>
+    ({ workspace, runner }: z.infer<typeof runnerArg>, ctx: ServerContext) =>
       answer(async () => {
         const id = workspaceId(workspace);
         const { machines } = await request<{ machines: { id: string; name: string }[] }>(
@@ -178,6 +213,13 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
           { workspaceId: id },
         );
         const named = findNamed(machines, runner, { noun: "runner", listTool: "list_runners" });
+        const asked =
+          action === "pause" &&
+          confirmFirst(
+            ctx,
+            `Pause ${named.name}? No jobs route to it, in any workspace, until it's resumed.`,
+          );
+        if (asked) return asked;
         const { machine } = await request<{ machine: Record<string, unknown> }>(
           `/machines/${encodeURIComponent(named.id)}/${action}`,
           { workspaceId: id, body: {} },

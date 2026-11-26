@@ -2,13 +2,12 @@
 //! into a free slot, token rotation, close codes, backoff with jitter.
 
 use crate::credentials::{self, Credentials};
-use crate::events;
+use crate::events::{self, Event, State};
 use crate::protocol::{
     GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, QueueEntry, RunJob as JobInfo,
     parse_gateway,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
@@ -98,24 +97,27 @@ struct Conn {
 }
 
 impl Conn {
-    fn emit(&mut self, kind: &str, fields: serde_json::Value) {
-        say(kind, fields.clone(), self.slotted());
+    fn emit(&mut self, event: Event) {
+        say(&event, self.slotted());
         let mut next = self.live.clone();
-        match kind {
-            "connecting" if next.link == "online" => next.link = "reconnecting",
-            "connected" => next.link = "online",
-            "disconnected" => {
+        match event {
+            Event::Connecting { .. } if next.link == "online" => next.link = "reconnecting",
+            Event::Connected {} => next.link = "online",
+            Event::Disconnected { .. } => {
                 next.link = "reconnecting";
                 next.waiting = 0;
                 next.queue.clear();
             }
-            "waiting" => {
-                next.waiting = fields["jobs"].as_u64().unwrap_or(0) as u32;
-                next.queue = serde_json::from_value(fields["queue"].clone()).unwrap_or_default();
-                next.spilled =
-                    serde_json::from_value(fields["spilled"].clone()).unwrap_or_default();
+            Event::Waiting {
+                jobs,
+                queue,
+                spilled,
+            } => {
+                next.waiting = jobs;
+                next.queue = queue;
+                next.spilled = spilled;
             }
-            "paused" => next.paused = fields["paused"].as_bool().unwrap_or(next.paused),
+            Event::Paused { paused, .. } => next.paused = paused,
             _ => {}
         }
         if next != self.live {
@@ -127,15 +129,14 @@ impl Conn {
     fn emit_state(&self) {
         crate::live::update(self.live.link, self.live.paused, self.live.jobs.len());
         say(
-            "state",
-            json!({
-                "link": self.live.link,
-                "paused": self.live.paused,
-                "jobs": self.live.jobs,
-                "waiting": self.live.waiting,
-                "queue": self.live.queue,
-                "spilled": self.live.spilled,
-                "slots": self.options.hello.slots,
+            &Event::State(State {
+                link: self.live.link,
+                paused: self.live.paused,
+                jobs: self.live.jobs.clone(),
+                waiting: self.live.waiting,
+                queue: self.live.queue.clone(),
+                spilled: self.live.spilled.clone(),
+                slots: self.options.hello.slots,
             }),
             false,
         );
@@ -166,8 +167,10 @@ impl Conn {
         if slot > self.options.hello.slots {
             let running = self.busy.len();
             say(
-                "run-refused",
-                json!({ "routeId": route_id, "running": running }),
+                &Event::RunRefused {
+                    route_id: route_id.clone(),
+                    running,
+                },
                 false,
             );
             let message = if running == 1 {
@@ -182,11 +185,14 @@ impl Conn {
                 usage: None,
             });
         }
-        let mut fields = json!({ "routeId": route_id, "slot": slot });
-        if let Some(job) = &run.job {
-            fields["job"] = json!(job);
-        }
-        say("run", fields, self.slotted());
+        say(
+            &Event::Run {
+                route_id: route_id.clone(),
+                slot,
+                job: run.job.clone(),
+            },
+            self.slotted(),
+        );
         self.live.jobs.push(route_id.clone());
         self.emit_state();
         self.busy.insert(slot);
@@ -208,8 +214,10 @@ impl Conn {
         match news {
             FromJob::Update(update, slot) => {
                 say(
-                    "job",
-                    json!({ "update": update, "slot": slot }),
+                    &Event::Job {
+                        update: update.clone(),
+                        slot,
+                    },
                     self.slotted(),
                 );
                 if update.state != JobState::Started {
@@ -227,53 +235,52 @@ impl Conn {
 }
 
 /// An event for the app, and a line for a person.
-fn say(kind: &str, fields: serde_json::Value, slotted: bool) {
+fn say(event: &Event, slotted: bool) {
     use crate::ui;
     let at = crate::events::local_time();
-    let slot = fields["slot"]
-        .as_u64()
-        .map(|s| format!(" (slot {s})"))
-        .unwrap_or_default();
-    let text = |key: &str| fields[key].as_str().unwrap_or_default().to_string();
-    match kind {
-        "connecting" if fields["attempt"] == 1 => ui::step(&format!("{at} Connecting…")),
-        "connected" => ui::success(&format!("{at} Online. Waiting for jobs.")),
-        "disconnected" => {
-            let reason = text("reason");
-            let secs = fields["retryInMs"].as_u64().unwrap_or(0).div_ceil(1000);
+    match event {
+        Event::Connecting { attempt: 1 } => ui::step(&format!("{at} Connecting…")),
+        Event::Connected {} => ui::success(&format!("{at} Online. Waiting for jobs.")),
+        Event::Disconnected {
+            code,
+            reason,
+            retry_in_ms,
+        } => {
+            let secs = retry_in_ms.div_ceil(1000);
             let reason = if reason.is_empty() {
                 String::new()
             } else {
                 format!(" {reason}")
             };
             ui::warn(&format!(
-                "{at} Disconnected ({}{reason}). Retrying in {secs}s.",
-                fields["code"]
+                "{at} Disconnected ({code}{reason}). Retrying in {secs}s."
             ));
         }
-        "gateway-error" => ui::error(&format!("{at} Gateway: {}", text("message"))),
-        "run" => {
-            let slot = fields["slot"]
-                .as_u64()
-                .filter(|_| slotted)
-                .map(|s| format!(" in slot {s}"))
-                .unwrap_or_default();
-            let job = &fields["job"];
-            let name = match (job["workflow"].as_str(), job["name"].as_str()) {
-                (Some(workflow), Some(name)) => {
-                    format!(" {workflow} › {name} ({})", text("routeId"))
-                }
-                (None, Some(name)) => format!(" {name} ({})", text("routeId")),
-                _ => format!(" {}", text("routeId")),
+        Event::GatewayError { message, .. } => ui::error(&format!("{at} Gateway: {message}")),
+        Event::Run {
+            route_id,
+            slot,
+            job,
+        } => {
+            let slot = if slotted {
+                format!(" in slot {slot}")
+            } else {
+                String::new()
+            };
+            let name = match job {
+                Some(JobInfo {
+                    workflow: Some(workflow),
+                    name,
+                    ..
+                }) => format!(" {workflow} › {name} ({route_id})"),
+                Some(JobInfo { name, .. }) => format!(" {name} ({route_id})"),
+                None => format!(" {route_id}"),
             };
             ui::step(&format!("{at} Starting job{name}{slot}"));
         }
-        "paused" => {
-            let by = fields["by"]
-                .as_str()
-                .map(|b| format!(" by {b}"))
-                .unwrap_or_default();
-            if fields["paused"] == true {
+        Event::Paused { paused, by } => {
+            let by = by.as_ref().map(|b| format!(" by {b}")).unwrap_or_default();
+            if *paused {
                 let keys = if crate::live::keys() {
                     " Press p to resume."
                 } else {
@@ -286,41 +293,44 @@ fn say(kind: &str, fields: serde_json::Value, slotted: bool) {
                 ui::success(&format!("{at} Resumed{by}. Waiting for jobs."));
             }
         }
-        "token-not-saved" => ui::warn(&format!(
-            "{at} Couldn't save the machine's new token ({}). Keeping the old one.",
-            text("message")
+        Event::TokenNotSaved { message } => ui::warn(&format!(
+            "{at} Couldn't save the machine's new token ({message}). Keeping the old one."
         )),
-        "run-refused" => {
-            let running = match fields["running"].as_u64() {
-                Some(1) => "one".to_string(),
-                n => n.unwrap_or(0).to_string(),
+        Event::RunRefused { route_id, running } => {
+            let running = match running {
+                1 => "one".to_string(),
+                n => n.to_string(),
             };
             ui::warn(&format!(
-                "{at} Turned down job {}: already running {running}.",
-                text("routeId")
+                "{at} Turned down job {route_id}: already running {running}."
             ));
         }
-        "job" => {
-            let update = &fields["update"];
-            let slot = if slotted { slot } else { String::new() };
-            let message = update["message"]
-                .as_str()
+        Event::Job { update, slot } => {
+            let slot = if slotted {
+                format!(" (slot {slot})")
+            } else {
+                String::new()
+            };
+            let message = update
+                .message
+                .as_ref()
                 .map(|m| format!(": {m}"))
                 .unwrap_or_default();
-            let state = update["state"].as_str().unwrap_or_default();
-            let line = format!(
-                "{at} Job {}{slot} {state}{message}",
-                update["routeId"].as_str().unwrap_or_default()
-            );
-            match state {
-                "failed" => ui::error(&line),
-                "finished" => ui::success(&line),
-                _ => ui::info(&line),
+            let state = match update.state {
+                JobState::Started => "started",
+                JobState::Finished => "finished",
+                JobState::Failed => "failed",
+            };
+            let line = format!("{at} Job {}{slot} {state}{message}", update.route_id);
+            match update.state {
+                JobState::Failed => ui::error(&line),
+                JobState::Finished => ui::success(&line),
+                JobState::Started => ui::info(&line),
             }
         }
         _ => {}
     }
-    events::emit(kind, fields);
+    events::emit(event);
 }
 
 fn backoff(attempt: u32) -> u64 {
@@ -387,7 +397,7 @@ async fn stay_connected(
     let mut attempt = 0;
     while !*stop.borrow() {
         attempt += 1;
-        conn.emit("connecting", json!({ "attempt": attempt }));
+        conn.emit(Event::Connecting { attempt });
         let (opened, code, reason, unauthorized) = session(conn, jobs_rx, stop).await;
         if *stop.borrow() {
             break;
@@ -415,10 +425,11 @@ async fn stay_connected(
         } else {
             backoff(attempt)
         };
-        conn.emit(
-            "disconnected",
-            json!({ "code": code, "reason": reason, "retryInMs": retry }),
-        );
+        conn.emit(Event::Disconnected {
+            code,
+            reason: reason.clone(),
+            retry_in_ms: retry,
+        });
 
         // Wait, still hearing from jobs: their updates wait for the next hello.
         let sleep = tokio::time::sleep(Duration::from_millis(retry));
@@ -471,7 +482,7 @@ async fn session(
     };
 
     conn.online = true;
-    conn.emit("connected", json!({}));
+    conn.emit(Event::Connected {});
     let mut hello = conn.options.hello.clone();
     conn.said_version = (conn.options.runner_version)();
     hello.runner_version.clone_from(&conn.said_version);
@@ -497,7 +508,7 @@ async fn session(
             frame = ws.next() => match frame {
                 Some(Ok(Message::Text(text))) => match parse_gateway(&text) {
                     Err((code, message)) => {
-                        conn.emit("gateway-error", json!({ "code": code, "message": message }));
+                        conn.emit(Event::GatewayError { code: code.to_string(), message: message.clone() });
                         None
                     }
                     Ok(GatewayMessage::Run { route_id, jit_config, isolated, job }) => {
@@ -505,11 +516,11 @@ async fn session(
                         Some(conn.start_job(Run { route_id, jit_config, isolated, job }))
                     }
                     Ok(GatewayMessage::Waiting { jobs, queue, spilled }) => {
-                        conn.emit("waiting", json!({ "jobs": jobs, "queue": queue, "spilled": spilled }));
+                        conn.emit(Event::Waiting { jobs, queue, spilled });
                         None
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
-                        conn.emit("paused", json!({ "paused": paused, "by": by }));
+                        conn.emit(Event::Paused { paused, by });
                         None
                     }
                     Ok(GatewayMessage::Token { token }) => {
@@ -520,13 +531,13 @@ async fn session(
                                 Some(MachineMessage::TokenSaved)
                             }
                             Err(message) => {
-                                conn.emit("token-not-saved", json!({ "message": message }));
+                                conn.emit(Event::TokenNotSaved { message });
                                 None
                             }
                         }
                     }
                     Ok(GatewayMessage::Error { code, message }) => {
-                        conn.emit("gateway-error", json!({ "code": code, "message": message }));
+                        conn.emit(Event::GatewayError { code: code.to_string(), message: message.clone() });
                         conn.gateway_error = message;
                         None
                     }

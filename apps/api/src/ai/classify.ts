@@ -18,6 +18,7 @@ import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { sha256Hex } from "../machines/machines.ts";
 import { type AiFeature, aiAccess, withinBudget } from "./settings.ts";
+import { log } from "../log.ts";
 
 /**
  * Cloudflare's Clef-flash: hosted by Cloudflare, which keeps no prompts and trains on none. It
@@ -93,8 +94,8 @@ export async function classify<Input, Qs extends Questions>(
   const { feature } = classifier;
   if (!env.AI) return { ok: false, reason: "off" };
   const db = createDb(env.DB);
-  const log = (outcome: string, extra?: object) =>
-    console.log(JSON.stringify({ msg: "ai call", feature, workspaceId, outcome, ...extra }));
+  const logCall = (outcome: string, extra?: object) =>
+    log.info("ai.call", "ai call", { feature, workspaceId, outcome, ...extra });
   const count = async (counts: UsageCounts) => {
     await usageUpsert(db, workspaceId, feature, counts, now);
   };
@@ -118,7 +119,7 @@ export async function classify<Input, Qs extends Questions>(
     const hit = key && (await readCache(db, key, now));
     if (hit) {
       await count({ cacheHits: 1 });
-      log("cached");
+      logCall("cached");
       return { ok: true, answers: hit as Answers<Qs>, cached: true };
     }
     if (!(await withinBudget(db, workspaceId, limits, now))) return skip("budget");
@@ -150,24 +151,24 @@ export async function classify<Input, Qs extends Questions>(
     const answers = readAnswers(classifier.questions, response.answers);
     if (!answers) {
       await count({ failures: 1, ...tokens });
-      log("unexpected answer");
+      logCall("unexpected answer");
       return { ok: false, reason: "failed" };
     }
     await db.batch([
       usageUpsert(db, workspaceId, feature, { calls: 1, ...tokens }, now),
       ...(key ? [cacheUpsert(db, key, workspaceId, feature, answers, now, cacheDays)] : []),
     ]);
-    log("answered", tokens);
+    logCall("answered", tokens);
     return { ok: true, answers, cached: false };
   } catch (error) {
     await count({ failures: 1 }).catch(() => undefined);
-    log("failed", { error: String(error) });
+    logCall("failed", { error });
     return { ok: false, reason: "failed" };
   }
 
   async function skip(reason: Exclude<AiSkip, "failed">): Promise<AiResult<Answers<Qs>>> {
     if (reason !== "off") await count({ limited: 1 });
-    log(reason);
+    logCall(reason);
     return { ok: false, reason };
   }
 }

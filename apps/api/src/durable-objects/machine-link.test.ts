@@ -8,10 +8,22 @@ const github = vi.hoisted(() => ({
   runnerOnline: vi.fn(),
   deleteRunner: vi.fn(),
 }));
+// The machine events MachineLink logs to Activity.
+const activity = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock("../reports/activity.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../reports/activity.ts")>()),
+  recordMachineEvent: activity.record,
+}));
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/actions-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/actions-api.ts")>()),
   workflowJobStatus: github.jobStatus,
+}));
+vi.mock("../github/runners-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/runners-api.ts")>()),
   runnerOnline: github.runnerOnline,
   deleteRunner: github.deleteRunner,
 }));
@@ -177,5 +189,92 @@ describe("MachineLink: jobs waiting for a slot", () => {
     await link.setWaiting("w1", jobs(1, 2));
     await link.spilled(Date.now());
     expect(ws.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("MachineLink: sockets the gateway closed", () => {
+  // A socket whose machine never answers a close: it stays listed, as Cloudflare keeps it.
+  function socket(lastHeardAt: number) {
+    let session: object = {
+      machineId: "m1",
+      connectedAt: lastHeardAt,
+      lastHeardAt,
+      hello: { os: "macos", arch: "arm64", runnerVersion: "2.330.0" },
+    };
+    return {
+      readyState: WebSocket.OPEN,
+      send: vi.fn(),
+      close: vi.fn(),
+      deserializeAttachment: () => structuredClone(session),
+      serializeAttachment: (next: object) => {
+        session = structuredClone(next);
+      },
+    };
+  }
+  type Socket = ReturnType<typeof socket>;
+
+  async function linkWith(sockets: Socket[]) {
+    const state = memoryCtx();
+    const ctx = { ...state.ctx, getWebSockets: () => sockets };
+    return new MachineLink(ctx as never, (await createTestEnv()) as never);
+  }
+  const reasons = () =>
+    activity.record.mock.calls.map(
+      ([, , event]) => (event as { data: { reason?: string } }).data.reason,
+    );
+
+  beforeEach(() => {
+    activity.record.mockReset();
+  });
+
+  test("a silent socket is logged as stopped responding once, however often the alarm runs", async () => {
+    const ws = socket(Date.now() - 120_000);
+    const link = await linkWith([ws]);
+    await link.alarm();
+    await link.alarm();
+    await link.alarm();
+    expect(reasons()).toEqual(["timeout"]);
+    expect(ws.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("a replaced socket that never answers isn't logged, while the live one keeps the alarm going", async () => {
+    const old = socket(Date.now() - 120_000);
+    old.serializeAttachment({ ...old.deserializeAttachment(), closedAt: Date.now() - 60_000 });
+    const live = socket(Date.now());
+    const link = await linkWith([old, live]);
+    await link.alarm();
+    await link.alarm();
+    expect(reasons()).toEqual([]);
+    expect(old.close).not.toHaveBeenCalled();
+    expect(await link.status()).toMatchObject({ online: true });
+  });
+
+  test("the close that finally ends a socket the gateway closed isn't logged", async () => {
+    const ws = socket(Date.now() - 120_000);
+    const link = await linkWith([ws]);
+    await link.alarm();
+    await link.webSocketClose(ws as never, 1006, "");
+    expect(reasons()).toEqual(["timeout"]);
+  });
+
+  test("the machine's own close is logged", async () => {
+    const ws = socket(Date.now());
+    const link = await linkWith([ws]);
+    await link.webSocketClose(ws as never, 1000, "bye");
+    expect(reasons()).toEqual(["closed"]);
+  });
+
+  test("a socket the gateway closed is offline and ignores what it still sends", async () => {
+    const ws = socket(Date.now() - 60_000);
+    ws.serializeAttachment({ ...ws.deserializeAttachment(), closedAt: Date.now() });
+    const before = ws.deserializeAttachment();
+    const link = await linkWith([ws]);
+    expect(await link.status()).toMatchObject({ online: false });
+    await link.webSocketMessage(
+      ws as never,
+      JSON.stringify({ v: 1, type: "status", state: "idle" }),
+    );
+    expect(ws.deserializeAttachment()).toEqual(before);
+    expect(activity.record).not.toHaveBeenCalled();
   });
 });

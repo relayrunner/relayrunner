@@ -5,12 +5,15 @@ import { bearer, deviceAuthorization, jwt, oAuthProxy, organization } from "bett
 import { agentOAuth } from "./agent-auth.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
+import { isOverloaded } from "../db/retry.ts";
 import { requestOrigin } from "../machines/device-origin.ts";
 import { sendEmail } from "../email.ts";
 import { githubBusy } from "../github/github-busy.ts";
 import { installSignIn } from "../github/install-sign-in.ts";
 import { syncMembershipsFromGitHub } from "../github/memberships.ts";
+import { refreshGitHubToken } from "../github/user-tokens.ts";
 import type { Env } from "../env.ts";
+import { log } from "../log.ts";
 
 // Preview dashboards (Workers Builds `wrangler preview`) reach this Worker through their own API
 // service binding, so requests arrive with the preview host. PREVIEW_ORIGINS lists their origin
@@ -77,6 +80,7 @@ export function createAuth(
     // own error page. Root-relative, so it stays on whichever dashboard host the browser is on.
     // Sign-in buttons pass errorCallbackURL to keep their redirect (apps/web/src/lib/sign-in.ts).
     onAPIError: { errorURL: "/login" },
+    logger: { log: logAuth },
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
     // Global role (schema.ts): "operator" sees the dashboard's Admin section. On session.user, so
     // it rides the session cookie cache. Granted by SQL only, never by the user.
@@ -95,6 +99,12 @@ export function createAuth(
       github: {
         clientId: env.GITHUB_APP_CLIENT_ID,
         clientSecret: env.GITHUB_APP_CLIENT_SECRET,
+        // Throws when GitHub refuses a renewal, which Better Auth's own call takes for a success
+        // (src/github/user-tokens.ts).
+        refreshAccessToken: refreshGitHubToken({
+          clientId: env.GITHUB_APP_CLIENT_ID,
+          clientSecret: env.GITHUB_APP_CLIENT_SECRET,
+        }),
       },
     },
     databaseHooks: {
@@ -120,7 +130,10 @@ export function createAuth(
         if (!session) return;
         await background(
           syncMembershipsFromGitHub(auth, createDb(env.DB), session.user.id).catch((error) =>
-            console.error("membership sync on workspace list failed", error),
+            log.error("github.membership_sync_failed", "membership sync failed", {
+              trigger: "workspace_list",
+              error,
+            }),
           ),
         );
       }),
@@ -131,7 +144,12 @@ export function createAuth(
         if (signedIn) {
           await syncMembershipsFromGitHub(auth, createDb(env.DB), signedIn.user.id, {
             force: true,
-          }).catch((error) => console.error("membership sync on sign-in failed", error));
+          }).catch((error) =>
+            log.error("github.membership_sync_failed", "membership sync failed", {
+              trigger: "sign_in",
+              error,
+            }),
+          );
         }
         if (ctx.path === "/device/code") {
           // Remember where the CLI asked from, for the approval page (src/machines/device-origin.ts).
@@ -225,4 +243,30 @@ export function workspaces() {
       session: { fields: { activeOrganizationId: "activeWorkspaceId" } },
     },
   });
+}
+
+// Better Auth's errors when someone calls an endpoint for a feature RelayRunner leaves off (email
+// and password, magic links, a provider other than GitHub, verification email, deleting a user).
+// Only scanners send those, so they're info, not errors in Workers Issues.
+const FEATURE_OFF =
+  /(is not enabled|isn't enabled|are not enabled|is disabled\. Enable it|^Provider not found)/;
+
+// Better Auth's own messages, through the API's logger. An error it recovers from on its own
+// (resources it seeds again on first use when D1 is shedding load) is a warning, so Workers Issues
+// doesn't report it.
+export function logAuth(
+  level: "debug" | "info" | "warn" | "error",
+  message: string,
+  ...args: unknown[]
+) {
+  const error = args.find((arg) => arg instanceof Error);
+  const write =
+    level !== "error"
+      ? log[level]
+      : isOverloaded(error)
+        ? log.warn
+        : FEATURE_OFF.test(message)
+          ? log.info
+          : log.error;
+  write("auth.log", message, error ? { error } : {});
 }

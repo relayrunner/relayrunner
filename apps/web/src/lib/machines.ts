@@ -1,10 +1,7 @@
 import { AppError } from "@relayrunner/errors";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
-import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import type { MachineDevice } from "./device.ts";
-import { sampleMachineJob } from "./live-jobs.ts";
-
 /**
  * A machine jobs can route to (GET /api/machines): enrolled with `relayrunner connect`, or a
  * self-hosted runner added from GitHub.
@@ -144,184 +141,26 @@ export function listMachines() {
   return api<{ machines: Machine[]; others?: OtherMachine[] }>("/machines");
 }
 
-// The workspace's machines, shared by every runner hover card and kept for a short while, so
-// hovering down a table reads the list once.
+// The workspace's machines, shared by the Runners page and every runner hover card and panel, and
+// kept for a short while, so hovering down a table reads the list once.
 const FRESH_MS = 30_000;
-let machines: { at: number; list: Promise<Machine[]>; read?: Machine[] } | null = null;
-clearOnWorkspaceChange(() => (machines = null));
 
-/** A machine from the last read, or undefined when there's no fresh one to go by. */
-export function cachedMachine(id: string) {
-  if (!machines?.read || Date.now() - machines.at > FRESH_MS) return undefined;
-  return machines.read.find((machine) => machine.id === id) ?? null;
+/** The workspace's machines, plus the user's own that don't take its jobs (`others`). */
+export const machinesQuery = queryOptions({
+  queryKey: ["machines"],
+  queryFn: listMachines,
+  staleTime: FRESH_MS,
+});
+
+/**
+ * One machine of the workspace's: undefined while the list loads, null when it isn't one of them
+ * or the list couldn't be read. No id reads nothing.
+ */
+export function useWorkspaceMachine(id: string | null): Machine | null | undefined {
+  const query = useQuery({ ...machinesQuery, enabled: id !== null });
+  if (id === null || query.isError) return null;
+  return query.data && (query.data.machines.find((machine) => machine.id === id) ?? null);
 }
-
-/** One machine of the workspace's, or null when it isn't one of them. */
-export async function workspaceMachine(id: string) {
-  if (!machines || Date.now() - machines.at > FRESH_MS) {
-    const list = authDisabled
-      ? Promise.resolve(SAMPLE_MACHINES)
-      : listMachines().then((result) => result.machines);
-    // A failed read isn't kept, so the next hover asks again.
-    list.catch(() => {
-      if (machines?.list === list) machines = null;
-    });
-    const entry: NonNullable<typeof machines> = { at: Date.now(), list };
-    void list.then(
-      (read) => (entry.read = read),
-      () => undefined,
-    );
-    machines = entry;
-  }
-  return (await machines.list).find((machine) => machine.id === id) ?? null;
-}
-
-// The dev preview's machines, matching the sample reports' `machine:` keys.
-const SAMPLE_MACHINE: Machine = {
-  id: "sample",
-  name: "ada-mbp",
-  os: "linux",
-  arch: "arm64",
-  labels: ["self-hosted", "Linux", "ARM64"],
-  lastSeenAt: null,
-  revokedAt: null,
-  createdAt: "2026-11-01T00:00:00Z",
-  source: "connect",
-  device: {
-    kind: "laptop",
-    model: "MacBook Pro",
-    modelId: "Mac15,9",
-    chip: "Apple M3 Max",
-    cpuCores: 16,
-    memoryMb: 49_152,
-    osVersion: "macOS 26.1",
-    reportedAt: null,
-  },
-  vm: { cpus: 4, memoryGb: 8 },
-  cli: { version: "0.9.0", update: null },
-  macApp: { version: "0.2.0" },
-  // A newer runner came out last week.
-  runner: {
-    version: "2.330.0",
-    update: "2.331.0",
-    updateBy: new Date(Date.now() + 23 * 86_400_000).toISOString(),
-  },
-  owner: "Ada",
-  mine: true,
-  sharing: "anyone",
-  status: {
-    online: true,
-    state: "idle",
-    connectedAt: Date.now() - 2 * 3_600_000,
-    slots: 2,
-    running: 0,
-  },
-};
-
-export const SAMPLE_MACHINES: Machine[] = [
-  // Running the sample live jobs' job on it (lib/live-jobs.ts).
-  {
-    ...SAMPLE_MACHINE,
-    status: { ...SAMPLE_MACHINE.status!, state: "busy", slots: 4, running: 2 },
-    job: sampleMachineJob(),
-    jobs: [
-      sampleMachineJob(),
-      {
-        repository: "acme/app",
-        workflow: "CI",
-        name: "typecheck",
-        url: "https://github.com/acme/app/actions",
-        startedAt: new Date(Date.now() - 41_000).toISOString(),
-      },
-    ],
-  },
-  {
-    ...SAMPLE_MACHINE,
-    id: "sample-mini",
-    name: "studio-mini",
-    device: {
-      ...SAMPLE_MACHINE.device!,
-      kind: "desktop",
-      model: "Mac mini",
-      modelId: "Mac16,10",
-      chip: "Apple M4 Pro",
-      cpuCores: 14,
-      memoryMb: 24_576,
-    },
-    // Left connected past GitHub's cutoff.
-    runner: {
-      version: "2.328.0",
-      update: "2.331.0",
-      updateBy: new Date(Date.now() - 2 * 86_400_000).toISOString(),
-    },
-    status: { online: false, state: null, connectedAt: null },
-  },
-  // A big Linux box running 16 jobs at once, most of them busy.
-  {
-    ...SAMPLE_MACHINE,
-    id: "sample-linux",
-    name: "ci-box",
-    os: "linux",
-    arch: "x64",
-    device: {
-      ...SAMPLE_MACHINE.device!,
-      kind: "desktop",
-      model: null,
-      modelId: null,
-      chip: "AMD Ryzen 9 7950X",
-      cpuCores: 32,
-      memoryMb: 131_072,
-      osVersion: "Ubuntu 24.04",
-    },
-    macApp: null,
-    runner: { version: "2.331.0", update: null, updateBy: null },
-    status: { ...SAMPLE_MACHINE.status!, state: "busy", slots: 16, running: 11 },
-    jobs: [
-      "lint",
-      "typecheck",
-      "test (1/4)",
-      "test (2/4)",
-      "test (3/4)",
-      "test (4/4)",
-      "build",
-      "e2e (chromium)",
-      "e2e (webkit)",
-      "bench",
-      "docs",
-    ].map((name, i) => ({
-      repository: i < 9 ? "acme/app" : "acme/site",
-      workflow: "CI",
-      name,
-      url: "https://github.com/acme/app/actions",
-      startedAt: new Date(Date.now() - (i + 1) * 47_000).toISOString(),
-    })),
-  },
-  {
-    id: "sample-github",
-    name: "build-01",
-    os: "linux",
-    arch: "x64",
-    labels: ["self-hosted", "Linux", "X64", "gpu"],
-    routingLabel: "rr-runner-3f9a2c1e",
-    lastSeenAt: null,
-    revokedAt: null,
-    createdAt: "2026-11-01T00:00:00Z",
-    source: "github",
-    github: {
-      org: "acme",
-      repo: "acme/app",
-      runnerId: 7,
-      missing: false,
-      unreachable: false,
-      checkedAt: Date.now() - 12_000,
-    },
-    device: null,
-    owner: "acme",
-    mine: false,
-    sharing: "anyone",
-    status: { online: true, state: "idle", connectedAt: null },
-  },
-];
 
 /** Adds the user's own machines to the current workspace, so they take its jobs. */
 export function addMachinesToWorkspace(machineIds: string[]) {

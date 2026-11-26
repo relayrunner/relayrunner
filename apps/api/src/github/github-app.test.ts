@@ -1,21 +1,20 @@
 import { generateKeyPairSync, createPublicKey, verify } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { clearListedPages, GitHubAccessError, GitHubRateLimitError } from "./github-api.ts";
 import {
   appInstallationToken,
   appJwt,
   clearInstallationTokens,
-  clearListedPages,
+  importAppPrivateKey,
+} from "./github-app.ts";
+import { userCanReadRepo, userCanWriteRepo } from "./repos-api.ts";
+import {
   deleteRunner,
   generateJitConfig,
-  GitHubAccessError,
-  GitHubRateLimitError,
-  importAppPrivateKey,
   listRunners,
   runnerBusy,
   runnerScope,
-  userCanReadRepo,
-  userCanWriteRepo,
-} from "./github-app.ts";
+} from "./runners-api.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pkcs1 = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
@@ -51,7 +50,10 @@ describe("GitHub App auth", () => {
 });
 
 describe("installation tokens", () => {
-  const env = { GITHUB_APP_ID: "5605512", GITHUB_APP_PRIVATE_KEY: { get: async () => pkcs8 } };
+  const env = {
+    GITHUB_APP_ID: "5605512",
+    GITHUB_APP_PRIVATE_KEY: { get: async () => pkcs8 },
+  };
   const now = Date.UTC(2026, 10, 10, 2);
   let mints: number;
 
@@ -104,7 +106,11 @@ describe("runner scope", () => {
 });
 
 describe("JIT runners by scope", () => {
-  const calls: { url: string; method: string; body?: Record<string, unknown> }[] = [];
+  const calls: {
+    url: string;
+    method: string;
+    body?: Record<string, unknown>;
+  }[] = [];
   beforeEach(() => {
     calls.length = 0;
     vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
@@ -126,8 +132,15 @@ describe("JIT runners by scope", () => {
   const org = { kind: "org", org: "relayrunner" } as const;
 
   test("a repo runner uses the repo endpoints and the Default group", async () => {
-    const jit = await generateJitConfig("t", repo, { name: "pick", labels: ["relayrunner"] });
-    expect(jit).toEqual({ runnerId: 7, labels: ["relayrunner"], encodedJitConfig: "abc" });
+    const jit = await generateJitConfig("t", repo, {
+      name: "pick",
+      labels: ["relayrunner"],
+    });
+    expect(jit).toEqual({
+      runnerId: 7,
+      labels: ["relayrunner"],
+      encodedJitConfig: "abc",
+    });
     await runnerBusy("t", repo, 7);
     await deleteRunner("t", repo, 7);
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
@@ -146,13 +159,24 @@ describe("JIT runners by scope", () => {
   });
 
   test("a repo runner ignores a runner group, which only orgs have", async () => {
-    await generateJitConfig("t", repo, { name: "c", labels: ["x"], runnerGroupId: 4 });
+    await generateJitConfig("t", repo, {
+      name: "c",
+      labels: ["x"],
+      runnerGroupId: 4,
+    });
     expect(calls[0].body?.runner_group_id).toBe(1);
   });
 
   test("an org runner uses the org endpoints and the given group", async () => {
-    await generateJitConfig("t", org, { name: "c", labels: ["x"], runnerGroupId: 4 });
-    await generateJitConfig("t", org, { name: "pick", labels: ["relayrunner"] });
+    await generateJitConfig("t", org, {
+      name: "c",
+      labels: ["x"],
+      runnerGroupId: 4,
+    });
+    await generateJitConfig("t", org, {
+      name: "pick",
+      labels: ["relayrunner"],
+    });
     await deleteRunner("t", org, 7);
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       "POST https://api.github.com/orgs/relayrunner/actions/runners/generate-jitconfig",
@@ -176,7 +200,9 @@ describe("listed pages", () => {
       sent.push(etag);
       if (etag === '"v1"') return new Response(null, { status: 304 });
       return Response.json(
-        { runners: [{ id: 3, name: "mac", os: "macOS", status: "online", busy: false }] },
+        {
+          runners: [{ id: 3, name: "mac", os: "macOS", status: "online", busy: false }],
+        },
         { headers: { etag: '"v1"' } },
       );
     });
@@ -263,11 +289,14 @@ describe("userCanReadRepo", () => {
       retryAfter: 60,
     });
     const reset = Math.floor(Date.now() / 1000) + 120;
-    respond({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) });
+    respond({
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-reset": String(reset),
+    });
     const error = await userCanReadRepo("ghs_x", "acme/app", 2).catch((e: unknown) => e);
     expect((error as GitHubRateLimitError).retryAfter).toBeGreaterThan(110);
     expect((error as GitHubRateLimitError).retryAfter).toBeLessThanOrEqual(120);
-    expect(String((error as Error).cause)).toContain("GET /user/2 failed with 403");
+    expect(String((error as Error).cause)).toContain("GET /user/:id failed with 403");
   });
 
   test("a 404 is no access; other failures throw", async () => {

@@ -1,0 +1,9 @@
+ready   lint: github ubuntu-latest shape={"os":"linux"}
+ready   test: github ubuntu-24.04 shape={"os":"linux"}
+ready   arm: github ubuntu-24.04-arm shape={"arch":"arm64","os":"linux"}
+ready   mac: github macos-15 shape={"os":"macos"}
+ready   mac-intel: github macos-13 shape={"arch":"x64","os":"macos"}
+ready   mac-large: github macos-latest-large shape={"arch":"x64","os":"macos"}
+ready   mac-xlarge: github macos-latest-xlarge shape={"os":"macos"}
+skipped windows: Windows jobs can't run on machines yet
+skipped matrix: uses a matrix, and one relay can't serve every leg

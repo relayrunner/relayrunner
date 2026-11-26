@@ -6,13 +6,13 @@ import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import {
-  appInstallationToken,
-  deleteRunner,
   rerunJob,
   runAttemptStatus,
   runAttemptTriggeringActor,
   workflowJobRunner,
-} from "../github/github-app.ts";
+} from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import {
   MAX_TAKEOVER_ATTEMPT,
@@ -32,6 +32,7 @@ import {
   waitForJob,
 } from "../routing/runner-protocol.ts";
 import { traced } from "../tracing.ts";
+import { log } from "../log.ts";
 
 export interface TakeoverWork {
   jobId: number;
@@ -51,6 +52,11 @@ export interface TakeoverWork {
 
 type Phase = "takeover" | "rerun";
 
+// A check that fails (GitHub slow or down for a moment) is tried again this many times, RETRY_MS
+// apart, before the job is left as it is.
+const MAX_FAILURES = 3;
+const RETRY_MS = 30_000;
+
 // One per routed job on a hosted provider's label (src/routing/provider-takeover.ts), addressed by
 // takeoverName. A minute after the job queued it asks GitHub whether a runner took it. If one did,
 // the provider can see the repo. If not, it acts as a one-job runner on the job's label, claims the
@@ -69,7 +75,13 @@ export class ProviderTakeover extends DurableObject<Env> {
     const work = await this.ctx.storage.get<TakeoverWork>("work");
     const phase = await this.ctx.storage.get<Phase>("phase");
     if (!work || !phase) return;
-    const log = { jobId: work.jobId, repo: work.repo, runId: work.runId, key: work.key };
+    const ids = {
+      workspaceId: work.workspaceId,
+      jobId: work.jobId,
+      repo: work.repo,
+      runId: work.runId,
+      provider: work.key,
+    };
     let result: string;
     try {
       result = await traced(
@@ -77,18 +89,25 @@ export class ProviderTakeover extends DurableObject<Env> {
         { "github.job_id": work.jobId, "github.repository": work.repo },
         () => (phase === "takeover" ? this.takeover(work) : this.rerun(work)),
       );
+      await this.ctx.storage.put("failures", 0);
     } catch (error) {
-      result = "error";
-      console.error(
-        JSON.stringify({
-          msg: "relayrunner takeover failed",
+      const failures = ((await this.ctx.storage.get<number>("failures")) ?? 0) + 1;
+      if (failures < MAX_FAILURES) {
+        result = "retrying";
+        await this.ctx.storage.put("failures", failures);
+        await this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
+        log.warn("takeover.retrying", "takeover check failed; trying again", {
           phase,
-          ...log,
+          ...ids,
+          failures,
           error: errorMessage(error),
-        }),
-      );
+        });
+      } else {
+        result = "error";
+        log.error("takeover.failed", "takeover failed", { phase, ...ids, error });
+      }
     }
-    console.log(JSON.stringify({ msg: "relayrunner takeover", phase, ...log, result }));
+    log.info("takeover.checked", "takeover checked", { phase, ...ids, result });
   }
 
   private async takeover(work: TakeoverWork) {
@@ -231,12 +250,9 @@ async function endJob(env: Env, token: string, work: TakeoverWork) {
 }
 
 function logCleanup(step: string, work: TakeoverWork, error: unknown) {
-  console.warn(
-    JSON.stringify({
-      msg: "relayrunner takeover cleanup failed",
-      step,
-      jobId: work.jobId,
-      error: errorMessage(error),
-    }),
-  );
+  log.warn("takeover.cleanup_failed", "takeover cleanup failed", {
+    step,
+    jobId: work.jobId,
+    error,
+  });
 }

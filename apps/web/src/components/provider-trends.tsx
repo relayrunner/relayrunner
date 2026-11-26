@@ -5,18 +5,16 @@ import { type Line, LineChart } from "@/components/line-chart";
 import { runnerName } from "@/components/providers";
 import { OptionPicker } from "@/components/range-picker";
 import { Legend, seriesColor } from "@/components/stacked-bars";
-import { authDisabled } from "@/lib/auth-client";
-import { clock, type Environment } from "@/lib/job-times";
+import { clock } from "@/lib/job-times";
 import {
   getProviderTrends,
   type Percentile,
   PERCENTILE_OPTIONS,
   type ProviderTrends,
-  sampleProviderTrends,
   TREND_METRICS,
   type TrendMetric,
 } from "@/lib/provider-trends";
-import { rangeDays, type TimeRange } from "@/lib/time-range";
+import { type TimeRange } from "@/lib/time-range";
 
 const NOTES: Record<TrendMetric, string> = {
   wait: "From queued until a runner started the job.",
@@ -37,7 +35,6 @@ const shareStep = (max: number) => [1, 2, 5, 10, 20, 25, 50].find((s) => s * 4 >
 export function ProviderTrendsCard({
   provider,
   range,
-  sampleRunners,
   metric,
   percentile,
   onMetric,
@@ -45,8 +42,6 @@ export function ProviderTrendsCard({
 }: {
   provider: string;
   range: TimeRange;
-  /** The report's runner types, for the dev preview's made-up days. */
-  sampleRunners: (Environment & { jobs: number })[];
   metric: TrendMetric;
   percentile: Percentile;
   onMetric: (metric: TrendMetric) => void;
@@ -54,10 +49,6 @@ export function ProviderTrendsCard({
 }) {
   const [trends, setTrends] = useState<ProviderTrends | null>(null);
   useEffect(() => {
-    if (authDisabled) {
-      setTrends(sampleProviderTrends(sampleRunners, rangeDays(range)));
-      return;
-    }
     let live = true;
     getProviderTrends(provider, range).then(
       (result) => live && setTrends(result),
@@ -67,7 +58,6 @@ export function ProviderTrendsCard({
     return () => {
       live = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the sample runners follow the range
   }, [provider, range]);
 
   const runners = trends?.runners ?? [];
@@ -123,6 +113,8 @@ export function ProviderTrendsCard({
         axis={failures ? (v) => `${v}%` : timeAxis}
         format={failures ? (v) => `${v.toFixed(v < 10 ? 1 : 0)}%` : clock}
         label={`${title} by runner type`}
+        // A day with too few jobs for a rate stays blank rather than guessing one.
+        bridge={!failures}
       />
       <Legend series={lines} />
     </section>

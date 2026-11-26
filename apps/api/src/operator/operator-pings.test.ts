@@ -7,6 +7,7 @@ import {
   collectOperatorPings,
   parseGithubIds,
   PING_WINDOW_MS,
+  pingUninstall,
   sendOperatorPings,
 } from "./operator-pings.ts";
 import { SETTLE_MS } from "../routing/stickiness.ts";
@@ -56,6 +57,25 @@ async function machineArrives(
           occurredAt,
         },
   );
+}
+
+/** `userId`'s first Mac app hello, from a machine taking jobs in `workspaceId`. */
+async function macAppUse(userId: string, workspaceId: string, firstUsedAt: Date) {
+  ids += 1;
+  const machineId = `pings-mac-${ids}`;
+  const db = createDb(env.DB);
+  await db.insert(schema.machine).values({
+    id: machineId,
+    userId,
+    name: "studio",
+    os: "macos",
+    deviceModel: "MacBook Pro",
+    macAppVersion: "0.7.0",
+  });
+  await db.insert(schema.machineWorkspace).values({ machineId, workspaceId });
+  await db
+    .insert(schema.macAppFirstUse)
+    .values({ userId, machineId, macAppVersion: "0.7.0", firstUsedAt });
 }
 
 async function machineRun(workspaceId: string, createdAt: Date) {
@@ -173,6 +193,18 @@ describe("operator pings", () => {
     expect(about(later, "First Machine")).toEqual([]);
   });
 
+  test("pings someone's first use of the Mac app once", async () => {
+    const { workspace: ws, user } = await workspace("Mac Co");
+    await macAppUse(user.id, ws.id, new Date(Date.now() - 500));
+    const db = createDb(env.DB);
+    const { since, until } = window();
+    expect(about(await collectOperatorPings(db, since, until), "Mac Co")).toEqual([
+      `:apple: *${user.name}* started using the Mac app 0.7.0 on studio (MacBook Pro) for *Mac Co*`,
+    ]);
+    const later = await collectOperatorPings(db, until, new Date(until.getTime() + PING_WINDOW_MS));
+    expect(about(later, "Mac Co")).toEqual([]);
+  });
+
   test("pings a workspace's first run on a machine once", async () => {
     const { workspace: ws } = await workspace("First Run");
     const now = Date.now();
@@ -224,6 +256,59 @@ describe("operator pings", () => {
     expect(about(later, "Dropped Co")).toEqual([]);
   });
 
+  test("checks the default branch before saying the relay was taken out", async () => {
+    const { workspace: ws } = await workspace("Branch Co");
+    const db = createDb(env.DB);
+    const [row] = await db
+      .select({ installationId: schema.workspace.installationId })
+      .from(schema.workspace)
+      .where(eq(schema.workspace.id, ws.id));
+    const installationId = row!.installationId;
+    const now = Date.now();
+    const lastRelay = new Date(now - 5 * 3_600_000);
+    await ciRun(installationId, lastRelay, true);
+    await ciRun(installationId, new Date(now - 4 * 3_600_000), false);
+    await ciRun(installationId, new Date(now - 3 * 3_600_000), false);
+    await ciRun(installationId, new Date(now - SETTLE_MS - 1_000), false);
+    const { since, until } = window();
+    const pings = (check: Parameters<typeof collectOperatorPings>[4]) =>
+      collectOperatorPings(db, since, until, [], check).then((all) => about(all, "Branch Co"));
+
+    const check = vi.fn().mockResolvedValue("never_merged");
+    expect(await pings(check)).toEqual([]);
+    expect(check).toHaveBeenCalledWith(
+      installationId,
+      "acme/dropped",
+      ".github/workflows/ci.yml",
+      lastRelay,
+    );
+    expect(await pings(vi.fn().mockResolvedValue("present"))).toEqual([]);
+    expect(await pings(vi.fn().mockResolvedValue("removed"))).toHaveLength(1);
+    // GitHub couldn't answer: ping anyway.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await pings(vi.fn().mockRejectedValue(new Error("502")))).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  test("pings an uninstall before the workspace is forgotten", async () => {
+    const { workspace: ws } = await workspace("Gone Co");
+    const db = createDb(env.DB);
+    const [row] = await db
+      .select({ installationId: schema.workspace.installationId })
+      .from(schema.workspace)
+      .where(eq(schema.workspace.id, ws.id));
+    const fetcher = vi.fn().mockResolvedValue(new Response("ok"));
+    const env2 = { ...env, OPERATOR_SLACK_WEBHOOK_URL: "https://hooks.slack.com/x" };
+    const at = Date.now() + 3 * 24 * 3_600_000;
+    const sent = await pingUninstall(env2, db, row!.installationId, at, fetcher as never);
+    expect(sent).toBe(true);
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body as string) as { text: string };
+    expect(body.text).toMatch(/^:wastebasket: App uninstalled from the .+ after 3 days$/);
+    // Already gone (an operator delete): nothing to say.
+    expect(await pingUninstall(env2, db, 987_654_321, at, fetcher as never)).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   test("leaves out operators' signups and our own workspaces, but not a user's org with an operator in it", async () => {
     const db = createDb(env.DB);
     const member = await workspace("Ours Member");
@@ -233,6 +318,7 @@ describe("operator pings", () => {
       .where(eq(schema.user.id, member.user.id));
     await machineArrives(member.workspace.id, "machine.connected", new Date());
     await unroutable(member.workspace.id, new Date(), "nothing fits");
+    await macAppUse(member.user.id, member.workspace.id, new Date());
 
     // Installed by an operator who isn't a member (yet).
     const installed = await workspace("Ours Installed");
@@ -260,6 +346,7 @@ describe("operator pings", () => {
     expect(about(pings, "Theirs With Us")).toHaveLength(1);
     expect(about(pings, "Ours")).toEqual([]);
     expect(about(pings, member.user.email)).toEqual([]);
+    expect(about(pings, `*${member.user.name}* started using the Mac app`)).toEqual([]);
     expect(about(pings, member.workspace.slug)).toEqual([]);
     expect(about(pings, installed.workspace.slug)).toEqual([]);
   });

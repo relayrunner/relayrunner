@@ -9,7 +9,6 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { errorMessage } from "../errors.ts";
 import { queueJobLog } from "./logs.ts";
 import {
   type Exporting,
@@ -28,6 +27,7 @@ import {
   runSpan,
   type Span,
 } from "./spans.ts";
+import { log } from "../log.ts";
 
 export const TELEMETRY_QUEUE = "relayrunner-telemetry";
 
@@ -65,7 +65,7 @@ async function queueSpans(
         spans,
       });
   } catch (error) {
-    console.warn(JSON.stringify({ msg: "couldn't queue spans", error: errorMessage(error) }));
+    log.warn("telemetry.spans_not_queued", "couldn't queue spans", { error });
   }
 }
 
@@ -201,22 +201,13 @@ export async function handleTelemetryBatch(
           else msg.ack();
         }
         if (!sent.ok)
-          console.warn(
-            JSON.stringify({
-              msg: "telemetry send failed",
-              workspaceId,
-              retry: sent.retry,
-              error: sent.error,
-            }),
-          );
-      } catch (error) {
-        console.warn(
-          JSON.stringify({
-            msg: "telemetry batch failed",
+          log.warn("telemetry.send_failed", "telemetry send failed", {
             workspaceId,
-            error: errorMessage(error),
-          }),
-        );
+            retry: sent.retry,
+            error: sent.error,
+          });
+      } catch (error) {
+        log.warn("telemetry.batch_failed", "telemetry batch failed", { workspaceId, error });
         for (const msg of messages) msg.retry({ delaySeconds: 60 });
       }
     }),

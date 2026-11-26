@@ -9,8 +9,8 @@
 // checks the group's access before it picks the runner. A repo runner has no group: it takes only
 // its own repo's jobs.
 
+import { appInstallationToken } from "./github-app.ts";
 import {
-  appInstallationToken,
   getOrgRunnerGroup,
   listOrgRunnerGroups,
   listRunnerGroupRepositoryIds,
@@ -19,7 +19,7 @@ import {
   type GitHubRunner,
   type RunnerGroup,
   type RunnerScope,
-} from "./github-app.ts";
+} from "./runners-api.ts";
 import { hostedProviderOf } from "@relayrunner/providers";
 import { routeIdFromLabels } from "../routing/routing.ts";
 

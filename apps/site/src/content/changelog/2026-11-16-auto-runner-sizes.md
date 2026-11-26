@@ -1,6 +1,7 @@
 ---
 title: Pick runner sizes on the dashboard
 date: 2026-11-16
+type: Feature
 description: Set a relay's provider to auto, and change each job's runner size on the Router page without a commit.
 ---
 

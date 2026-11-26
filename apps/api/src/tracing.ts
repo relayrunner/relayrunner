@@ -6,12 +6,14 @@
  * (docs/observability.md).
  */
 import { tracing } from "cloudflare:workers";
+import { addLogContext } from "./log.ts";
 
 export type SpanAttributes = Record<string, string | number | boolean | null | undefined>;
 
 /**
- * Run `fn` inside a span named `name`. A throw marks the span as an error, records the exception
- * and rethrows.
+ * Run `fn` inside a span named `name`. A throw marks the span as an error and rethrows. It doesn't
+ * record the exception: Workers Issues reports every recorded exception, including ones the caller
+ * handles (a queue retry), and a throw nobody handles is reported as the invocation's own failure.
  */
 export function traced<T>(
   name: string,
@@ -23,7 +25,6 @@ export function traced<T>(
     try {
       return await fn(span);
     } catch (error) {
-      span.recordException(error instanceof Error ? error : String(error));
       span.setStatus({
         code: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -33,10 +34,26 @@ export function traced<T>(
   });
 }
 
-/** Add attributes to the active span: the innermost `traced` span, or the invocation's own. */
+/**
+ * Add attributes to the active span: the innermost `traced` span, or the invocation's own. The ids
+ * among them (LOG_FIELDS) also go on every log line after this one in the same context.
+ */
 export function annotate(attributes: SpanAttributes) {
   tracing.getActiveSpan()?.setAttributes(defined(attributes));
+  const ids: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(attributes))
+    if (key in LOG_FIELDS && value != null) ids[LOG_FIELDS[key]!] = value;
+  addLogContext(ids);
 }
+
+// Span attributes that are ids, and what log lines call them (docs/observability.md).
+const LOG_FIELDS: Record<string, string> = {
+  "user.id": "userId",
+  "relayrunner.workspace_id": "workspaceId",
+  "relayrunner.machine_id": "machineId",
+  "relayrunner.agent_grant_id": "agentGrantId",
+  "github.installation_id": "installationId",
+};
 
 /** Rename the active span, such as a request's root span once its route is known. */
 export function renameSpan(name: string) {

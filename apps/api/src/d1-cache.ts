@@ -1,6 +1,7 @@
 // Reads of operator-edited D1 rows that every report needs (prices, providers), reused per isolate
 // so a busy report doesn't read them on every request.
 import type { Db } from "./db/index.ts";
+import { log } from "./log.ts";
 
 // How long an isolate reuses what it read. Operators' own changes clear it at once (forget);
 // another isolate picks them up within this.
@@ -22,7 +23,7 @@ export function cachedRead<T>(name: string, read: (db: Db) => Promise<T>, fallba
         cached = { value, until: now + CACHE_MS };
         return value;
       } catch (error) {
-        console.error(JSON.stringify({ msg: `${name} unreadable`, error: String(error) }));
+        log.warn("d1_cache.unreadable", `${name} unreadable`, { cache: name, error });
         return fallback();
       }
     },

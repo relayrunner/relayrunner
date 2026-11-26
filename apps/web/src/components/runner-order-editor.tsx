@@ -48,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { utcShortDate } from "@/lib/time-zone";
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
 import {
   barMarks,
@@ -223,7 +224,7 @@ export function RunnerOrderEditor({
                   className="mt-1 justify-self-start text-muted-foreground"
                 >
                   <PlusIcon aria-hidden />
-                  Add step
+                  Add runner
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
@@ -306,6 +307,8 @@ const withIds = (steps: RunnerStep[]): StepItem[] =>
 
 /** What the Self-hosted step covers: runners added from GitHub and machines connected with the CLI. */
 const SELF_HOSTED_NOTE = "Your own runners and CLI-connected machines";
+/** GitHub's and Blacksmith's byline: free supply first, then pay as you go. */
+const INCLUDED_MINUTES_NOTE = "Your plan's minutes, then billed per minute";
 
 function AddItem({
   runner,
@@ -484,7 +487,10 @@ function StepCard({
             {step.key === "machine" && (
               <p className="text-xs text-muted-foreground">{SELF_HOSTED_NOTE}</p>
             )}
-            {step.key !== "machine" && step.key !== "github" && (
+            {(step.key === "github" || step.key === "blacksmith") && (
+              <p className="text-xs text-muted-foreground">{INCLUDED_MINUTES_NOTE}</p>
+            )}
+            {step.key !== "machine" && step.key !== "github" && step.key !== "blacksmith" && (
               <p className="text-xs text-muted-foreground">Sized per job under Workflows</p>
             )}
             {isFreeMinutesProvider(step.key) && !limit && free?.reason === "not_connected" && (
@@ -678,6 +684,10 @@ function LimitChoice({
         value={text}
         disabled={disabled}
         aria-label={inputLabel}
+        // Clicking or tabbing into the number picks this choice, so it needn't be clicked too.
+        onFocus={() => {
+          if (!on) pick();
+        }}
         onChange={(event) => {
           setText(event.target.value);
           if (on) pick(event.target.value);
@@ -1149,5 +1159,5 @@ function planName(provider: FreeMinutesProvider, free: FreeMinutes | null) {
 function nextCycle(cycleStart: string) {
   const start = new Date(cycleStart);
   const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-  return next.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return utcShortDate(next);
 }

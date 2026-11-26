@@ -1,6 +1,7 @@
 ---
-title: Send job logs to your tools or your own bucket
+title: Send job logs to OpenTelemetry or an S3 bucket
 date: 2026-11-19
+type: Integration
 description: Send finished jobs' logs to your OpenTelemetry tool next to their traces, or archive them in an S3-compatible bucket.
 ---
 

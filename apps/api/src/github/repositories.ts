@@ -144,7 +144,7 @@ export async function findRepo(
       and(
         typeof installation === "number"
           ? eq(repo.installationId, installation)
-          : sql`${repo.installationId} = (select ${schema.workspace.installationId} from ${schema.workspace} where ${schema.workspace.id} = ${installation.workspaceId})`,
+          : ofWorkspace(installation.workspaceId),
         sql`lower(${repo.fullName}) = ${fullName.toLowerCase()}`,
         isNull(repo.removedAt),
       ),
@@ -152,3 +152,18 @@ export async function findRepo(
     .limit(1);
   return found;
 }
+
+/** The public repos a workspace's installation still sees, by owner/name. */
+export async function publicRepos(db: Db, workspaceId: string) {
+  const repo = schema.githubRepository;
+  const rows = await db
+    .select({ fullName: repo.fullName })
+    .from(repo)
+    .where(and(ofWorkspace(workspaceId), eq(repo.private, false), isNull(repo.removedAt)))
+    .orderBy(asc(repo.fullName));
+  return rows.map((row) => row.fullName);
+}
+
+// The repo row is on the workspace's installation.
+const ofWorkspace = (workspaceId: string) =>
+  sql`${schema.githubRepository.installationId} = (select ${schema.workspace.installationId} from ${schema.workspace} where ${schema.workspace.id} = ${workspaceId})`;

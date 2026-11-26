@@ -1,10 +1,10 @@
 import { api } from "./api";
-import { exact } from "./utils";
+import { shortDate, utcShortDate } from "./time-zone";
+import { count, exact } from "./utils";
 
 // Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
 // (#116, GET /api/usage/actions). Per account, never pooled: each has its own included quota. The
 // shape mirrors AccountUsage in apps/api/src/providers/actions-billing.ts.
-
 export type AccountUsageReason =
   | "enterprise"
   | "enterprise_permission"
@@ -36,6 +36,20 @@ export interface AccountUsage {
   spendApp: boolean | null;
   // The enterprise whose shared minutes these are, when the org is in one RelayRunner reads.
   enterprise: string | null;
+  // Where the cycle is headed at the recent pace (apps/api/src/providers/minutes-projection.ts).
+  // Null without a quota or on the cycle's first day.
+  projection?: MinutesProjection | null;
+}
+
+export interface MinutesProjection {
+  // runs_out: before the reset. over: already past the included minutes. surplus: a quarter or
+  // more will go unused. on_track: most get used, and they last.
+  outlook: "runs_out" | "over" | "surplus" | "on_track";
+  minutesPerDay: number;
+  // Quota minutes used by the reset at this pace.
+  projectedMinutes: number;
+  runsOutAt: string | null;
+  resetsAt: string;
 }
 
 export interface ActionsUsage {
@@ -86,105 +100,24 @@ export function unavailableText(account: AccountUsage): string | null {
   }
 }
 
-/** Sample accounts for previews without a signed-in API. */
-export function sampleActionsUsage(): ActionsUsage {
-  const now = new Date();
-  const cycleStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-  const readAt = new Date(now.getTime() - 6 * 60_000).toISOString();
-  const base = {
-    accountType: "Organization",
-    grossAmount: 0,
-    budget: { amountUsd: 0, preventFurtherUsage: true },
-    cycleStart,
-    readAt,
-    spendApp: true,
-    enterprise: null,
-  };
-  return {
-    accounts: [
-      {
-        ...base,
-        installationId: 1,
-        accountLogin: "relayrunner",
-        status: "ok",
-        reason: null,
-        plan: "free",
-        quotaMinutes: 2000,
-        usedMinutes: 1640,
-        netAmount: 0,
-        burnRatePerHour: 38,
-      },
-      {
-        ...base,
-        installationId: 2,
-        accountLogin: "acme-labs",
-        status: "ok",
-        reason: null,
-        plan: "team",
-        quotaMinutes: 3000,
-        usedMinutes: 3112,
-        netAmount: 0.67,
-        burnRatePerHour: 54,
-        budget: null,
-      },
-      {
-        ...base,
-        installationId: 3,
-        accountLogin: "bigco",
-        status: "not_available",
-        reason: "enterprise",
-        plan: "enterprise",
-        quotaMinutes: null,
-        usedMinutes: 18200,
-        netAmount: 0,
-        burnRatePerHour: 210,
-        budget: null,
-      },
-      {
-        ...base,
-        accountType: "User",
-        spendApp: null,
-        installationId: 4,
-        accountLogin: "octocat",
-        status: "ok",
-        reason: null,
-        plan: "free",
-        quotaMinutes: 2000,
-        usedMinutes: 420,
-        netAmount: 0,
-        burnRatePerHour: 6,
-        budget: null,
-      },
-    ],
-  };
-}
-
-const DAY_MS = 86_400_000;
-
-/** When a billing cycle that started on `cycleStart` (a UTC day) resets: a month on. */
-function cycleEnd(cycleStart: string) {
-  const start = new Date(`${cycleStart.slice(0, 10)}T00:00:00Z`);
-  return Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate());
-}
-
-const dayText = (ms: number) =>
-  new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-
 /**
- * Where the month is headed at its pace so far: when the included minutes run out, or roughly what
- * it will have used by the reset. Null when there's no quota or too little of the month to tell.
+ * Where the cycle is headed at the recent pace: when the included minutes run out, or how many will
+ * go unused by the reset. Null without a projection.
  */
-export function paceText(usage: AccountUsage, now = Date.now()) {
+export function paceText(usage: AccountUsage) {
+  const projection = usage.projection;
   const quota = usage.quotaMinutes;
-  if (usage.status !== "ok" || quota === null) return null;
-  const start = Date.parse(`${usage.cycleStart.slice(0, 10)}T00:00:00Z`);
-  const end = cycleEnd(usage.cycleStart);
-  const elapsed = now - start;
-  if (elapsed < DAY_MS || now >= end || usage.usedMinutes >= quota) return null;
-  const perMs = usage.usedMinutes / elapsed;
-  const projected = usage.usedMinutes + perMs * (end - now);
-  if (projected <= quota)
-    return `At this pace, about ${exact(Math.round(projected))} of ${exact(quota)} min by ${dayText(end)}.`;
-  const runsOut = now + (quota - usage.usedMinutes) / perMs;
-  return `At this pace the included minutes run out around ${dayText(runsOut)}, before the ${dayText(end)} reset.`;
+  if (!projection || quota === null) return null;
+  const { projectedMinutes: projected, runsOutAt } = projection;
+  const reset = utcShortDate(projection.resetsAt);
+  switch (projection.outlook) {
+    case "runs_out":
+      return `At this pace, included minutes run out around ${shortDate(Date.parse(runsOutAt!))}. GitHub bills jobs after that, until the ${reset} reset.`;
+    case "over":
+      return `At this pace, about ${exact(Math.round(projected - quota))} more billed min by the ${reset} reset.`;
+    case "surplus":
+      return `At this pace, about ${count(quota - projected)} of ${count(quota)} min go unused by the ${reset} reset.`;
+    case "on_track":
+      return `At this pace, about ${count(projected)} of ${count(quota)} min used by the ${reset} reset.`;
+  }
 }

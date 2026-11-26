@@ -6,7 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   // The RelayRunner Cloudflare account (separate from Atticus's personal account).
   "account_id": "b233b6d6fd9eae9e093651bfb043c119",
-  "workers_dev": true,
+  // Off: everything reaches this Worker by its custom domains or the dashboard's service binding,
+  // and a workers.dev hostname skips the zones' firewall rules.
+  "workers_dev": false,
   // No preview URLs: nothing reaches this Worker by one (dashboard previews bind to production),
   // and each would be another public, unprotected hostname.
   "preview_urls": false,
@@ -23,11 +25,21 @@
   // the TypeScript source.
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": true },
-    "traces": { "enabled": true },
+    // Each signal also goes to Grafana Cloud over OTLP (docs/observability.md). `persist` keeps
+    // Cloudflare's own copy, so the Workers dashboard and Issues work as before. The destinations
+    // are account settings: create them before deploying this, or the deploy fails.
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+      "destinations": ["grafana-logs"],
+    },
+    "traces": { "enabled": true, "persist": true, "destinations": ["grafana-traces"] },
     "issues": { "enabled": true },
   },
   "upload_source_maps": true,
+  // The deployed version's id, which every log line carries as `version` (src/log.ts).
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     // The dashboard origin (apps/web forwards /api/* here over a service binding): GitHub's OAuth
     // callback and the link `relayrunner connect` opens. Switch to https://app.relayrunner.dev once
@@ -91,6 +103,8 @@
     { "name": "AGENT_LIMITER", "namespace_id": "4102", "simple": { "limit": 300, "period": 60 } },
     // AI model calls per workspace (src/ai/classify.ts), on top of the daily token budgets.
     { "name": "AI_LIMITER", "namespace_id": "4103", "simple": { "limit": 60, "period": 60 } },
+    // Sign-in, device code and agent OAuth endpoints, per IP and path (src/routes/auth.ts).
+    { "name": "AUTH_LIMITER", "namespace_id": "4104", "simple": { "limit": 30, "period": 60 } },
   ],
   // Workers AI, for the decision models in src/ai. Calls are off until an operator turns them on
   // in Admin › AI, and go through the AI_GATEWAY_ID gateway. The binding needs no API token.

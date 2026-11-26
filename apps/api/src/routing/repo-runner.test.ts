@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { generateJitConfig, RunnerScope } from "../github/github-app.ts";
+import type { generateJitConfig, RunnerScope } from "../github/runners-api.ts";
 import { mintRepoFirst, refusedStatus } from "./repo-runner.ts";
 
 const jit = { runnerId: 9, labels: ["relayrunner"], encodedJitConfig: "e30=" };

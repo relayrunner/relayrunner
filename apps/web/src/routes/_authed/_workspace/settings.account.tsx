@@ -48,7 +48,7 @@ function AccountSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="Profile">
+      <PageHeader className="max-w-3xl" title="Profile">
         You sign in with GitHub, so your name, email and avatar come from your GitHub account.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">

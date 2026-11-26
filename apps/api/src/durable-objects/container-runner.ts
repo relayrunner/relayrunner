@@ -12,8 +12,8 @@ import {
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import type { PickWork } from "./pick-runner.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import {
-  appInstallationToken,
   DEFAULT_RUNNER_GROUP_ID,
   deleteRunner,
   generateJitConfig,
@@ -21,9 +21,10 @@ import {
   runnerBusy,
   runnerScope,
   type RunnerScope,
-} from "../github/github-app.ts";
+} from "../github/runners-api.ts";
 import { createDb } from "../db/index.ts";
 import { installationRunnerScope } from "../github/installations.ts";
+import { log } from "../log.ts";
 
 // The same work a pick gets: the job id, its installation, and owner/repo (the org the runner
 // registers in, or the repo itself for a personal account).
@@ -74,7 +75,7 @@ export class ContainerRunner extends DurableObject<Env> {
     const container = this.ctx.container;
     const startedAt = Date.now();
     await this.ctx.storage.delete("work");
-    if (!container) return log("error", work, { error: "no container is configured" });
+    if (!container) return logStep("error", work, { error: "no container is configured" });
     try {
       const token = await this.token(work.installationId);
       const scope = await installationRunnerScope(
@@ -107,9 +108,9 @@ export class ContainerRunner extends DurableObject<Env> {
         // covers the rest.
         this.ctx.waitUntil(
           container.monitor().then(
-            () => log("exited", work, { lifetimeMs: Date.now() - startedAt }),
+            () => logStep("exited", work, { lifetimeMs: Date.now() - startedAt }),
             (error) =>
-              log("error", work, {
+              logStep("error", work, {
                 error: `container stopped: ${errorMessage(error)}`,
                 lifetimeMs: Date.now() - startedAt,
               }),
@@ -122,9 +123,9 @@ export class ContainerRunner extends DurableObject<Env> {
       const state: Launched = { ...work, runnerId: jit.runnerId, startedAt, scope };
       await this.ctx.storage.put("launched", state);
       await this.ctx.storage.setAlarm(Date.now() + WATCH_INTERVAL_MS);
-      log("started", work, { runnerId: jit.runnerId, launchMs: Date.now() - startedAt });
+      logStep("started", work, { runnerId: jit.runnerId, launchMs: Date.now() - startedAt });
     } catch (error) {
-      log("error", work, { error: errorMessage(error) });
+      logStep("error", work, { error: errorMessage(error) });
     }
   }
 
@@ -152,7 +153,7 @@ export class ContainerRunner extends DurableObject<Env> {
       }
     } catch (error) {
       // GitHub unreachable: keep the container until the lifetime limit.
-      log("status unavailable", launched, { error: errorMessage(error) });
+      logStep("status unavailable", launched, { error: errorMessage(error) });
     }
     const step = watchStep({
       running,
@@ -169,20 +170,21 @@ export class ContainerRunner extends DurableObject<Env> {
       await deleteRunner(token, scope, launched.runnerId).catch(() => undefined);
     // `started` stays, so a late redelivery of the `queued` webhook doesn't launch again.
     await this.ctx.storage.delete("launched");
-    log("finished", launched, { result: step, runner, lifetimeMs });
+    logStep("finished", launched, { result: step, runner, lifetimeMs });
   }
 }
 
-function log(event: string, work: ContainerWork, fields: Record<string, unknown>) {
-  const write =
-    event === "error" ? console.error : event === "status unavailable" ? console.warn : console.log;
-  write(
-    JSON.stringify({
-      msg: `relayrunner container ${event}`,
-      jobId: work.jobId,
-      repo: work.repo,
-      installationId: work.installationId,
-      ...fields,
-    }),
-  );
+function logStep(
+  step: "error" | "exited" | "started" | "status unavailable" | "finished",
+  work: ContainerWork,
+  fields: Record<string, unknown>,
+) {
+  const write = step === "error" ? log.error : step === "status unavailable" ? log.warn : log.info;
+  write("container.step", `container ${step}`, {
+    step: step.replace(" ", "_"),
+    jobId: work.jobId,
+    repo: work.repo,
+    installationId: work.installationId,
+    ...fields,
+  });
 }

@@ -7,7 +7,7 @@ import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { AttentionFix, AttentionItem } from "@/lib/attention";
-import { resumeMachine } from "@/lib/machines";
+import { resumeMachine, revokeMachine } from "@/lib/machines";
 
 /**
  * The Runners page's "Needs attention" list: one row per thing that won't sort itself out, each
@@ -58,7 +58,14 @@ function Fix({
   const link = "text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground";
   switch (fix.kind) {
     case "unpause":
-      return <UnpauseButton machineId={fix.machine.id} onChanged={onChanged} />;
+      return (
+        <ActionButton
+          label="Unpause"
+          pendingLabel="Unpausing…"
+          run={() => resumeMachine(fix.machine.id)}
+          onChanged={onChanged}
+        />
+      );
     case "connect":
       // Started again on the machine itself.
       return (
@@ -91,6 +98,27 @@ function Fix({
           Self-hosted runners
         </a>
       );
+    case "missing":
+      // Removed on purpose: forget it here too (it can be added again later). Otherwise add it
+      // back. Only owners and admins can do either; members get its panel.
+      return fix.machine.canRevoke !== false && onAddRunner ? (
+        <div className="flex gap-1">
+          <ActionButton
+            label="Remove"
+            pendingLabel="Removing…"
+            variant="ghost"
+            run={() => revokeMachine(fix.machine.id)}
+            onChanged={onChanged}
+          />
+          <Button size="xs" variant="outline" onClick={onAddRunner}>
+            Add again
+          </Button>
+        </div>
+      ) : (
+        <RunnerPanelLink runner={`machine:${fix.machine.id}`} className={link}>
+          Open {fix.machine.name}
+        </RunnerPanelLink>
+      );
     case "runner":
       return (
         <RunnerPanelLink runner={`machine:${fix.machine.id}`} className={link}>
@@ -100,17 +128,30 @@ function Fix({
   }
 }
 
-function UnpauseButton({ machineId, onChanged }: { machineId: string; onChanged: () => unknown }) {
+/** A button that changes a machine, then refreshes the list so the row goes away. */
+function ActionButton({
+  label,
+  pendingLabel,
+  variant = "outline",
+  run,
+  onChanged,
+}: {
+  label: string;
+  pendingLabel: string;
+  variant?: "outline" | "ghost";
+  run: () => Promise<unknown>;
+  onChanged: () => unknown;
+}) {
   const [pending, setPending] = useState(false);
   return (
     <Button
       size="xs"
-      variant="outline"
+      variant={variant}
       disabled={pending}
       onClick={async () => {
         setPending(true);
         try {
-          await resumeMachine(machineId);
+          await run();
           await onChanged();
         } catch {
           // The row stays, so they can try again or use the card's menu.
@@ -119,7 +160,7 @@ function UnpauseButton({ machineId, onChanged }: { machineId: string; onChanged:
         }
       }}
     >
-      {pending ? "Unpausing…" : "Unpause"}
+      {pending ? pendingLabel : label}
     </Button>
   );
 }

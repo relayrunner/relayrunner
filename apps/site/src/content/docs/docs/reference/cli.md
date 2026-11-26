@@ -73,18 +73,18 @@ Shows the machine, the workspaces it's in, who enrolled it, its sharing setting 
 ## `init`
 
 ```sh
-relayrunner init [--plan] [--apply <jobs>] [--auto] [--allow-deploy <jobs>] [--json]
+relayrunner init [--plan] [--apply <jobs>] [--exact] [--allow-deploy <jobs>] [--json]
 ```
 
 Routes a repo's jobs through RelayRunner. Run it inside a checkout. See [Move your workflows over](/docs/get-started/move-over).
 
-| Flag                    | What it does                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--plan`                | List the jobs and what would happen. Changes nothing.                                                                                      |
-| `--apply <jobs>`        | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`.                                                     |
-| `--auto`                | Write `auto` instead of the label for Linux x64 jobs, so you set their [size](/docs/reference/relay-inputs#auto-sizes) on the Router page. |
-| `--allow-deploy <jobs>` | Route these jobs even though they look like deploy jobs. The machine gets their secrets and cloud access.                                  |
-| `--json`                | Print the result as JSON.                                                                                                                  |
+| Flag                    | What it does                                                                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--plan`                | List the jobs and what would happen. Changes nothing.                                                                                                                              |
+| `--apply <jobs>`        | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`.                                                                                             |
+| `--exact`               | Keep each job's label under its provider's input instead of writing its [shape](/docs/reference/relay-inputs#what-the-job-needs), so only that provider and your machines take it. |
+| `--allow-deploy <jobs>` | Route these jobs even though they look like deploy jobs. The machine gets their secrets and cloud access.                                                                          |
+| `--json`                | Print the result as JSON.                                                                                                                                                          |
 
 ## `pause` and `resume`
 
@@ -136,7 +136,17 @@ Connects your Blacksmith organization so Settings › Providers shows its real u
 
 The command runs `blacksmith org-token create`, which opens your browser for you to approve as an admin of the Blacksmith organization. It sends only the token it prints to RelayRunner, encrypted at rest, and never signs in to Blacksmith or reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin` (`--yes` skips the question), checked against the SHA-256 Blacksmith publishes.
 
-In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, or the one you name when you have more than one. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
+In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, else the one with its name, or the one you name or pick when that isn't clear. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
+
+## `feedback`
+
+```sh
+relayrunner feedback "The Jobs window doesn't show yesterday's jobs"
+relayrunner feedback --category bug --file report.txt
+relayrunner feedback --anonymous "The menu icon stays faded"
+```
+
+Sends a message to the RelayRunner team with your name and email, so we can reply. `--anonymous` sends it without them. `--category` is `bug`, `confusing`, `feature_request` or `other` (the default). Anything that looks like a token or password is replaced before it's stored. The Mac app sends crash reports this way, after you've seen what's in them, and anonymously unless you choose to include your name and email.
 
 ## `firewall`
 

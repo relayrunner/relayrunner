@@ -18,6 +18,7 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
   @AppStorage(AppSettings.Key.concurrency) private var concurrency = 0
+  @AppStorage(AppSettings.Key.crashReportsOff) private var crashReportsOff = false
   @State private var openAtLogin = AppSettings.opensAtLogin
   @State private var checksForUpdates = Updates.shared.updater?.automaticallyChecksForUpdates ?? false
 
@@ -33,6 +34,7 @@ private struct GeneralSettings: View {
           .onChange(of: checksForUpdates) { _, on in updater.automaticallyChecksForUpdates = on }
       }
       NotifyToggle()
+      Toggle("Offer to send a report after a crash", isOn: Binding(get: { !crashReportsOff }, set: { crashReportsOff = !$0 }))
       Picker("Jobs at once", selection: $concurrency) {
         Text("Automatic").tag(0)
         ForEach(1...8, id: \.self) { Text("\($0)").tag($0) }

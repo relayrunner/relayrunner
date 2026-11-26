@@ -1,5 +1,6 @@
 import { AppError } from "@relayrunner/errors";
 import type { Context } from "hono";
+import { log } from "./log.ts";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
@@ -10,16 +11,12 @@ export function respondError(c: Context, error: unknown) {
   const appError =
     error instanceof AppError ? error : new AppError("INTERNAL_ERROR", { cause: error });
   if (appError.status >= 500) {
-    const cause = appError.cause ?? appError;
-    console.error(
-      JSON.stringify({
-        msg: "request failed",
-        code: appError.code,
-        path: c.req.path,
-        error: cause instanceof Error ? cause.message : String(cause),
-        stack: cause instanceof Error ? cause.stack : undefined,
-      }),
-    );
+    log.error("http.request_failed", "request failed", {
+      code: appError.code,
+      method: c.req.method,
+      path: c.req.path,
+      error: appError.cause ?? appError,
+    });
   }
   if (appError.retryAfter !== undefined) c.header("retry-after", String(appError.retryAfter));
   return c.json(appError.toJSON(), appError.status as ContentfulStatusCode);

@@ -2,13 +2,17 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { GitHubAccessError, GitHubRateLimitError, pullRequestFiles } from "../github/github-app.ts";
+import { GitHubAccessError, GitHubRateLimitError } from "../github/github-api.ts";
+import { pullRequestFiles } from "../github/repos-api.ts";
 import { areaOf, isDocs, summarize, syncPullRequestPaths } from "./pull-request-paths.ts";
 import * as testing from "../testing.ts";
 
 vi.mock("../github/github-app.ts", async (original) => ({
   ...(await original<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/repos-api.ts", async (original) => ({
+  ...(await original<typeof import("../github/repos-api.ts")>()),
   pullRequestFiles: vi.fn(),
 }));
 

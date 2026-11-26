@@ -6,7 +6,7 @@
 // with the reason (StrandedJob), so the run finishes and automatic retries can pick again.
 
 import type { Db } from "../db/index.ts";
-import { workflowJobStatus } from "../github/github-app.ts";
+import { workflowJobStatus } from "../github/actions-api.ts";
 import { startedJobStatus } from "../ingest/jobs.ts";
 
 // How long a machine may be gone before a job sent to it and not yet started goes elsewhere. A

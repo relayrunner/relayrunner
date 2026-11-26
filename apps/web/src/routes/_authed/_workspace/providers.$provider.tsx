@@ -1,13 +1,16 @@
 import { dayMs, providerPlans, type RatePrices } from "@relayrunner/providers";
+import { isFreeMinutesProvider } from "@relayrunner/runner-order";
 import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon, FlaskConicalIcon } from "lucide-react";
 import { useState } from "react";
 import { IncludedMinutes } from "@/components/actions-minutes";
+import { ProviderFreeMinutes } from "@/components/free-minutes-meter";
 import { CodeBlock } from "@/components/code-block";
 import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
 import { ProviderTrendsCard } from "@/components/provider-trends";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   type Percentile,
   PERCENTILE_OPTIONS,
@@ -18,11 +21,10 @@ import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/provid
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerLink } from "@/components/runner-link";
 import { StatTile } from "@/components/stat-tile";
+import { RecentEvaluations, useRecentEvaluations } from "@/components/recent-evaluations";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkflowLink } from "@/components/workflow-link";
-import { authDisabled } from "@/lib/auth-client";
-import { useFlag } from "@/lib/flags";
 import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
@@ -39,7 +41,6 @@ import {
   rateName,
   rateText,
   reportCatalog,
-  sampleProviderReport,
 } from "@/lib/providers";
 import { evaluationSizes } from "@/lib/evaluations";
 import { cn } from "@/lib/utils";
@@ -48,17 +49,10 @@ import {
   type RangeSearch,
   unlessDefault,
   rangeSearch,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
-import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
+import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { usePageTitle } from "@/lib/page-title";
-
-function load(provider: string, range: TimeRange) {
-  return authDisabled
-    ? Promise.resolve(sampleProviderReport(provider, rangeDays(range)))
-    : getProviderReport(provider, range);
-}
 
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 const { rangeOf, toSearch } = rangeParams;
@@ -83,15 +77,20 @@ const validateSearch = (search: Record<string, unknown>): ProviderSearch => ({
 // The widest range the page offers, to tell a provider nobody has used from a quiet month.
 const WIDEST: TimeRange = "30d";
 
+const providerQuery = (provider: string, range: TimeRange) =>
+  pageQuery(["provider", provider, range], () => getProviderReport(provider, range));
+
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider")({
   validateSearch,
   loader: async ({ params, location }) => {
     if (!isKnownProvider(params.provider)) throw notFound();
     const search = validateSearch(location.search);
-    const report = await load(params.provider, rangeOf(search));
+    const report = await loadPage(providerQuery(params.provider, rangeOf(search)));
     // Nothing ran here this month: look back further before leading with how to start.
     const unused =
-      report.jobs === 0 && !search.range && (await load(params.provider, WIDEST)).jobs === 0;
+      report.jobs === 0 &&
+      !search.range &&
+      (await loadPage(providerQuery(params.provider, WIDEST))).jobs === 0;
     return { report, unused };
   },
   // A new range loads in the page, keeping the last one up meanwhile.
@@ -110,7 +109,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const search = Route.useSearch();
   const range = rangeOf(search);
   const setSearch = useSetSearch<ProviderSearch>();
-  const report = useRangeReport(first, range, (next) => load(provider, next));
+  const { report } = usePageReport(providerQuery(provider, range), first);
   const info = providerInfo(provider);
   usePageTitle(info.name);
   const catalog = reportCatalog(report);
@@ -119,8 +118,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const { icon, tile } = providerStyle(provider);
   const connectUrl = providerPlans(provider)?.connectUrl;
   // Hosted providers with a label per size can run a workflow as an evaluation.
-  const flagged = useFlag("provider-evaluations");
-  const evaluable = flagged && provider !== "github" && evaluationSizes(provider).length > 0;
+  const evaluable = provider !== "github" && evaluationSizes(provider).length > 0;
 
   function chooseRange(next: TimeRange) {
     setSearch(toSearch(next));
@@ -165,6 +163,8 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
         </div>
       </header>
 
+      {evaluable && <ProviderEvaluations provider={provider} />}
+
       {notSetUp ? (
         <SetUp provider={provider} />
       ) : (
@@ -184,7 +184,6 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
               <ProviderTrendsCard
                 provider={provider}
                 range={range}
-                sampleRunners={report.runners}
                 metric={search.chart ?? "wait"}
                 percentile={search.p ?? 50}
                 onMetric={(chart) => setSearch({ chart: unlessDefault(chart, "wait") })}
@@ -203,6 +202,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
       )}
 
       {provider === "github" && <IncludedMinutes />}
+      {isFreeMinutesProvider(provider) && <ProviderFreeMinutes provider={provider} />}
 
       <ProviderPlans provider={provider} />
 
@@ -451,6 +451,11 @@ function Runners({ report }: { report: ProviderReport }) {
 }
 
 /** The workflows that sent the most jobs here. */
+function ProviderEvaluations({ provider }: { provider: string }) {
+  const recent = useRecentEvaluations(provider);
+  return recent ? <RecentEvaluations provider={provider} evaluations={recent} /> : null;
+}
+
 function Workflows({ report }: { report: ProviderReport }) {
   if (report.workflows.length === 0) return null;
   return (

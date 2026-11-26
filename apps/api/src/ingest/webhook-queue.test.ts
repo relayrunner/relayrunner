@@ -119,25 +119,18 @@ describe("webhook queue consumer", () => {
     expect(msg.ack).toHaveBeenCalledOnce();
     expect(msg.retry).not.toHaveBeenCalled();
     expect(JSON.parse(error.mock.calls[0][0])).toMatchObject({
-      msg: "github webhook dead-lettered",
+      event: "webhook.dead_lettered",
       deliveryId: "d-2",
     });
     error.mockRestore();
   });
 
-  test("logs workflow jobs that ask for relayrunner", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await consumer.processWebhook(env, workflowJob(["RelayRunner"]));
-    expect(log).toHaveBeenCalledOnce();
-    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
-      msg: "relayrunner job received",
-      action: "queued",
-      installationId: 7,
-      repository: "relayrunner/relayrunner",
-      jobId: 42,
+  test("says a workflow job that asks for relayrunner was handled as a pick", async () => {
+    expect(await consumer.processWebhook(env, workflowJob(["RelayRunner"]))).toMatchObject({
+      handler: "pick",
       labels: ["RelayRunner"],
+      runAttempt: 1,
     });
-    log.mockRestore();
   });
 
   test("hands other runners' jobs to storage without waking a pick runner", async () => {
@@ -179,14 +172,13 @@ describe("webhook queue consumer", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     start.mockClear();
     vi.mocked(recordWorkflowJob).mockClear();
-    await consumer.processWebhook(env, { ...workflowJob(["relayrunner"]), app: "checks" });
+    const outcome = await consumer.processWebhook(env, {
+      ...workflowJob(["relayrunner"]),
+      app: "checks",
+    });
     expect(recordWorkflowJob).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
-    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
-      msg: "checks app webhook received",
-      event: "workflow_job",
-      repository: "relayrunner/relayrunner",
-    });
+    expect(outcome).toEqual({ handler: "checks_app", lint: false });
     log.mockRestore();
   });
 
@@ -330,23 +322,31 @@ describe("webhook queue consumer", () => {
       expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "gh1");
       // Once it starts, the route ends: the runner's own busy status takes over.
       releaseRunnerJob.mockResolvedValueOnce("gh1");
-      await consumer.processWebhook(env, workflowJob(["rr-runner-0a1b2c3d"], "in_progress"));
+      const released = await consumer.processWebhook(
+        env,
+        workflowJob(["rr-runner-0a1b2c3d"], "in_progress"),
+      );
       expect(releaseRunnerJob).toHaveBeenCalledWith("gh1", {
         jobId: 42,
         repositoryId: 1,
         runId: 9,
       });
-      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "tracked" });
+      expect(released).toMatchObject({
+        handler: "runner_job",
+        result: "tracked",
+        machineId: "gh1",
+      });
       log.mockRestore();
     });
 
     test("an unknown runner label is left alone", async () => {
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       claimRunner.mockClear();
-      await consumer.processWebhook(routeEnv(), workflowJob(["rr-runner-ffffffff"]));
+      const outcome = await consumer.processWebhook(
+        routeEnv(),
+        workflowJob(["rr-runner-ffffffff"]),
+      );
       expect(claimRunner).not.toHaveBeenCalled();
-      expect(JSON.parse(warn.mock.calls[0][0])).toMatchObject({ result: "no_machine" });
-      warn.mockRestore();
+      expect(outcome).toMatchObject({ result: "no_machine" });
     });
 
     test("a queued rr-<id> job claims its route and goes to the route's machine", async () => {
@@ -354,13 +354,45 @@ describe("webhook queue consumer", () => {
       const route = { id: "0123456789ab", machineId: "m1" };
       claim.mockResolvedValueOnce(route);
       const env = routeEnv();
-      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      const outcome = await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
       expect(env.ROUTER.getByName).toHaveBeenCalledWith("w1");
       expect(claim).toHaveBeenCalledWith("0123456789ab", { jobId: 42, repositoryId: 1, runId: 9 });
       expect(env.MACHINE_LINK.getByName).toHaveBeenCalledWith("m1");
       expect(run).toHaveBeenCalledWith({ route, workspaceId: "w1" });
       expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "m1");
-      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "sent" });
+      expect(outcome).toMatchObject({ handler: "route_job", result: "sent", machineId: "m1" });
+      expect(JSON.parse(info.mock.calls.at(-1)![0])).toMatchObject({
+        event: "machine.dispatch",
+        source: "webhook",
+        result: "sent",
+        routeId: "0123456789ab",
+        machineId: "m1",
+      });
+      log.mockRestore();
+    });
+
+    test("a retried queued job that has since ended gets no runner", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      const now = Date.now();
+      await db
+        .prepare(
+          "insert into workflow_job (id, installation_id, repository_id, repository_full_name, run_id, run_attempt, name, kind, status, labels, head_sha, github_created_at, created_at, updated_at) values (43, 7, 1, 'relayrunner/relayrunner', 9, 1, 'build', 'other', 'completed', '[\"rr-0123456789ab\"]', 'abc', ?1, ?1, ?1)",
+        )
+        .bind(now)
+        .run();
+      claim.mockReset();
+      run.mockClear();
+      const ended = workflowJob(["rr-0123456789ab"]) as Extract<
+        WebhookMessage,
+        { event: "workflow_job" }
+      >;
+      ended.job.id = 43;
+      expect(await consumer.processWebhook(routeEnv(), ended, { retry: true })).toMatchObject({
+        result: "job_ended",
+      });
+      expect(claim).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
       log.mockRestore();
     });
 
@@ -381,8 +413,9 @@ describe("webhook queue consumer", () => {
       claim.mockReset().mockResolvedValue(null);
       run.mockClear();
       const env = routeEnv();
-      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
-      expect(JSON.parse(warn.mock.calls[0][0])).toMatchObject({ result: "no_route" });
+      expect(await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]))).toMatchObject({
+        result: "no_route",
+      });
       claim.mockClear();
       await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"], "in_progress"));
       expect(claim).not.toHaveBeenCalled();
@@ -402,10 +435,10 @@ describe("webhook queue consumer", () => {
       run.mockClear();
       reroute.mockClear();
       const env = routeEnv();
-      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
+      const outcome = await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
       expect(run).not.toHaveBeenCalled();
       expect(reroute).not.toHaveBeenCalled();
-      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "waiting" });
+      expect(outcome).toMatchObject({ result: "waiting" });
       // Cancelled before a machine took it.
       await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"], "completed"));
       expect(dropWaiting).toHaveBeenCalledWith("0123456789ab", {
@@ -439,9 +472,12 @@ describe("webhook queue consumer", () => {
       // Every machine that fits is full: the re-run waits in the Router's line.
       reroute.mockResolvedValueOnce("waiting");
       run.mockClear();
-      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 3));
+      const outcome = await consumer.processWebhook(
+        routeEnv(),
+        workflowJob(["rr-0123456789ab"], "queued", 3),
+      );
       expect(run).not.toHaveBeenCalled();
-      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "waiting" });
+      expect(outcome).toMatchObject({ result: "waiting" });
       log.mockRestore();
     });
 
@@ -451,7 +487,10 @@ describe("webhook queue consumer", () => {
       reroute.mockReset().mockResolvedValue(null);
       endJob.mockClear();
       run.mockClear();
-      await consumer.processWebhook(routeEnv(), workflowJob(["rr-abcdefabcdef"], "queued", 2));
+      const outcome = await consumer.processWebhook(
+        routeEnv(),
+        workflowJob(["rr-abcdefabcdef"], "queued", 2),
+      );
       expect(strandedName).toHaveBeenCalledWith("abcdefabcdef:42");
       expect(endJob).toHaveBeenCalledWith({
         routeId: "abcdefabcdef",
@@ -461,10 +500,7 @@ describe("webhook queue consumer", () => {
         reason: "not_routable",
       });
       expect(run).not.toHaveBeenCalled();
-      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({
-        result: "ended",
-        reason: "not_routable",
-      });
+      expect(outcome).toMatchObject({ result: "ended", reason: "not_routable" });
       warn.mockRestore();
     });
 
@@ -475,13 +511,18 @@ describe("webhook queue consumer", () => {
       reroute.mockReset().mockResolvedValue(null);
       endJob.mockClear();
       // A label no pick of run 9 answered.
-      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 2));
-      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({ result: "no_route" });
+      expect(
+        await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 2)),
+      ).toMatchObject({ result: "no_route" });
       // Run 9's label copied into run 10.
       const copied = workflowJob(["rr-abcdefabcdef"], "queued", 2);
       if (copied.event !== "workflow_job") throw new Error("expected a job");
-      await consumer.processWebhook(routeEnv(), { ...copied, job: { ...copied.job, runId: 10 } });
-      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({ result: "no_route" });
+      expect(
+        await consumer.processWebhook(routeEnv(), {
+          ...copied,
+          job: { ...copied.job, runId: 10 },
+        }),
+      ).toMatchObject({ result: "no_route" });
       // Our own label, but the job already left the queue.
       await consumer.processWebhook(routeEnv(), workflowJob(["rr-abcdefabcdef"], "in_progress", 2));
       expect(endJob).not.toHaveBeenCalled();

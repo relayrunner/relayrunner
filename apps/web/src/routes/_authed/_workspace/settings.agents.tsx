@@ -27,7 +27,7 @@ function AgentSettingsPage() {
   const { mcpUrl, agents } = Route.useLoaderData();
   return (
     <section>
-      <PageHeader title="Agents">
+      <PageHeader className="max-w-3xl" title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
         Agents read the workspaces you pick when you connect them. They change settings only where
         you allow it.{" "}

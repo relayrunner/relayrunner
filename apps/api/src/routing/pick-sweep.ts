@@ -1,16 +1,12 @@
 import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  deleteRunner,
-  listRunners,
-  type RunnerScope,
-} from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner, listRunners, type RunnerScope } from "../github/runners-api.ts";
 import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
-import { errorMessage } from "../errors.ts";
 import { sweepOrphanedJobs } from "./orphaned-jobs.ts";
+import { log } from "../log.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
@@ -69,9 +65,7 @@ async function rescueStuckRelays(env: Env, now: number) {
           repo: job.repo,
         });
         if (rescued)
-          console.log(
-            JSON.stringify({ msg: "relayrunner pick rescued", jobId: job.id, repo: job.repo }),
-          );
+          log.info("sweep.pick_rescued", "pick rescued", { jobId: job.id, repo: job.repo });
       }),
     );
 }
@@ -159,26 +153,16 @@ export async function removeLeftoverRunnersIn(
         if (jobId === null) continue;
         if (await env.PICK_RUNNER.getByName(String(jobId)).active()) continue;
         await deleteRunner(token, scope, runner.id);
-        console.log(
-          JSON.stringify({
-            msg: "relayrunner pick runner removed",
-            ...where,
-            runner: runner.name,
-            status: runner.status,
-            busy: runner.busy,
-          }),
-        );
+        log.info("sweep.pick_runner_removed", "pick runner removed", {
+          ...where,
+          runner: runner.name,
+          status: runner.status,
+          busy: runner.busy,
+        });
       }
     } catch (error) {
       // One org or repo failing (the App lost access, say) shouldn't stop the others.
-      console.warn(
-        JSON.stringify({
-          msg: "relayrunner pick sweep failed",
-          installationId,
-          ...where,
-          error: errorMessage(error),
-        }),
-      );
+      log.warn("sweep.pick_sweep_failed", "pick sweep failed", { installationId, ...where, error });
     }
   }
 }

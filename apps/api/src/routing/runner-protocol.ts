@@ -1,4 +1,6 @@
 // A minimal client for GitHub's self-hosted runner protocol, which has no public spec. It uses only
+import { log } from "../log.ts";
+import { GitHubError } from "../github/github-api.ts";
 // fetch and WebCrypto so it runs in a Durable Object. Ported from the PR #21 spike (apps/gateway),
 // which tested it against github.com in November 2026; see that README for what it found.
 
@@ -233,22 +235,21 @@ export class RunnerClient {
   async poll(signal?: AbortSignal) {
     const query = this.query();
     query.set("disableUpdate", "true");
-    const message = await this.request<{ messageType: string; body: string; iv?: string } | null>(
-      "GET",
-      join(this.jit.runner.ServerUrlV2, `message?${query}`),
-      { signal },
-    );
+    const message = await this.request<{
+      messageType: string;
+      body: string;
+      iv?: string;
+    } | null>("GET", join(this.jit.runner.ServerUrlV2, `message?${query}`), {
+      signal,
+    });
     if (!message) return null;
     if (message.messageType !== "RunnerJobRequest") {
       // Anything else (e.g. a broker migration) is dropped. Log its type, never its body, so a new
       // message from GitHub doesn't leave the runner idle with no trace.
-      console.warn(
-        JSON.stringify({
-          msg: "runner poll message dropped",
-          messageType: message.messageType,
-          runner: this.jit.runner.AgentName,
-        }),
-      );
+      log.warn("runner.poll_message_dropped", "runner poll message dropped", {
+        messageType: message.messageType,
+        runner: this.jit.runner.AgentName,
+      });
       return null;
     }
     if (message.iv) throw new Error("Encrypted job messages are not supported.");
@@ -298,7 +299,11 @@ export class RunnerClient {
       outputs = {},
       error,
       annotations = [],
-    }: { outputs?: Record<string, string>; error?: string; annotations?: JobAnnotation[] } = {},
+    }: {
+      outputs?: Record<string, string>;
+      error?: string;
+      annotations?: JobAnnotation[];
+    } = {},
   ) {
     const url = join(job.serviceUrl, "completejob");
     const body = {
@@ -313,7 +318,10 @@ export class RunnerClient {
     const send = (annotations: JobAnnotation[]) =>
       this.request("POST", url, {
         token: job.token,
-        body: { ...body, annotations: annotations.length ? annotations : undefined },
+        body: {
+          ...body,
+          annotations: annotations.length ? annotations : undefined,
+        },
       });
     // Each attempt sends less: everything, then only the error, then nothing.
     const reason = error ? [failureAnnotation(error)] : [];
@@ -357,7 +365,10 @@ export async function latestRunnerVersion() {
   });
   const version = response.headers.get("location")?.match(/\/tag\/v([\d.]+)$/)?.[1];
   if (!version)
-    throw new Error(`Could not find the latest runner version. Status ${response.status}.`);
+    throw new GitHubError(
+      response.status,
+      `Could not find the latest runner version. Status ${response.status}.`,
+    );
   return version;
 }
 

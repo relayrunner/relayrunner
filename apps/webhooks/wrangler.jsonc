@@ -7,9 +7,9 @@
   "compatibility_date": "2026-11-03",
   // The RelayRunner Cloudflare account (separate from Atticus's personal account).
   "account_id": "b233b6d6fd9eae9e093651bfb043c119",
-  // Its own URL (https://relayrunner-webhooks.relayrun.workers.dev/api/webhooks/github) works too,
-  // so the GitHub App can point straight here and skip the dashboard Worker.
-  "workers_dev": true,
+  // Off: all three GitHub Apps post to the custom domain below, and a workers.dev hostname skips
+  // the zone's firewall rules.
+  "workers_dev": false,
   // No preview URLs: nothing reaches this Worker by one (dashboard previews bind to production),
   // and each would be another public, unprotected hostname.
   "preview_urls": false,

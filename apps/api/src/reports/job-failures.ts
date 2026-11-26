@@ -13,13 +13,9 @@ import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { AppError } from "@relayrunner/errors";
-import {
-  appInstallationToken,
-  jobAnnotations,
-  jobLogTail,
-  rateLimits,
-  userCanReadRepo,
-} from "../github/github-app.ts";
+import { jobAnnotations, jobLogTail } from "../github/actions-api.ts";
+import { appInstallationToken, rateLimits } from "../github/github-app.ts";
+import { userCanReadRepo } from "../github/repos-api.ts";
 import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
 import { Recent } from "../recent.ts";
 import { userGitHubId } from "../github/memberships.ts";

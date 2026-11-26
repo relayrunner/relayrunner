@@ -18,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { errorText } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 import { canManage } from "@/lib/roles";
 import {
   getLogBucket,
@@ -26,9 +25,7 @@ import {
   type LogChoice,
   PRESETS,
   removeTelemetry,
-  sampleLogBucket,
   LOGS_OF,
-  sampleTelemetry,
   saveTelemetry,
   type Telemetry,
   testTelemetry,
@@ -36,7 +33,6 @@ import {
 
 export const Route = createFileRoute("/_authed/_workspace/settings/telemetry")({
   loader: async () => {
-    if (authDisabled) return { telemetry: sampleTelemetry(), bucket: sampleLogBucket() };
     const [telemetry, bucket] = await Promise.all([getTelemetry(), getLogBucket()]);
     return { telemetry, bucket };
   },
@@ -66,7 +62,7 @@ function TelemetrySettingsPage() {
 
   return (
     <section>
-      <PageHeader title="Telemetry">
+      <PageHeader className="max-w-3xl" title="Telemetry">
         Send traces and job logs to an OpenTelemetry endpoint, and keep job logs in your own bucket.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}

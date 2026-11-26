@@ -4,14 +4,15 @@ import { runnerUpdate } from "./runner-update.ts";
 
 /**
  * What fixes an attention item: unpausing the machine, running `relayrunner connect` on it, its
- * runner page on GitHub, adding a runner, or the runner's panel when the signed-in user can't fix
- * it themselves.
+ * runner page on GitHub, adding a runner, adding back or removing a runner GitHub no longer has,
+ * or the runner's panel when the signed-in user can't fix it themselves.
  */
 export type AttentionFix =
   | { kind: "unpause"; machine: Machine }
   | { kind: "connect" }
   | { kind: "github"; machine: Machine }
   | { kind: "add-runner" }
+  | { kind: "missing"; machine: Machine }
   | { kind: "runner"; machine: Machine };
 
 /** Something on the Runners page that won't sort itself out, and what fixes it. */
@@ -46,7 +47,7 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
       missing.push({
         key: `missing:${machine.id}`,
         text: `${machine.name} was removed or re-registered on GitHub`,
-        fix: { kind: "add-runner" },
+        fix: { kind: "missing", machine },
       });
       continue;
     }

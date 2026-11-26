@@ -108,7 +108,7 @@ button {
   }
 }
 .eyebrow {
-  color: var(--go-text);
+  color: var(--ink-2);
   font-size: 15px;
   font-weight: 600;
 }
@@ -347,16 +347,24 @@ button {
   padding-top: clamp(72px, 9vw, 112px);
 }
 .kicker {
-  color: var(--go-text);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.kicker-note {
-  margin-left: 8px;
-  color: var(--mute);
-  font-weight: 500;
+/* The one pre-heading left on the homepage: marks Optimized checks as not generally available. */
+.preview-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.preview-tag + h2 {
+  margin-top: 16px;
 }
 .section h2 {
   margin-top: 18px;
@@ -681,6 +689,74 @@ button {
   font-size: 12px;
 }
 
+/* Telemetry: a trace waterfall. Each bar sits between --from and --to on the run's timeline. */
+.trace {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+}
+.trace li {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 4.5rem;
+  column-gap: 14px;
+  align-items: center;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 14px;
+}
+.trace li:last-child {
+  border-bottom: 0;
+}
+.trace b {
+  overflow: hidden;
+  padding-left: calc(var(--depth) * 14px);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace li:not(:first-child) b {
+  font-weight: 500;
+}
+.trace-track {
+  position: relative;
+  height: 10px;
+}
+.trace-track i {
+  position: absolute;
+  inset: 0 calc(100% - var(--to)) 0 var(--from);
+  border-radius: 3px;
+  background: var(--ink-2);
+  opacity: 0.55;
+}
+.trace li:first-child .trace-track i {
+  opacity: 0.85;
+}
+.trace .wait .trace-track i {
+  background: var(--run);
+  opacity: 1;
+}
+.trace code {
+  color: var(--mute);
+  font-size: 13px;
+  text-align: right;
+}
+
+/* Agents: a short chat in a terminal. */
+.chat p + p {
+  margin-top: 10px;
+}
+.chat {
+  font-size: 14px;
+}
+@media (max-width: 640px) {
+  .trace li {
+    grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 3.5rem;
+    column-gap: 10px;
+    padding-inline: 12px;
+  }
+}
+
 /* ---------- Safety ---------- */
 
 .safety-grid {
@@ -835,9 +911,33 @@ button {
 .footer-brand a.brand {
   color: var(--ink);
 }
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin-top: 16px;
+  font-size: 14px;
+}
+.footer-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--go);
+}
+.footer-status[data-state="degraded"] .status-dot,
+.footer-status[data-state="maintenance"] .status-dot {
+  background: var(--run);
+}
+.footer-status[data-state="downtime"] .status-dot {
+  background: #e5484d;
+}
+.footer-status:not([data-state="operational"]) {
+  color: var(--ink);
+}
 .footer-x {
   display: inline-flex;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 .footer-x svg {
   width: 18px;
@@ -851,6 +951,61 @@ button {
   .footer-brand {
     grid-column: 1 / -1;
   }
+}
+
+/* ---------- What's new ---------- */
+
+.news {
+  display: grid;
+  grid-template-columns: 4fr 8fr;
+  gap: clamp(32px, 6vw, 88px);
+  align-items: start;
+}
+.news h2 {
+  margin-top: 0;
+}
+.news-list {
+  border-top: 1px solid var(--line);
+}
+.news-list li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) 8.5rem;
+  gap: 20px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.news-list time,
+.news-type {
+  color: var(--mute);
+  font-size: 15px;
+}
+.news-list a {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.news-list a:hover {
+  text-decoration: underline;
+}
+.news-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.news-type svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ---------- Responsive ---------- */
@@ -869,6 +1024,7 @@ button {
   }
 }
 @media (max-width: 860px) {
+  .news,
   .split-head,
   .feature,
   .feature-flip {
@@ -886,6 +1042,15 @@ button {
   }
 }
 @media (max-width: 640px) {
+  .news-list li {
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+  }
+  .news-list a {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    white-space: normal;
+  }
   .hero-actions,
   .hero-actions > * {
     width: 100%;

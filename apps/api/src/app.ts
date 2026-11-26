@@ -27,12 +27,14 @@ import { machineRoutes } from "./routes/machines/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { jobTimesRoutes } from "./routes/job-times.ts";
 import { signalRoutes } from "./routes/signals.ts";
+import { statusRoutes } from "./routes/status.ts";
 import { providerRoutes } from "./routes/providers.ts";
 import { evaluationRoutes } from "./routes/evaluations.ts";
 import { runRoutes } from "./routes/runs.ts";
 import { usageRoutes } from "./routes/usage.ts";
 import { workspaceRoutes } from "./routes/workspaces.ts";
 import { renameSpan } from "./tracing.ts";
+import { withLogContext } from "./log.ts";
 
 export interface AppEnv {
   Bindings: Env;
@@ -56,15 +58,19 @@ export interface AppEnv {
 // Everything lives under /api so the dashboard can call it same-origin.
 export const app = new Hono<AppEnv>().basePath("/api");
 
-// Name each request's trace after the route it matched (`GET /api/machines/:id`), so traces group
-// by endpoint rather than by URL.
-app.use("*", async (c, next) => {
-  await next();
-  renameSpan(`${c.req.method} ${routePath(c, -1)}`);
-});
+// Every log line during a request carries its request id (Cloudflare's Ray ID), and the ids later
+// middleware learns, such as the user (annotate). Name each request's trace after the route it
+// matched (`GET /api/machines/:id`), so traces group by endpoint rather than by URL.
+app.use("*", (c, next) =>
+  withLogContext({ requestId: c.req.header("cf-ray") ?? crypto.randomUUID() }, async () => {
+    await next();
+    renameSpan(`${c.req.method} ${routePath(c, -1)}`);
+  }),
+);
 
 // Public routes. These never touch auth or D1.
 app.route("/health", healthRoutes);
+app.route("/status", statusRoutes);
 // Operator admin: everything under /api/admin checks the Access JWT (docs/cloudflare-access.md).
 // Webhook dead letters need no session or D1, so they work while D1 is down.
 app.use("/admin/*", requireAccess);

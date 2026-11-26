@@ -1,0 +1,10 @@
+ready   blacksmith-default: blacksmith blacksmith-2vcpu-ubuntu-2404 shape={"os":"linux"}
+ready   blacksmith-big-arm: blacksmith blacksmith-8vcpu-ubuntu-2404-arm shape={"arch":"arm64","cpus":8,"os":"linux"}
+ready   depot: depot depot-ubuntu-24.04 shape={"os":"linux"}
+ready   depot-16: depot depot-ubuntu-24.04-16 shape={"cpus":16,"os":"linux"}
+ready   depot-mac: depot depot-macos-latest shape={"os":"macos"}
+ready   warp: warpbuild warp-ubuntu-latest-x64-4x shape={"cpus":4,"os":"linux"}
+ready   ubicloud: ubicloud ubicloud-standard-8 shape={"cpus":8,"os":"linux"}
+ready   namespace: namespace nscloud-ubuntu-22.04-amd64-4x16 shape={"cpus":4,"os":"linux"}
+ready   boat: boat boat-large shape={"os":"linux"}
+ready   groundbox: groundbox groundbox-4vcpu shape={"cpus":4,"os":"linux"}

@@ -21,8 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type ChartSeries, WorkflowRunsChart } from "@/components/workflow-runs-chart";
-import { authDisabled } from "@/lib/auth-client";
-import { useFlag } from "@/lib/flags";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   clock,
   environmentColor,
@@ -34,10 +33,9 @@ import {
   type WorkflowRunner,
 } from "@/lib/job-times";
 import { providerInfo } from "@/lib/provider-catalog";
-import { rangeSearch, textParam, useRangeReport, useSetSearch } from "@/lib/search-params";
-import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangeSearch, textParam, useSetSearch } from "@/lib/search-params";
+import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
-import { sampleWorkflowReport } from "@/lib/workflow-sample";
 
 const DEFAULT_RANGE: TimeRange = "14d";
 const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
@@ -71,8 +69,6 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 
 function load(search: Search, range: TimeRange): Promise<WorkflowReport | null> {
   const ref = { repositoryId: search.repo, workflow: search.workflow ?? null };
-  if (authDisabled)
-    return Promise.resolve(sampleWorkflowReport(rangeDays(range), ref.repositoryId, ref.workflow));
   if (!ref.repositoryId) return Promise.resolve(null);
   // Not found: no runs of it in the range.
   return getWorkflowReport(range, ref).catch((error: { status?: number }) => {
@@ -81,12 +77,15 @@ function load(search: Search, range: TimeRange): Promise<WorkflowReport | null> 
   });
 }
 
+const workflowQuery = (search: Search, range: TimeRange) =>
+  pageQuery(["workflow-report", search.repo, search.workflow, range], () => load(search, range));
+
 export const Route = createFileRoute("/_authed/_workspace/performance_/workflow")({
   validateSearch,
   loaderDeps: ({ search: { repo, workflow } }) => ({ repo, workflow }),
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(search, ranges.rangeOf(search));
+    return loadPage(workflowQuery(search, ranges.rangeOf(search)));
   },
   // A new range loads in the page, and the toggles change only the chart.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -100,11 +99,7 @@ function WorkflowPage() {
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
   const setSearch = useSetSearch<Search>();
-  const report = useRangeReport<WorkflowReport | null, TimeRange>(
-    Route.useLoaderData(),
-    range,
-    (next) => load(search, next),
-  );
+  const { report } = usePageReport(workflowQuery(search, range), Route.useLoaderData());
   const title = search.workflow ?? report?.workflow ?? "Unnamed workflow";
 
   return (
@@ -164,7 +159,6 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
   const missing = series.filter((each) =>
     job ? !report.runners.find((runner) => runner.key === each.key)?.jobs[job] : false,
   );
-  const { from, to } = resolveRange(range);
   const toggle = (key: string) =>
     setCharted((prev) => {
       const next = new Set(prev);
@@ -183,12 +177,12 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
             </h2>
             <p className="text-sm text-muted-foreground">
               {metric === "cost"
-                ? "Each dot is one passing run's cost at list prices. Lines join each runner's daily median."
+                ? "Each dot is one passing run's cost at list prices, in the order they finished. Lines follow the median of each runner's nearby runs."
                 : metric === "wait"
                   ? job
-                    ? "Each dot is how long this job waited for a runner. Lines join each runner's daily median."
-                    : "Each dot is the longest any job of one passing run waited for a runner. Lines join each runner's daily median."
-                  : "Each dot is one passing run. Lines join each runner's daily median, and break where it took no runs."}
+                    ? "Each dot is how long this job waited for a runner, in the order runs finished. Lines follow the median of each runner's nearby runs."
+                    : "Each dot is the longest any job of one passing run waited for a runner, in the order runs finished. Lines follow the median of each runner's nearby runs."
+                  : "Each dot is one passing run, in the order they finished. Lines follow the median of each runner's nearby runs."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -260,14 +254,7 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
             ))}
           </div>
         </div>
-        <WorkflowRunsChart
-          runs={report.runs}
-          series={series}
-          job={job}
-          metric={metric}
-          from={from}
-          to={to}
-        />
+        <WorkflowRunsChart runs={report.runs} series={series} job={job} metric={metric} />
         <p className="mt-2 text-xs text-muted-foreground">
           {job
             ? "Each runner's runs of this job, wherever the rest of the run went."
@@ -315,7 +302,6 @@ function Runners({
   charted: Set<string>;
   onToggle: (key: string) => void;
 }) {
-  const evaluate = useFlag("provider-evaluations");
   const [open, setOpen] = useState<string | null>(null);
   const [allUntried, setAllUntried] = useState(false);
   const rows = report.runners.toSorted(
@@ -416,14 +402,12 @@ function Runners({
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-2 text-right">
-                    {evaluate && (
-                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
-                        <Link to="/providers/$provider/evaluate" params={{ provider: provider.id }}>
-                          <FlaskConicalIcon aria-hidden className="size-3.5" />
-                          Evaluate
-                        </Link>
-                      </Button>
-                    )}
+                    <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
+                      <Link to="/providers/$provider/evaluate" params={{ provider: provider.id }}>
+                        <FlaskConicalIcon aria-hidden className="size-3.5" />
+                        Evaluate
+                      </Link>
+                    </Button>
                   </td>
                 </tr>
               ))}

@@ -1,6 +1,7 @@
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CommitBy } from "@/components/commit";
 import { quantile } from "@/lib/chart-trend";
 import { DurationChart, runPoints } from "@/components/duration-chart";
@@ -15,35 +16,30 @@ import { WORKFLOW_DEFAULT_RANGE, WORKFLOW_RANGES } from "@/lib/panels";
 import {
   HISTORY_DEFAULT_RANGE,
   isFailure,
-  loadRuns,
+  getRuns,
   type Run,
   type RunsReport,
   runParam,
   triggerText,
 } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
-import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import { type WorkflowRef, workflowParam } from "@/lib/workflow-ref";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const RECENT = 20;
 
-// The last reports read, by workflow and range, so reopening one shows it at once. Each is kept for
-// a minute, since new runs keep arriving.
-const reports = new Map<string, Promise<RunsReport>>();
-clearOnWorkspaceChange(() => reports.clear());
-
-function loadReport(workflow: WorkflowRef, range: TimeRange) {
-  const id = `${workflowParam(workflow)}\u001f${range}`;
-  let request = reports.get(id);
-  if (!request) {
-    request = loadRuns(range, workflow);
-    request.catch(() => reports.delete(id));
-    reports.set(id, request);
-    setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
-  }
-  return request;
+// A workflow's runs over a range, kept for a minute so reopening one shows it at once; new runs
+// keep arriving.
+function useWorkflowRuns(workflow: WorkflowRef, range: TimeRange) {
+  return useQuery({
+    queryKey: ["workflow-runs", workflowParam(workflow), range],
+    queryFn: async () => ({ range, report: await getRuns(range, workflow) }),
+    staleTime: 60_000,
+    // The last report stays up while another range loads.
+    placeholderData: keepPreviousData,
+  });
 }
 
 /**
@@ -57,19 +53,7 @@ export function WorkflowSheet({ workflow, range }: { workflow: WorkflowRef; rang
   const setSearch = useSetSearch<{ wfRange?: TimeRange }>();
   const setRange = (next: TimeRange) =>
     setSearch({ wfRange: unlessDefault(next, WORKFLOW_DEFAULT_RANGE) });
-  // The report shown, with the range it's for: the last one stays up while another loads.
-  const [shown, setShown] = useState<{ range: TimeRange; report: RunsReport } | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let live = true;
-    setFailed(false);
-    loadReport(workflow, range)
-      .then((report) => live && setShown({ range, report }))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [workflow, range]);
+  const { data: shown, isError: failed } = useWorkflowRuns(workflow, range);
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
@@ -77,7 +61,10 @@ export function WorkflowSheet({ workflow, range }: { workflow: WorkflowRef; rang
         <div className="grid grid-cols-[minmax(0,1fr)] gap-6 px-5 py-5 sm:px-6">
           <header className="grid gap-1 pr-8">
             <SheetTitle className="break-words">{workflow.workflow}</SheetTitle>
-            <SheetDescription>{workflow.repository}</SheetDescription>
+            <SheetDescription>
+              {workflow.repository}
+              <PublicRepoMark repository={workflow.repository} />
+            </SheetDescription>
           </header>
           <TimeRangePicker {...WORKFLOW_RANGES} value={range} onChange={setRange} />
           {failed ? (

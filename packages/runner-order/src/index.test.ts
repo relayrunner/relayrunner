@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_RUNNER_ORDER,
   isAutoRelay,
+  noSizeText,
   preferFirst,
   readRunnerOrder,
   relayInputs,
   resolveAutoInputs,
+  type RunnerOrder,
   runnerOrderSchema,
 } from "./index.ts";
 
@@ -132,6 +134,49 @@ describe("auto relays", () => {
     expect(isAutoRelay(relayInputs({ github: ["ubuntu-latest"] }))).toBe(false);
   });
 
+  test("a shape makes a relay auto, every provider it doesn't name included", () => {
+    const inputs = relayInputs({ github: ["my-org-linux-16core"] });
+    const shape = { cpus: 8 };
+    expect(isAutoRelay(inputs, shape)).toBe(true);
+    const resolved = resolveAutoInputs(inputs, label, shape);
+    expect(resolved.github).toEqual(["my-org-linux-16core"]);
+    expect(resolved.blacksmith).toEqual(["blacksmith-8"]);
+    expect(resolved.machine).toEqual(["self-hosted", "Linux"]);
+  });
+
+  test("a shape's OS and arch narrow the machines", () => {
+    const resolved = resolveAutoInputs(relayInputs({}), label, { os: "macos", arch: "arm64" });
+    expect(resolved.machine).toEqual(["self-hosted", "macOS", "ARM64"]);
+  });
+
+  test("a named machine keeps its labels and adds only the OS and arch the shape says", () => {
+    const named = relayInputs({ machine: ["self-hosted", "gpu"] });
+    expect(resolveAutoInputs(named, label, { cpus: 4 }).machine).toEqual(["self-hosted", "gpu"]);
+    expect(resolveAutoInputs(named, label, { arch: "arm64" }).machine).toEqual([
+      "self-hosted",
+      "gpu",
+      "ARM64",
+    ]);
+    const linux = relayInputs({ machine: ["self-hosted", "linux"] });
+    expect(resolveAutoInputs(linux, label, { os: "linux" }).machine).toEqual([
+      "self-hosted",
+      "linux",
+    ]);
+  });
+
+  test("no shape leaves a relay as it was", () => {
+    expect(isAutoRelay(relayInputs({ github: ["ubuntu-latest"] }), {})).toBe(false);
+    expect(resolveAutoInputs(relayInputs({}), label, {}).machine).toEqual(["self-hosted"]);
+  });
+
+  test("noSizeText names the platform when the relay set a shape", () => {
+    expect(noSizeText("blacksmith", 8, "macos")).toBe(
+      "Blacksmith has no macOS runner with 8 vCPU or more",
+    );
+    expect(noSizeText("ubicloud", undefined, "macos")).toBe("Ubicloud has no macOS runner");
+    expect(noSizeText("github", 4)).toBe("GitHub-hosted has no runner with 4 vCPU or more");
+  });
+
   test("preferFirst moves a provider to the top", () => {
     const order = {
       steps: [{ key: "machine" as const }, { key: "github" as const }, { key: "depot" as const }],
@@ -142,5 +187,24 @@ describe("auto relays", () => {
       "github",
     ]);
     expect(preferFirst(order, null)).toBe(order);
+    expect(preferFirst(order, "machine")).toBe(order);
+    expect(preferFirst(order, "namespace")).toBe(order);
+  });
+
+  test("preferFirst moves only a repeated provider's first step", () => {
+    const order: RunnerOrder = {
+      steps: [
+        { key: "machine" },
+        { key: "blacksmith", limit: { percent: 100 } },
+        { key: "github" },
+        { key: "blacksmith" },
+      ],
+    };
+    expect(preferFirst(order, "blacksmith").steps).toEqual([
+      { key: "blacksmith", limit: { percent: 100 } },
+      { key: "machine" },
+      { key: "github" },
+      { key: "blacksmith" },
+    ]);
   });
 });

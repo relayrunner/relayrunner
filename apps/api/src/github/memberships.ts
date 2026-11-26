@@ -2,7 +2,8 @@ import { recordEvent } from "../ingest/activity-log.ts";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Auth } from "../auth/auth.ts";
 import { type Db, schema } from "../db/index.ts";
-import { GitHubError, type GitHubInstallation, listUserInstallations } from "./github.ts";
+import { GitHubError } from "./github-api.ts";
+import { type GitHubInstallation, listUserInstallations } from "./github.ts";
 import {
   ensureWorkspace,
   upsertInstallation,
@@ -10,6 +11,7 @@ import {
   workspaceIdForInstallation,
 } from "./installations.ts";
 import { addHomelessMachines, removeUserMachinesFromWorkspace } from "../machines/machines.ts";
+import { log } from "../log.ts";
 
 // Workspace membership comes from GitHub (#317): you're a member of every workspace whose
 // installation your GitHub sign-in can see in GET /user/installations. That list is synced into
@@ -56,13 +58,11 @@ export async function syncMembershipsFromGitHub(
   try {
     installations = await listUserInstallations(token);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        msg: "membership sync skipped: GitHub installations unreadable",
-        userId,
-        status: error instanceof GitHubError ? error.status : null,
-        error: error instanceof Error ? error.message : String(error),
-      }),
+    // Usually the user's GitHub token expired or was revoked; they sign in again.
+    log.warn(
+      "github.membership_sync_skipped",
+      "membership sync skipped: GitHub installations unreadable",
+      { userId, status: error instanceof GitHubError ? error.status : null, error },
     );
     return null;
   }

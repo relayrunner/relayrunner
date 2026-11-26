@@ -1,9 +1,5 @@
 import type { HeldReason } from "@relayrunner/activity";
-import {
-  FREE_MINUTES,
-  FREE_MINUTES_PROVIDERS,
-  type FreeMinutesProvider,
-} from "@relayrunner/runner-order";
+import { FREE_MINUTES_PROVIDERS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { api } from "./api";
 
 // A hosted provider's free minutes this month (GET /api/providers/<provider>/minutes), counted
@@ -11,7 +7,6 @@ import { api } from "./api";
 // sync, Groundbox's read live from its account. The Router's step for that provider can stop at a
 // share of them. The shape mirrors BlacksmithMinutes (apps/api/src/providers/blacksmith-minutes.ts) and
 // GroundboxMinutesView (apps/api/src/providers/groundbox-account.ts).
-
 export type FreeMinutesReason =
   | "not_connected"
   | "not_synced"
@@ -64,19 +59,3 @@ export async function getAllFreeMinutes(): Promise<FreeMinutesByProvider> {
 /** Whether the count is there to stop at: connected, and synced or read. */
 export const counted = (minutes: FreeMinutes | null | undefined): minutes is FreeMinutes =>
   minutes?.status === "ok";
-
-/** Dev-preview data: `connected` a workspace partway through its free minutes. */
-export function sampleFreeMinutes(provider: FreeMinutesProvider, connected: boolean): FreeMinutes {
-  const now = new Date();
-  return {
-    status: connected ? "ok" : "not_available",
-    reason: connected ? null : "not_connected",
-    accountLogin: connected ? "acme" : "",
-    quotaMinutes: FREE_MINUTES[provider],
-    usedMinutes: connected ? (provider === "blacksmith" ? 2140 : 1260) : 0,
-    burnRatePerHour: connected && provider === "blacksmith" ? 24 : null,
-    cycleStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
-    syncedAt: connected ? new Date(now.getTime() - 20 * 60_000).toISOString() : null,
-    ...(provider === "groundbox" ? { held: null, ciSpentUsd: connected ? 0 : null } : {}),
-  };
-}

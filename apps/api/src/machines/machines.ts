@@ -4,7 +4,8 @@ import { type SQL, and, count, eq, inArray, isNotNull, isNull, or } from "drizzl
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { appInstallationToken, removeRunnerLabel, type RunnerScope } from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { removeRunnerLabel, type RunnerScope } from "../github/runners-api.ts";
 import { addedRunnerScope, matchLabels, parseStoredLabels } from "../github/github-runners.ts";
 import { type Device, isNewerVersion } from "@relayrunner/machine-protocol";
 // The CLI on main is the one npm has: the Release workflow publishes it when its version lands.
@@ -12,6 +13,7 @@ import cliPackage from "../../../cli/package.json" with { type: "json" };
 import { type RunnerRelease, runnerUpdate } from "./runner-releases.ts";
 import type { MachineSharing } from "@relayrunner/activity";
 import { isolatedLabels, machineLabels } from "../routing/routing.ts";
+import { log } from "../log.ts";
 
 // Machine tokens: what `relayrunner connect` holds after enrolling, and sends on the MachineLink
 // WebSocket upgrade. Only their SHA-256 is stored, so a leaked database can't impersonate a
@@ -519,6 +521,30 @@ export function helloColumns(
 }
 
 /**
+ * Notes the owner's first Mac app hello, for the operator ping (src/operator/operator-pings.ts):
+ * only from a machine that wasn't on the Mac app before, so a reconnect writes nothing. Logs a
+ * failure instead of throwing, so it never stands in the way of the hello.
+ */
+export async function recordMacAppFirstUse(
+  db: Db,
+  machine: Pick<typeof schema.machine.$inferSelect, "id" | "userId" | "macAppVersion">,
+  macAppVersion: string | undefined,
+  now: Date,
+) {
+  if (!macAppVersion || !machine.userId || machine.macAppVersion) return;
+  await db
+    .insert(schema.macAppFirstUse)
+    .values({ userId: machine.userId, machineId: machine.id, macAppVersion, firstUsedAt: now })
+    .onConflictDoNothing()
+    .catch((error: unknown) =>
+      log.warn("machine.mac_app_first_use_not_saved", "Mac app first use not saved", {
+        machineId: machine.id,
+        error,
+      }),
+    );
+}
+
+/**
  * Whether a machine row holds anything other than what `columns` (helloColumns) set, apart from
  * when the device was reported.
  */
@@ -698,12 +724,9 @@ export async function removeRoutingLabel(env: Env, db: Db, machine: Machine) {
     const token = await appInstallationToken(env, machine.installationId);
     await removeRunnerLabel(token, scope, machine.githubRunnerId, machine.routingLabel);
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "routing label not removed",
-        machineId: machine.id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.warn("machine.routing_label_not_removed", "routing label not removed", {
+      machineId: machine.id,
+      error,
+    });
   }
 }

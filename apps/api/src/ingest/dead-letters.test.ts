@@ -103,6 +103,53 @@ describe("DLQ consumer", () => {
   });
 });
 
+describe("webhook consumer", () => {
+  const lines = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.map(([line]) => JSON.parse(String(line)));
+
+  test("logs one webhook.processed line per delivery, with the ids and what handled it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const msg = queued(message("d-4"), 1);
+    await handleWebhookBatch(batch(WEBHOOK_QUEUE, [msg]), base);
+    expect(msg.ack).toHaveBeenCalledOnce();
+    const processed = lines(info).filter((line) => line.event === "webhook.processed");
+    expect(processed).toMatchObject([
+      {
+        level: "info",
+        status: "processed",
+        handler: "repository",
+        app: "main",
+        githubEvent: "repository",
+        action: "renamed",
+        attempts: 1,
+        requestId: "d-4",
+        deliveryId: "d-4",
+        installationId: 7,
+        repo: "acme/app",
+      },
+    ]);
+    expect(processed[0].lagMs).toBeTypeOf("number");
+    expect(processed[0].durationMs).toBeTypeOf("number");
+  });
+
+  test("a failed delivery logs result retrying with the error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const bad = { ...message("d-5"), event: "workflow_job" } as unknown as WebhookMessage;
+    await handleWebhookBatch(batch(WEBHOOK_QUEUE, [queued(bad, 2)]), base);
+    expect(lines(warn)).toMatchObject([
+      {
+        level: "warn",
+        event: "webhook.processed",
+        status: "retrying",
+        githubEvent: "workflow_job",
+        deliveryId: "d-5",
+        delaySeconds: expect.any(Number),
+        error: { name: "TypeError", message: expect.any(String) },
+      },
+    ]);
+  });
+});
+
 describe("listDeadLetters", () => {
   test("lists newest first, a day at a time, with a cursor and filters", async () => {
     const now = new Date("2026-11-04T12:00:00Z");

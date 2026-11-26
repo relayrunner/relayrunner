@@ -12,13 +12,10 @@ import { DAY_MS, LIVE_DAYS } from "../time.ts";
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  GitHubAccessError,
-  GitHubRateLimitError,
-  pullRequestFiles,
-} from "../github/github-app.ts";
-import { errorMessage } from "../errors.ts";
+import { GitHubAccessError, GitHubRateLimitError } from "../github/github-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { pullRequestFiles } from "../github/repos-api.ts";
+import { log } from "../log.ts";
 
 const run = schema.workflowRun;
 const paths = schema.pullRequestPaths;
@@ -147,13 +144,10 @@ export async function syncPullRequestPaths(
           throw error;
         if (!(error instanceof GitHubAccessError && error.status === 404)) {
           stopped = true;
-          console.warn(
-            JSON.stringify({
-              msg: "pull request files stopped",
-              installationId,
-              error: errorMessage(error),
-            }),
-          );
+          log.warn("checks.pr_files_stopped", "pull request files stopped", {
+            installationId,
+            error,
+          });
           return;
         }
         names = null;

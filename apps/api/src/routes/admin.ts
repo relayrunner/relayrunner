@@ -23,6 +23,7 @@ import { adminPriceRoutes } from "./admin-prices.ts";
 import { adminProviderRoutes } from "./admin-providers.ts";
 import { USER_ROLES } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
+import { log } from "../log.ts";
 
 const RoleBody = z.object({ role: z.enum(USER_ROLES).nullable() });
 const DeleteBody = z.object({ uninstallGitHubApp: z.boolean().default(false) });
@@ -90,15 +91,12 @@ export const adminRoutes = new Hono<AppEnv>()
       .where(eq(schema.user.id, id))
       .returning({ id: schema.user.id, role: schema.user.role });
     if (!updated) throw new AppError("NOT_FOUND");
-    console.log(
-      JSON.stringify({
-        msg: "user role changed",
-        by: c.var.user!.email,
-        access: who(c.var.accessIdentity),
-        userId: id,
-        role: updated.role,
-      }),
-    );
+    log.info("admin.user_role_changed", "user role changed", {
+      byUserId: c.var.user!.id,
+      accessId: who(c.var.accessIdentity),
+      userId: id,
+      role: updated.role,
+    });
     return c.json({ user: updated });
   })
   .delete("/users/:id", async (c) => {
@@ -113,15 +111,12 @@ export const adminRoutes = new Hono<AppEnv>()
         details: { workspaces: result.workspaces },
       });
     }
-    console.log(
-      JSON.stringify({
-        msg: "user deleted",
-        by: c.var.user!.email,
-        access: who(c.var.accessIdentity),
-        userId: id,
-        workspaces: result.workspaces,
-      }),
-    );
+    log.info("admin.user_deleted", "user deleted", {
+      byUserId: c.var.user!.id,
+      accessId: who(c.var.accessIdentity),
+      userId: id,
+      workspaces: result.workspaces,
+    });
     return c.json({ workspaces: result.workspaces });
   })
   .delete("/workspaces/:id", async (c) => {
@@ -130,14 +125,11 @@ export const adminRoutes = new Hono<AppEnv>()
     const id = c.req.param("id");
     const [deleted] = await deleteWorkspaces(c.env, createDb(c.env.DB), [id], options.data);
     if (!deleted) throw new AppError("NOT_FOUND");
-    console.log(
-      JSON.stringify({
-        msg: "workspace deleted",
-        by: c.var.user!.email,
-        access: who(c.var.accessIdentity),
-        workspace: deleted,
-      }),
-    );
+    log.info("admin.workspace_deleted", "workspace deleted", {
+      byUserId: c.var.user!.id,
+      accessId: who(c.var.accessIdentity),
+      workspace: deleted,
+    });
     return c.json({ workspace: deleted });
   })
   .get("/jobs", async (c) => {

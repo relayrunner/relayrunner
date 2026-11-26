@@ -9,6 +9,7 @@ import {
   deviceColumns,
   helloChanged,
   helloColumns,
+  recordMacAppFirstUse,
   presentMachine,
   issuePendingToken,
   promotePendingToken,
@@ -146,6 +147,34 @@ async function enrollAs(
   };
   return { ...body, cookie, workspaceId, accessToken: token.access_token, code };
 }
+
+describe("recordMacAppFirstUse", () => {
+  test("keeps the owner's first Mac app hello, and writes nothing for later ones", async () => {
+    const { machine } = await enroll("mac-first-use");
+    const db = createDb(env.DB);
+    const [row] = await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id));
+    const firstUse = () =>
+      db.select().from(schema.macAppFirstUse).where(eq(schema.macAppFirstUse.userId, row!.userId!));
+
+    // A plain CLI hello isn't a Mac app use.
+    await recordMacAppFirstUse(db, row!, undefined, new Date(1_000));
+    expect(await firstUse()).toEqual([]);
+
+    await recordMacAppFirstUse(db, row!, "0.7.0", new Date(2_000));
+    // Already on the Mac app: a reconnect, so nothing to note.
+    await recordMacAppFirstUse(db, { ...row!, macAppVersion: "0.7.0" }, "0.8.0", new Date(3_000));
+    // Their first Mac app hello from another machine, later on: the first one stands.
+    await recordMacAppFirstUse(db, { ...row!, macAppVersion: null }, "0.8.0", new Date(4_000));
+    expect(await firstUse()).toEqual([
+      {
+        userId: row!.userId,
+        machineId: machine.id,
+        macAppVersion: "0.7.0",
+        firstUsedAt: new Date(2_000),
+      },
+    ]);
+  });
+});
 
 describe("helloChanged", () => {
   const device = { kind: "laptop" as const, model: "MacBook Pro", chip: "Apple M3", cpuCores: 12 };
@@ -1424,5 +1453,90 @@ describe("a machine looking itself up", () => {
       env,
     );
     expect((await me({ authorization: `Bearer ${token}` })).status).toBe(401);
+  });
+});
+
+describe("feedback from the machine's own CLI", () => {
+  const feedback = (token: string, body: unknown, withEnv: Env = env) =>
+    app.request(
+      "/api/machines/me/feedback",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      withEnv,
+    );
+
+  test("stores it as the owner's, redacted, and emails it naming the machine", async () => {
+    const { token, machine } = await enroll("cli-feedback", "studio");
+    const send = vi.fn(async () => ({ messageId: "m1" }));
+    const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+
+    const response = await feedback(
+      token,
+      {
+        category: "bug",
+        message:
+          "RelayRunner for Mac 0.6.0 crashed: EXC_BAD_ACCESS (SIGSEGV)\n\nMessage: token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      },
+      withEmail,
+    );
+    expect(response.status, await response.clone().text()).toBe(201);
+    const body = (await response.json()) as { id: string; redacted: number };
+    expect(body).toEqual({ id: expect.any(String), redacted: 1 });
+
+    const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?")
+      .bind(body.id)
+      .first<Record<string, unknown>>();
+    expect(row).toMatchObject({
+      source: "machine",
+      category: "bug",
+      workspace_id: null,
+      summary: "RelayRunner for Mac 0.6.0 crashed: EXC_BAD_ACCESS (SIGSEGV)",
+      details: expect.stringContaining("token=[redacted]"),
+    });
+    const [owner] = await createDb(env.DB)
+      .select({ userId: schema.machine.userId })
+      .from(schema.machine)
+      .where(eq(schema.machine.id, machine.id));
+    expect(row?.user_id).toBe(owner.userId);
+
+    expect(send).toHaveBeenCalledOnce();
+    const message = (send.mock.calls[0] as unknown[])[0] as { subject: string; text: string };
+    expect(message.subject).toBe(
+      "[feedback] bug: RelayRunner for Mac 0.6.0 crashed: EXC_BAD_ACCESS (SIGSEGV)",
+    );
+    expect(message.text).toContain("Machine: studio");
+  });
+
+  test("an anonymous report keeps only the machine, and its email has no contact details", async () => {
+    const { token, machine } = await enroll("cli-feedback-anon", "studio");
+    const send = vi.fn(async () => ({ messageId: "m1" }));
+    const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+
+    const response = await feedback(
+      token,
+      { category: "bug", message: "RelayRunner for Mac 0.6.0 crashed", contact: false },
+      withEmail,
+    );
+    expect(response.status, await response.clone().text()).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?")
+      .bind(id)
+      .first<Record<string, unknown>>();
+    expect(row).toMatchObject({ user_id: null, machine_id: machine.id, source: "machine" });
+
+    const message = (send.mock.calls[0] as unknown[])[0] as { replyTo?: string; text: string };
+    expect(message.replyTo).toBeUndefined();
+    expect(message.text).toContain("From: anonymous");
+    expect(message.text).not.toContain("@");
+  });
+
+  test("refuses a bad body, an unknown category and no token", async () => {
+    const { token } = await enroll("cli-feedback-bad");
+    expect((await feedback(token, { message: "" })).status).toBe(400);
+    expect((await feedback(token, { message: "hi", category: "angry" })).status).toBe(400);
+    expect((await feedback("rrm_not-a-real-token-at-all", { message: "hi" })).status).toBe(401);
   });
 });

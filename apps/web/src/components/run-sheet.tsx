@@ -1,6 +1,7 @@
+import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query";
 import { Link, type LinkProps, useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, CircleSlashIcon, ExternalLinkIcon, TimerOffIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import { CommitBy } from "@/components/commit";
 import { JobFailureSection } from "@/components/job-failure";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
@@ -31,16 +32,14 @@ import {
   type RunHeader,
   type RunIds,
   type RunJob,
-  type RunJobs,
   runParam,
   type RunStatus,
-  sampleJobSteps,
-  sampleRunJobs,
   triggerText,
 } from "@/lib/runs";
 import type { RouteWalk } from "@/lib/route-walk";
 import { useNow } from "@/lib/use-now";
 import { cn, elapsed } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 // While a run is going, how often an open run's jobs and a running job's steps are refetched.
 // Paused while the tab is hidden or idle (lib/live-refresh.ts).
@@ -82,50 +81,16 @@ export function RunLink({
   );
 }
 
-// The last jobs fetched for the most recent runs, so a run opens with its jobs already there when
-// it was hovered first or opened before.
-type JobsEntry = { status: RunStatus; at: number; request: Promise<RunJobs>; jobs?: RunJobs };
-const jobsCache = new Map<string, JobsEntry>();
-const CACHE_SIZE = 50;
-
 /**
- * A run's jobs, from the cache unless the run's status has changed since or, for a run still
- * going, the cached answer is older than a refresh. `fresh` always asks again.
+ * A run's jobs, as a query: kept once the run is done, read again after a refresh's worth while
+ * it's going, and asked again whenever the run's status changes. History hovers prefetch it, so a
+ * run opens with its jobs already there.
  */
-export function fetchRunJobs(run: RunIds, status: RunStatus, fresh = false) {
-  const key = runParam(run);
-  const cached = jobsCache.get(key);
-  const current =
-    cached?.status === status && (status === "completed" || Date.now() - cached.at < REFRESH_MS);
-  if (cached && current && !fresh) return cached.request;
-  const request = authDisabled ? Promise.resolve(sampleRunJobs(run)) : getRunJobs(run);
-  const entry: JobsEntry = { status, at: Date.now(), request };
-  request.then(
-    (jobs) => (entry.jobs = jobs),
-    () => jobsCache.get(key) === entry && jobsCache.delete(key),
-  );
-  jobsCache.delete(key); // Re-added last, so the oldest run is first to go.
-  jobsCache.set(key, entry);
-  if (jobsCache.size > CACHE_SIZE) jobsCache.delete(jobsCache.keys().next().value!);
-  return request;
-}
-
-function cachedJobs(run: RunIds, status: RunStatus) {
-  const cached = jobsCache.get(runParam(run));
-  return (cached?.status === status && cached.jobs) || null;
-}
-
-// A finished job's steps don't change, so the last ones read are kept.
-const stepsCache = new Map<number, JobStep[] | null>();
-
-function fetchJobSteps(job: RunJob) {
-  const request = authDisabled ? Promise.resolve(sampleJobSteps(job)) : getJobSteps(job.id);
-  return request.then((steps) => {
-    if (job.status === "completed") {
-      stepsCache.set(job.id, steps);
-      if (stepsCache.size > CACHE_SIZE) stepsCache.delete(stepsCache.keys().next().value!);
-    }
-    return steps;
+export function runJobsQuery(run: RunIds, status: RunStatus) {
+  return queryOptions({
+    queryKey: ["run-jobs", runParam(run), status],
+    queryFn: () => getRunJobs(run),
+    staleTime: status === "completed" ? Infinity : REFRESH_MS,
   });
 }
 
@@ -198,30 +163,21 @@ export function RunSheet({
 
   // The run's status from the list when it has it, else from the detail once that loads. The panel
   // is keyed on the run, so `ids` never changes under it.
-  const [detail, setDetail] = useState<RunJobs | null>(() =>
-    cachedJobs(ids, run?.status ?? "completed"),
-  );
-  const [failed, setFailed] = useState(false);
+  const jobsQuery = useQuery({
+    ...runJobsQuery(ids, run?.status ?? "completed"),
+    // A run whose status moved keeps showing its last jobs while the new ones load.
+    placeholderData: keepPreviousData,
+  });
+  const detail = jobsQuery.data ?? null;
+  // A failed refresh keeps showing the last answer; the next tick retries.
+  const failed = jobsQuery.isError && !detail;
   const header: RunHeader | null = run ?? detail?.run ?? null;
   const status = header?.status ?? "completed";
   const running = status !== "completed";
-  useEffect(() => {
-    let live = true;
-    fetchRunJobs(ids, run?.status ?? "completed")
-      .then((value) => live && setDetail(value))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the run
-  }, [run?.status]);
-  useLiveRefresh(
-    () =>
-      fetchRunJobs(ids, status, true)
-        .then(setDetail)
-        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
-    { intervalMs: REFRESH_MS, enabled: running && !authDisabled },
-  );
+  useLiveRefresh(() => jobsQuery.refetch(), {
+    intervalMs: REFRESH_MS,
+    enabled: running && !authDisabled,
+  });
   // Times of jobs still going run to now. Once the run has finished they stop where it did, so a
   // job GitHub never said finished (a lost webhook) doesn't keep counting.
   const ticking = useNow(
@@ -348,6 +304,7 @@ function RunView({
           <span>
             {header.title && header.workflow && <>{workflowLink} · </>}
             {header.repository}
+            <PublicRepoMark repository={header.repository} />
           </span>
           <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
@@ -486,30 +443,24 @@ function JobView({
   running: boolean;
   runnerOf: RunnerOf;
 }) {
-  // Undefined while loading; null when GitHub has no steps for the job.
-  const [steps, setSteps] = useState<JobStep[] | null | undefined>(() => stepsCache.get(job.id));
-  const [failed, setFailed] = useState(false);
   const started = job.startedAt !== null;
   const done = job.status === "completed";
-  // Read once the job has started, and again when it finishes, for its last steps.
-  useEffect(() => {
-    if (!started || stepsCache.has(job.id)) return;
-    let live = true;
-    fetchJobSteps(job)
-      .then((value) => live && setSteps(value))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `job` is a new object every refresh
-  }, [job.id, started, done]);
-  useLiveRefresh(
-    () =>
-      fetchJobSteps(job)
-        .then(setSteps)
-        .catch(() => undefined),
-    { intervalMs: REFRESH_MS, enabled: started && !done && !authDisabled },
-  );
+  // Read once the job has started, and again when it finishes, for its last steps. A finished
+  // job's steps don't change, so they're kept.
+  const stepsQuery = useQuery({
+    queryKey: ["job-steps", job.id, done],
+    queryFn: () => getJobSteps(job.id),
+    enabled: started,
+    staleTime: done ? Infinity : REFRESH_MS,
+    placeholderData: keepPreviousData,
+  });
+  // Undefined while loading; null when GitHub has no steps for the job.
+  const steps = stepsQuery.data;
+  const failed = stepsQuery.isError && steps === undefined;
+  useLiveRefresh(() => stepsQuery.refetch(), {
+    intervalMs: REFRESH_MS,
+    enabled: started && !done && !authDisabled,
+  });
 
   const wait = waitOf(job, now);
   const logUrl = jobUrl({ ...header, runId: ids.runId, id: job.id });
@@ -536,7 +487,10 @@ function JobView({
           <span className="min-w-0 break-words">{job.name}</span>
         </SheetTitle>
         <SheetDescription className="flex flex-wrap items-center gap-x-2.5 pl-[26px]">
-          <span>{header.repository}</span>
+          <span>
+            {header.repository}
+            <PublicRepoMark repository={header.repository} />
+          </span>
           <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
       </header>

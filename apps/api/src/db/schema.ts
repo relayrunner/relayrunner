@@ -225,6 +225,22 @@ export const githubInstallation = sqliteTable("github_installation", {
   ...timestamps,
 });
 
+// The last 14 days of an installation's workflow runs, read from GitHub once when the App is
+// installed (src/run-history.ts), so a new workspace can evaluate a provider against the runs it
+// had before RelayRunner saw any webhooks. One row per installation; goes away with it.
+export const runHistoryImport = sqliteTable("run_history_import", {
+  installationId: integer("installation_id")
+    .primaryKey({ autoIncrement: false })
+    .references(() => githubInstallation.id, { onDelete: "cascade" }),
+  // 'queued', 'running', 'done' or 'failed'.
+  state: text("state").notNull(),
+  // Runs written so far.
+  runs: integer("runs").notNull().default(0),
+  error: text("error"),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});
+
 // Which enterprise an org belongs to, learned from the enterprise's billing usage report (each row
 // names its org), so an org that shares its enterprise's minutes is judged against them. Kept
 // across months: an org with no usage this month is still in its enterprise.
@@ -386,6 +402,22 @@ export const machine = sqliteTable(
   ],
 );
 
+// When each person first ran the Mac app (a hello with macAppVersion from a machine they own), so
+// operators hear about it once (src/operator/operator-pings.ts). Written by MachineLink the first
+// time one of their machines says hello from the Mac app.
+export const macAppFirstUse = sqliteTable(
+  "mac_app_first_use",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    machineId: text("machine_id").references(() => machine.id, { onDelete: "set null" }),
+    macAppVersion: text("mac_app_version").notNull(),
+    firstUsedAt: integer("first_used_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("mac_app_first_use_at_idx").on(table.firstUsedAt)],
+);
+
 // Which workspaces a connected machine takes jobs in (#363). Its owner picks them on /device, from
 // the Runners page and with `relayrunner workspaces`. A row only counts while the owner is still a
 // member there (src/machines/machines.ts inWorkspace), and membership sync deletes the rows for a workspace
@@ -510,7 +542,7 @@ export const jobTiming = sqliteTable(
     ranSteps: integer("ran_steps", { mode: "boolean" }),
     failedStep: text("failed_step"),
     // Each step that ran, as [name, seconds], from the `completed` webhook. Read with
-    // src/reports/step-phases.ts to split a job's time into setup, checkout, installs, cache and work. Null
+    // src/reports/step-phases.ts to split a job's time into setup items and work. Null
     // when GitHub sent no steps.
     steps: text("steps", { mode: "json" }).$type<StepTime[]>(),
     ...timestamps,
@@ -932,6 +964,8 @@ export const autoJob = sqliteTable(
     relayJob: text("relay_job").notNull(),
     // The job's size in vCPUs, or null for the workspace's (workspace.auto_size).
     size: integer("size"),
+    // The relay's `cpus` input on the job's last pick, or null when it set none. It wins over size.
+    cpus: integer("cpus"),
     // A runner order key to try before the rest of the order, or null for the order as it is.
     first: text("first"),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
@@ -1078,6 +1112,23 @@ export const actionsUsage = sqliteTable(
       table.sku,
     ),
   ],
+);
+
+// Each UTC day's private-repo Actions minutes this cycle (Linux 2-core quota minutes), so the
+// dashboard can project when an account's included minutes run out at its recent pace
+// (src/providers/minutes-projection.ts). Every poll replaces the installation's rows, so only the
+// current cycle is kept.
+export const actionsUsageDay = sqliteTable(
+  "actions_usage_day",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // YYYY-MM-DD, UTC.
+    day: text("day").notNull(),
+    usedMinutes: real("used_minutes").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.installationId, table.day] })],
 );
 
 // Which GitHub accounts installed the opt-in RelayRunner Spend App, which reads org billing
@@ -1392,10 +1443,10 @@ export const feedback = sqliteTable(
   "feedback",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    // None for an anonymous crash report from the Mac app, which records only its machine.
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    machineId: text("machine_id").references(() => machine.id, { onDelete: "set null" }),
     grantId: text("grant_id"),
     clientId: text("client_id"),
     category: text("category").notNull(),
@@ -1405,12 +1456,15 @@ export const feedback = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
-    source: text("source", { enum: ["agent", "dashboard"] })
+    source: text("source", { enum: ["agent", "dashboard", "machine"] })
       .notNull()
       .default("agent"),
     page: text("page"),
   },
-  (table) => [index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
+  (table) => [
+    index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt),
+    index("feedback_machine_id_created_at_idx").on(table.machineId, table.createdAt),
+  ],
 );
 
 // Runner prices operators record, on top of the base list in @relayrunner/providers

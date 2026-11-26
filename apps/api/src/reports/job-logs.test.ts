@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jobStepLogs, logText, uploadJobLogs } from "./job-logs.ts";
+import { jobStepLogs, logText, noRunnerLogs, uploadJobLogs } from "./job-logs.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,6 +25,39 @@ describe("jobStepLogs", () => {
 
   test("leaves out a step with no id", () => {
     expect(jobStepLogs([{ name: "Lint" }], [{ ok: true, lines: [] }])).toEqual([]);
+  });
+});
+
+describe("noRunnerLogs", () => {
+  const steps = [{ id: "a", name: "Pick a runner" }];
+
+  test("logs the reason and a link, and writes both to the run summary", () => {
+    const [step] = noRunnerLogs(
+      steps,
+      "No runner available: relayrunner has used 3,153 of its 3,000 free Blacksmith minutes.",
+      { name: "Usage", url: "https://app.example/usage" },
+    );
+    expect(step).toMatchObject({
+      ok: false,
+      lines: [
+        "##[error]No runner available: relayrunner has used 3,153 of its 3,000 free Blacksmith minutes.",
+        "Open Usage: https://app.example/usage",
+      ],
+    });
+    expect(step.summary).toBe(
+      "### This job couldn't be routed\n\nNo runner available: relayrunner has used 3,153 of its 3,000 free Blacksmith minutes.\n\n[Open Usage](https://app.example/usage)\n",
+    );
+  });
+
+  test("leaves out the link when no page fixes it", () => {
+    const [step] = noRunnerLogs(
+      steps,
+      "No runner available: this GitHub App installation is suspended.",
+    );
+    expect(step.lines).toHaveLength(1);
+    expect(step.summary).toBe(
+      "### This job couldn't be routed\n\nNo runner available: this GitHub App installation is suspended.\n",
+    );
   });
 });
 
@@ -56,6 +89,7 @@ describe("uploadJobLogs", () => {
       if (url.includes("SignedBlobURL"))
         return Response.json({
           logs_url: `https://blob.example/${calls.length}`,
+          summary_url: `https://blob.example/${calls.length}`,
           blob_storage_type: "BLOB_STORAGE_TYPE_AZURE",
         });
       return respond(url);
@@ -98,6 +132,24 @@ describe("uploadJobLogs", () => {
     expect(puts.every((put) => !put.headers.has("authorization"))).toBe(true);
     const metadata = calls.find((call) => call.url.endsWith("CreateStepLogsMetadata"));
     expect(JSON.parse(metadata!.body)).toMatchObject({ step_backend_id: "a", line_count: 1 });
+  });
+
+  test("uploads a step's summary", async () => {
+    const calls = stubFetch();
+    await uploadJobLogs(
+      target,
+      [{ id: "a", number: 1, name: "Pick", ok: false, lines: ["bad"], summary: "### Hi\n" }],
+      times,
+    );
+    const ask = calls.find((call) => call.url.endsWith("GetStepSummarySignedBlobURL"));
+    expect(JSON.parse(ask!.body)).toEqual({
+      workflow_run_backend_id: "plan",
+      workflow_job_run_backend_id: "job",
+      step_backend_id: "a",
+    });
+    expect(calls.some((call) => call.method === "PUT" && call.body === "### Hi\n")).toBe(true);
+    const metadata = calls.find((call) => call.url.endsWith("CreateStepSummaryMetadata"));
+    expect(JSON.parse(metadata!.body)).toMatchObject({ step_backend_id: "a", size: 7 });
   });
 
   test("throws when GitHub turns a request down", async () => {

@@ -7,13 +7,38 @@ import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import MacAppPreview from "../components/MacAppPreview.astro";
 import Screenshot from "../components/Screenshot.astro";
+import LaunchBanner from "../components/LaunchBanner.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { setupPrompt } from "../lib/agent-setup";
+import { CHANGELOG_ID, latestUpdates, type UpdateType } from "../lib/changelog";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
 const site = Astro.site!.origin;
+// The telemetry mock: one run's trace, each span placed on the run's timeline in percent.
+const TRACE = [
+  { name: "RUN ci", time: "3m 02s", from: 0, to: 100, depth: 0 },
+  { name: "Waiting for a runner", time: "12s", from: 0, to: 7, depth: 1, wait: true },
+  { name: "ci / test", time: "2m 41s", from: 7, to: 96, depth: 1 },
+  { name: "Install", time: "38s", from: 8, to: 29, depth: 2 },
+  { name: "Run tests", time: "1m 58s", from: 29, to: 95, depth: 2 },
+];
+// What's new: the latest platform updates from the changelog, each with its type's icon (Lucide).
+const updates = latestUpdates(6);
+const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const UPDATE_ICONS: Record<UpdateType, string> = {
+  Feature:
+    '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  Integration:
+    '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  Agents:
+    '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  "Mac app":
+    '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  Reliability:
+    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+};
 // Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
 const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
   (id) => !["blacksmith", "github", "cloudflare"].includes(id),
@@ -66,17 +91,18 @@ const structuredData = {
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
+    <LaunchBanner />
     <SiteHeader home />
 
     <main id="main">
       <!-- Hero -->
       <section class="hero wrap" id="top">
         <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
-        <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
         <h1>One router for <span class="hl">every CI&nbsp;runner</span></h1>
         <p class="lede">
           Change runners with zero code changes. Each GitHub Actions job goes to the first free
           runner in your order.
+          <a href="https://github.com/relayrunner/relayrunner">Open source on GitHub</a>.
         </p>
         <div class="hero-actions">
           <a class="btn-go btn-lg" href="https://app.relayrunner.dev">Get started with GitHub</a>
@@ -189,12 +215,12 @@ const structuredData = {
       <!-- Your machine -->
       <section class="section wrap feature" id="connect">
         <div class="feature-copy">
-          <p class="kicker">Your machines</p>
           <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
           <p class="body">
             Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
-            taking jobs. Close the lid and jobs go to the next runner in your order. Share it with your
-            team or keep it private.
+            taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries
+            on, a job cut off mid-run starts again on the next free runner. Share it with your team or
+            keep it private.
           </p>
           <p class="body">
             On a Mac, the menu bar app does the same with one switch, with nothing to keep open in a
@@ -223,15 +249,17 @@ const structuredData = {
       <section class="section wrap" id="providers" aria-labelledby="providers-h">
         <div class="split-head">
           <div>
-            <p class="kicker">Providers</p>
             <h2 id="providers-h">
               Route jobs to the runners <span class="hl">you already have.</span>
             </h2>
           </div>
-          <p class="body">
-            Each provider is a step in your runner order. Add, reorder or remove them in the
-            dashboard.
-          </p>
+          <div>
+            <p class="body">
+              Each provider is a step in your runner order. Add, reorder or remove them in the
+              dashboard.
+            </p>
+            <a class="feature-link" href="/integrations">Providers →</a>
+          </div>
         </div>
         <ul class="provider-grid">
           <li class="provider-card">
@@ -275,13 +303,13 @@ const structuredData = {
       <!-- Switch -->
       <section class="section wrap feature" id="how">
         <div class="feature-copy">
-          <p class="kicker">Switch</p>
           <h2>Change where jobs run <span class="hl">in seconds.</span></h2>
           <p class="body">
             Try a new provider, move work onto your machines, or send everything back to GitHub.
             You change the order in the dashboard, without a commit or pull request, and it applies
             to the next job.
           </p>
+          <a class="feature-link" href="/solutions/routing">Routing →</a>
         </div>
         <div class="panel" aria-hidden="true">
           <div class="mini-lanes">
@@ -326,24 +354,28 @@ const structuredData = {
           </p>
         </div>
         <div class="feature-copy">
-          <p class="kicker">Minutes</p>
           <h2>Stay inside your <span class="hl">included minutes.</span></h2>
           <p class="body">
             Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you reach
             it, jobs go to the next runner in your order.
           </p>
+          <a class="feature-link" href="/docs/guides/spend-controls">Spend controls →</a>
         </div>
       </section>
 
       <!-- See -->
       <section class="section wrap feature">
         <div class="feature-copy">
-          <p class="kicker">Compare</p>
           <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
           <p class="body">
             Every job shows where it ran and why. See how long the same job takes on each runner,
             and how much you use each provider.
           </p>
+          <p class="body">
+            Signals point out what makes CI slow or costly, like flaky jobs and long waits for a
+            runner, and History says why each failed job failed.
+          </p>
+          <a class="feature-link" href="/docs/dashboard/performance">Performance →</a>
         </div>
         <div class="panel" aria-hidden="true">
           <div class="times">
@@ -394,19 +426,76 @@ const structuredData = {
           </ul>
         </div>
         <div class="feature-copy">
-          <p class="kicker">Optimized checks <span class="kicker-note">Preview</span></p>
+          <p class="preview-tag">Limited preview</p>
           <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
           <p class="body">
             PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a
             hosted runner bills each one as a full minute. Run them as optimized checks
             instead: they need no runner, post results to your pull request and use no minutes.
           </p>
+          <a class="feature-link" href="/docs/concepts/optimized-checks">Optimized checks →</a>
+        </div>
+      </section>
+
+      <!-- Telemetry -->
+      <section class="section wrap feature" id="telemetry">
+        <div class="feature-copy">
+          <h2>Send every run to <span class="hl">your observability tool.</span></h2>
+          <p class="body">
+            Each workflow run goes out as an OpenTelemetry trace: its jobs and steps, where each job
+            ran and how long it waited for a runner. Honeycomb, Grafana, Axiom or your own collector
+            read it as is. Send job logs alongside, or archive them to your own bucket.
+          </p>
+          <a class="feature-link" href="/docs/dashboard/telemetry">Telemetry →</a>
+        </div>
+        <div class="panel" aria-hidden="true">
+          <ol class="trace">
+            {
+              TRACE.map((span) => (
+                <li class:list={{ wait: span.wait }} style={`--depth: ${span.depth}`}>
+                  <b>{span.name}</b>
+                  <span class="trace-track">
+                    <i style={`--from: ${span.from}%; --to: ${span.to}%`} />
+                  </span>
+                  <code>{span.time}</code>
+                </li>
+              ))
+            }
+          </ol>
+          <p class="panel-note">
+            <b>ci / test</b> ran on <b>Ada's MacBook Pro</b> after 12s in the queue.
+          </p>
+        </div>
+      </section>
+
+      <!-- Agents -->
+      <section class="section wrap feature feature-flip" id="agents">
+        <div class="panel" aria-hidden="true">
+          <div class="term">
+            <div class="term-bar">Claude Code · relayrunner MCP</div>
+            <div class="term-body chat">
+              <p><span class="mute">&gt;</span> What's making our CI slow this week?</p>
+              <p class="mute">
+                ci / e2e waited 4 min for a runner on average. Every machine was busy at peak.
+              </p>
+              <p><span class="mute">&gt;</span> Move Blacksmith above GitHub-hosted.</p>
+              <p class="go-text">✓ Runner order saved. Next job: Blacksmith, if no machine is free.</p>
+            </div>
+          </div>
+        </div>
+        <div class="feature-copy">
+          <h2>Ask your agent <span class="hl">about your CI.</span></h2>
+          <p class="body">
+            Connect the MCP server to Claude, Cursor or VS Code. Your agent sees your runners, runs,
+            failures and usage. Where you allow it, it can also change the runner order, pause a
+            runner or set a job's size, and every change shows in Activity.
+          </p>
+          <a class="feature-link" href="/docs/reference/mcp">MCP server →</a>
         </div>
       </section>
 
       <!-- Dashboard -->
       <section class="section wrap" aria-labelledby="dashboard-h">
-        <p class="kicker">Dashboard</p>
         <h2 id="dashboard-h">See every runner and queued job <span class="hl">in one place.</span></h2>
         <p class="body">
           The Runners page shows what's running and waiting right now, how busy each runner is, and
@@ -420,7 +509,6 @@ const structuredData = {
 
       <!-- Safety -->
       <section class="section wrap" id="safety" aria-labelledby="safety-h">
-        <p class="kicker">Security</p>
         <h2 id="safety-h">Safe defaults for CI on <span class="hl">your own machines.</span></h2>
         <ul class="safety-grid">
           <li>
@@ -437,9 +525,36 @@ const structuredData = {
           </li>
           <li>
             <h3>Jobs fail with a reason</h3>
-            <p>If no runner can take a job, it fails and tells you why instead of waiting in the queue.</p>
+            <p>
+              If no runner can take a job, it fails right away and your pull request's checks say why.
+            </p>
           </li>
         </ul>
+        <a class="feature-link" href="/docs/reference/security">Security →</a>
+      </section>
+
+      <!-- What's new -->
+      <section class="section wrap news" id="whats-new" aria-labelledby="news-h">
+        <div>
+          <h2 id="news-h">What's new</h2>
+          <a class="feature-link" href={`/${CHANGELOG_ID}`}>Changelog →</a>
+        </div>
+        <ol class="news-list">
+          {
+            updates.map((update) => (
+              <li>
+                <time datetime={update.date.toISOString().slice(0, 10)}>
+                  {DAY.format(update.date)}
+                </time>
+                <a href={update.href}>{update.title}</a>
+                <span class="news-type">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" set:html={UPDATE_ICONS[update.type]} />
+                  {update.type}
+                </span>
+              </li>
+            ))
+          }
+        </ol>
       </section>
 
       <!-- Close -->

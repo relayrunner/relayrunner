@@ -9,6 +9,7 @@ import {
   evaluationRunner,
   evaluationWorkflows,
   isEvaluable,
+  recentEvaluations,
   resumeWaitingEvaluations,
   startEvaluation,
   median,
@@ -231,6 +232,84 @@ test("compares runs with the workflow's recent passing runs", async () => {
       onProvider: true,
     },
   ]);
+});
+
+test("a stopped evaluation compares the runs that finished, not the one it cancelled", async () => {
+  const at = Date.now() - 60 * 60_000;
+  await evaluation({ attempt: 3, state: "cancelled", createdAt: new Date(at) });
+  const ns = ["nscloud-ubuntu-24.04-amd64-4x16"];
+  let id = 1;
+  const job = (runAttempt: number, start: number, run: number, conclusion = "success") =>
+    db.insert(schema.jobTiming).values({
+      id: id++,
+      installationId: 8,
+      repositoryId: 5,
+      repositoryFullName: "acme/web",
+      runId: 100,
+      runAttempt,
+      workflowName: "CI",
+      name: "test",
+      labels: ns,
+      conclusion,
+      queuedAt: new Date(start),
+      startedAt: new Date(start),
+      completedAt: new Date(start + run),
+    });
+  await job(1, at, 80_000);
+  await job(2, at + 100_000, 40_000);
+  await job(3, at + 200_000, 5_000, "cancelled");
+
+  const report = await evaluationReport(db, "w1", "e1");
+  expect(report.attempts.map((a) => a.status)).toEqual([
+    "done",
+    "done",
+    "waiting",
+    "waiting",
+    "waiting",
+  ]);
+  expect(report.cold.ms).toBe(80_000);
+  expect(report.warm.ms).toBe(40_000);
+  expect(report.jobs[0]?.warm).toEqual({ waitMs: 0, runMs: 40_000 });
+});
+
+test("recent evaluations: the last 30 days and any still going, with runs on the provider since", async () => {
+  const now = Date.now();
+  const day = 86_400_000;
+  await evaluation({ state: "done", createdAt: new Date(now - 2 * day) });
+  await evaluation({ id: "old", runId: 101, state: "done", createdAt: new Date(now - 40 * day) });
+  await evaluation({
+    id: "going",
+    runId: 102,
+    state: "running",
+    createdAt: new Date(now - 40 * day),
+  });
+  await evaluation({ id: "other", runId: 103, provider: "blacksmith", createdAt: new Date(now) });
+  const ns = ["nscloud-ubuntu-24.04-amd64-4x16"];
+  let id = 1;
+  const job = (runId: number, start: number, labels = ns) =>
+    db.insert(schema.jobTiming).values({
+      id: id++,
+      installationId: 8,
+      repositoryId: 5,
+      repositoryFullName: "acme/web",
+      runId,
+      runAttempt: 1,
+      workflowName: "CI",
+      name: "test",
+      labels,
+      conclusion: "success",
+      queuedAt: new Date(start),
+      startedAt: new Date(start),
+      completedAt: new Date(start + 60_000),
+    });
+  await job(100, now - 2 * day + 1000); // The evaluation's own run.
+  await job(200, now - day); // Routed CI on Namespace since: counts.
+  await job(201, now - day, ["ubuntu-latest"]); // On GitHub: doesn't.
+  await job(202, now - 3 * day); // Before the evaluation: doesn't.
+
+  const recent = await recentEvaluations(db, "w1", "namespace", now);
+  expect(recent.map((e) => e.id)).toEqual(["e1", "going"]);
+  expect(recent[0]).toMatchObject({ finished: 1, ms: 60_000, routedRuns: 1, state: "done" });
 });
 
 test("median", () => {

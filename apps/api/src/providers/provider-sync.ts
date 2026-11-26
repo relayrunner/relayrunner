@@ -21,6 +21,7 @@ import {
 } from "../provider-billing/index.ts";
 import { openToken } from "./provider-tokens.ts";
 import { errorMessage } from "../errors.ts";
+import { log } from "../log.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -117,14 +118,7 @@ export async function syncConnection(
         .where(key),
     ]);
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "provider sync failed",
-        provider,
-        workspaceId,
-        error: errorMessage(error),
-      }),
-    );
+    log.warn("provider.sync_failed", "provider sync failed", { provider, workspaceId, error });
     await db
       .update(schema.providerConnection)
       .set({

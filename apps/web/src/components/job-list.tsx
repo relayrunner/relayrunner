@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usePageReport } from "@/lib/query";
 import { timeAgo } from "@/lib/activity";
 import { dayHeading } from "@/lib/time-zone";
 import { formatMemory } from "@/lib/device";
@@ -34,13 +35,14 @@ import {
   isFailure,
   type JobsReport,
   isLongWait,
-  loadJobs,
+  jobsQuery,
 } from "@/lib/runs";
 import { JOB_RANGES } from "@/lib/job-times";
-import { rangeSearch, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangeSearch, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { rangePhrase } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 // The range and filters live in the History page's URL.
@@ -214,7 +216,12 @@ function JobCell({ job }: { job: Row }) {
           <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
             {job.workflow ?? "Unnamed workflow"}
           </RunLink>
-          {showRepository && ` · ${job.repository}`}
+          {showRepository && (
+            <>
+              {` · ${job.repository}`}
+              <PublicRepoMark repository={job.repository} />
+            </>
+          )}
         </span>
         <CommitBy actor={job.actor} sha={job.sha} repository={job.repository} />
       </span>
@@ -265,8 +272,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [flat, setFlat] = useState(() => readFlag(FLAT_KEY));
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
-  // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-  const report = useRangeReport(first, range, loadJobs);
+  const { report } = usePageReport(jobsQuery(range), first);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),

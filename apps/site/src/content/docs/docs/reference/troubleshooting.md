@@ -18,13 +18,13 @@ A relay nobody answers stays queued until GitHub cancels it after 24 hours. Canc
 
 ## The relay failed with "No runner available"
 
-The message says why each provider couldn't take the job. The usual causes:
+The message starts with the reason you can act on, such as a limit that was reached, then names why each other provider couldn't take the job. The job's log and the run's summary page show the same message, with a link to the dashboard page that fixes it. On a pull request, a failed **RelayRunner: couldn't route** check names the reason in its title, and it turns green once a re-run routes. The usual causes:
 
 - **"no self-hosted machine is online and idle"**: start `relayrunner connect`, or add a `github` fallback to the relay.
 - **"is paused"**: resume the machine.
 - **"only runs … jobs"**: the machine is shared with **only me**, and someone else started the run. See [sharing](/docs/runners/self-hosted#who-can-run-jobs-on-it).
 - **"public repos never run on self-hosted machines"**: give the relay a `github` label.
-- **"isn't in your runner order"**: add the provider on the Router page.
+- **"no step in your runner order can run this job"**: add a provider the relay sets to the runner order on the Router page.
 - **A minutes limit**: the account is over its limit. Add a step after it.
 - **"GitHub's API limit … was reached"**: your org used up its GitHub API calls for the hour, so the Router couldn't check your machines. Routing goes back to normal when GitHub resets the limit. Add a `github` fallback so jobs still run in the meantime.
 

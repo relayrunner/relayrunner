@@ -69,7 +69,7 @@ pub enum JobState {
 }
 
 /// A `job` message without its envelope.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct JobUpdate {
     pub route_id: String,

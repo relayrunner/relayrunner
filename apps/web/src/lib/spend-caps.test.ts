@@ -1,7 +1,7 @@
 import type { RunnerStep } from "@relayrunner/runner-order";
 import { describe, expect, test } from "vitest";
 import type { AccountUsage } from "./actions-usage";
-import { sampleFreeMinutes } from "./free-minutes";
+import { sampleFreeMinutes } from "./sample/free-minutes.ts";
 import { barMarks, capText, handoffText, unreachableText } from "./spend-caps";
 
 const account: AccountUsage = {
@@ -28,12 +28,16 @@ describe("capText", () => {
   test("says each kind of cap the way its button reads", () => {
     const cap = (step: RunnerStep) => capText(step, [account], blacksmith);
     expect(cap({ key: "machine" })).toBe("When available");
-    expect(cap({ key: "github", limit: { percent: 80 } })).toBe("While under 2,400 min");
-    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("While under 2,700 free min");
-    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("While under $1,500/mo");
+    expect(cap({ key: "github", limit: { percent: 80 } })).toBe("Up to 2,400 minutes");
+    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("Up to 2,700 minutes");
+    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("Up to $1,500/month");
     expect(cap({ key: "boat" })).toBe("No cap");
-    // Without exactly one account's quota, the minutes cap is a share.
-    expect(capText({ key: "github", limit: { percent: 80 } }, [])).toBe("While under 80%");
+    // Accounts with different quotas give a range; with no quota at all, the cap is a share.
+    const bigger = { ...account, installationId: 2, quotaMinutes: 50_000 };
+    expect(capText({ key: "github", limit: { percent: 80 } }, [account, bigger])).toBe(
+      "Up to 2,400–40,000 minutes",
+    );
+    expect(capText({ key: "github", limit: { percent: 80 } }, [])).toBe("Up to 80% of minutes");
   });
 });
 
@@ -45,13 +49,13 @@ describe("handoffText", () => {
       text: "When every machine is busy or offline",
       warn: false,
     });
-    expect(handoff({ key: "github", limit: { percent: 80 } }).text).toBe("Once 2,400 min are used");
+    expect(handoff({ key: "github", limit: { percent: 80 } }).text).toBe(
+      "Once 2,400 minutes are used",
+    );
     expect(handoff({ key: "blacksmith", limit: { percent: 90 } }).text).toBe(
-      "Once 2,700 free min are used",
+      "Once 2,700 minutes are used",
     );
-    expect(handoff({ key: "depot", spendLimit: { usd: 50 } }).text).toBe(
-      "Once $50 is spent this month",
-    );
+    expect(handoff({ key: "depot", spendLimit: { usd: 50 } }).text).toBe("Once $50/month is spent");
   });
 
   test("warns under a step with no cap, Boat included until it's connected", () => {
@@ -114,7 +118,7 @@ describe("Groundbox", () => {
   const groundbox = { groundbox: sampleFreeMinutes("groundbox", true) };
   test("caps and hands off in free minutes, and a connected uncapped step passes held jobs on", () => {
     expect(capText({ key: "groundbox", limit: { percent: 50 } }, [], groundbox)).toBe(
-      "While under 1,500 free min",
+      "Up to 1,500 minutes",
     );
     expect(handoffText({ key: "groundbox" }, [], groundbox)).toEqual({
       text: "When Groundbox would hold the job",

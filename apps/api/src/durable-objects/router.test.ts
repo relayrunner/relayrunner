@@ -12,13 +12,19 @@ const github = vi.hoisted(() => ({
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
-  userCanReadRepo: github.userCanReadRepo,
-  listRunners: github.listRunners,
   orgAppSlugs: github.orgAppSlugs,
+}));
+vi.mock("../github/repos-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/repos-api.ts")>()),
+  userCanReadRepo: github.userCanReadRepo,
+}));
+vi.mock("../github/runners-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/runners-api.ts")>()),
+  listRunners: github.listRunners,
 }));
 
 const { Router } = await import("./router.ts");
-const { GitHubRateLimitError } = await import("../github/github-app.ts");
+const { GitHubRateLimitError } = await import("../github/github-api.ts");
 
 function memoryState() {
   const data = new Map<string, unknown>();
@@ -83,7 +89,7 @@ describe("Router: jobs wait for a full machine", () => {
   const counts = () => setWaiting.mock.calls.map(([workspace, jobs]) => [workspace, jobs.length]);
 
   beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
     running = 1;
     run.mockClear();
     setWaiting.mockClear();
@@ -184,6 +190,44 @@ describe("Router: jobs wait for a full machine", () => {
       ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
     });
     expect(spilled).toHaveBeenCalledOnce();
+  });
+
+  test("each routing decision logs one routing.decision line with what charts group by", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const decisions = () =>
+      info.mock.calls
+        .map(([line]) => JSON.parse(String(line)))
+        .filter((line) => line.event === "routing.decision");
+    await router.route({
+      ...job(1),
+      ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
+    });
+    const waited = await router.route(job(2));
+    expect(decisions()).toMatchObject([
+      {
+        level: "info",
+        service: "api",
+        result: "routed",
+        step: "github",
+        runnerKind: "github",
+        runner: "ubuntu-latest",
+        skipped: ["machine:machine_full"],
+        workspaceId: "w1",
+        installationId: 7,
+        repo: "leonel/cabal",
+        runId: 1,
+      },
+      {
+        result: "waiting",
+        step: "machine",
+        runnerKind: "machine",
+        reason: "machine_full",
+        routeId: waited.runner!.slice(3),
+        runId: 2,
+      },
+    ]);
+    expect(decisions()[1]).not.toHaveProperty("runner");
+    expect(decisions()[0].decideMs).toBeTypeOf("number");
   });
 
   test("a full machine with no fallback answers a route label instead of failing", async () => {

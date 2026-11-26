@@ -21,7 +21,7 @@ function GeneralSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="General">
+      <PageHeader className="max-w-3xl" title="General">
         Your workspace is one GitHub account with the RelayRunner App installed. Its name and logo
         come from GitHub.
       </PageHeader>

@@ -131,6 +131,25 @@ describe("webhook ingress", () => {
     });
   });
 
+  test("enqueues a revoked authorization, which has no installation", async () => {
+    const { post, queue } = setup();
+    const body = JSON.stringify({ action: "revoked", sender: { id: 42, login: "octo" } });
+    const response = await post(body, {
+      "x-github-event": "github_app_authorization",
+      "x-github-delivery": "d-2",
+      "x-hub-signature-256": await sign(body),
+    });
+    expect(response.status).toBe(202);
+    expect(queue.sent).toEqual([
+      expect.objectContaining({
+        event: "github_app_authorization",
+        action: "revoked",
+        installationId: null,
+        senderId: 42,
+      }),
+    ]);
+  });
+
   test("accepts events it does not act on without enqueueing", async () => {
     const { post, queue } = setup();
     const body = JSON.stringify({ action: "created" });

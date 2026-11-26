@@ -6,9 +6,9 @@ import { TimeRangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
-import { authDisabled } from "@/lib/auth-client";
-import { type RangeSearch, rangeSearch, useRangeReport, useSetSearch } from "@/lib/search-params";
-import { type RangeOptions, rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
+import { type RangeSearch, rangeSearch, useSetSearch } from "@/lib/search-params";
+import { type RangeOptions, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -17,8 +17,6 @@ import {
   minutes,
   money,
   type UsageReport,
-  type UsageRow,
-  sampleCheckSavings,
 } from "@/lib/usage";
 
 // As far back as the API keeps jobs, starting on this month since GitHub's included minutes reset
@@ -32,10 +30,6 @@ type UsageData = { report: UsageReport; checks: FreeCheckSavings };
 
 // The job report and what the free checks saved, over the same range.
 function load(range: TimeRange): Promise<UsageData> {
-  if (authDisabled) {
-    const days = rangeDays(range);
-    return Promise.resolve({ report: sampleReport(days), checks: sampleCheckSavings(days) });
-  }
   return Promise.all([getUsage(range), getCheckSavings(range)]).then(([report, checks]) => ({
     report,
     checks,
@@ -44,9 +38,11 @@ function load(range: TimeRange): Promise<UsageData> {
 
 const { validateSearch, rangeOf, toSearch } = rangeSearch(RANGES, DEFAULT_RANGE);
 
+const usageQuery = (range: TimeRange) => pageQuery(["usage", range], () => load(range));
+
 export const Route = createFileRoute("/_authed/_workspace/usage")({
   validateSearch,
-  loader: ({ location }) => load(rangeOf(validateSearch(location.search))),
+  loader: ({ location }) => loadPage(usageQuery(rangeOf(validateSearch(location.search)))),
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: UsagePage,
@@ -55,8 +51,9 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
 function UsagePage() {
   const range = rangeOf(Route.useSearch());
   const setSearch = useSetSearch<RangeSearch>();
-  const first = Route.useLoaderData();
-  const { report, checks } = useRangeReport(first, range, load);
+  const {
+    report: { report, checks },
+  } = usePageReport(usageQuery(range), Route.useLoaderData());
 
   function chooseRange(next: TimeRange) {
     setSearch(toSearch(next));
@@ -67,7 +64,7 @@ function UsagePage() {
 
   return (
     <section>
-      <PageHeader title="Usage">
+      <PageHeader className="max-w-4xl" title="Usage">
         Every job in your connected repos, whichever runner took it. GitHub bills each job by the
         minute, rounded up, so a job that finishes in seconds still pays for a whole minute.
       </PageHeader>
@@ -271,62 +268,4 @@ function Table({
       </table>
     </div>
   );
-}
-
-const TOTAL_KEYS = [
-  "jobs",
-  "shortJobs",
-  "runSeconds",
-  "billedMinutes",
-  "shortBilledMinutes",
-  "cost",
-  "shortCost",
-  "roundingCost",
-] as const satisfies (keyof UsageReport["totals"])[];
-
-// For local development without an API (auth disabled).
-function sampleReport(days: number): UsageReport {
-  const scale = days / 30;
-  const row = (
-    runnerClass: string,
-    label: string,
-    perMinute: number,
-    jobs: number,
-    shortJobs: number,
-    billedMinutes: number,
-  ): UsageRow => {
-    const j = Math.round(jobs * scale);
-    const s = Math.round(shortJobs * scale);
-    const b = Math.round(billedMinutes * scale);
-    return {
-      runnerClass,
-      label,
-      perMinute,
-      jobs: j,
-      shortJobs: s,
-      runSeconds: b * 40,
-      billedMinutes: b,
-      shortBilledMinutes: s,
-      cost: b * perMinute,
-      shortCost: s * perMinute,
-      roundingCost: b * perMinute * 0.33,
-    };
-  };
-  const byRunner = [
-    row("macos", "macOS", 0.062, 120, 40, 900),
-    row("linux-2-core", "ubuntu-latest", 0.006, 2400, 1500, 6200),
-    row("self-hosted", "Self-hosted", 0, 300, 90, 1400),
-  ];
-  return {
-    days,
-    shortJobSeconds: 60,
-    totals: Object.fromEntries(
-      TOTAL_KEYS.map((key) => [key, byRunner.reduce((total, r) => total + r[key], 0)]),
-    ) as UsageReport["totals"],
-    byRunner,
-    byRepository: [
-      { repository: "acme/app", private: true, jobs: 1800, shortJobs: 1100, shortCost: 8.9 },
-      { repository: "acme/docs", private: false, jobs: 400, shortJobs: 380, shortCost: 0 },
-    ],
-  };
 }

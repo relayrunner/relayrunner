@@ -13,7 +13,8 @@
   padding: 0;
   list-style: none;
 }
-.site-header a {
+:where(.site-header) a {
+  /* Zero-specificity so buttons (.btn-go) keep their own text color. */
   color: inherit;
 }
 .site-header img {

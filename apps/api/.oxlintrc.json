@@ -1,0 +1,8 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  // Log through src/log.ts, so every line has the same shape (docs/observability.md#logs).
+  "rules": { "no-console": "error" },
+  "overrides": [
+    { "files": ["**/*.test.ts", "scripts/**", "container/**"], "rules": { "no-console": "off" } }
+  ]
+}

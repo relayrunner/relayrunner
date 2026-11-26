@@ -15,6 +15,7 @@ import { ExternalLink, LINK, RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
 import { StatusIcon } from "@/components/status-icon";
+import { PublicRepoMark } from "@/components/public-repo";
 import { SECTION_HEADING } from "@/components/ui/data-table";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -27,8 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { timeAgo } from "@/lib/activity";
-import { authDisabled } from "@/lib/auth-client";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
@@ -52,8 +53,6 @@ import {
   type SignalTrend,
   SIGNAL_COPY,
   type SignalsReport,
-  sampleSignalRuns,
-  sampleSignals,
   triggerName,
 } from "@/lib/signals";
 import {
@@ -61,7 +60,6 @@ import {
   rangeSearch,
   textParam,
   unlessDefault,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { money } from "@/lib/usage";
@@ -89,16 +87,6 @@ const FILTERED_RANGES: RangeOptions = {
 };
 const DEFAULT_RANGE: TimeRange = "30d";
 const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
-
-// The range and filter a report is for.
-const keyOf = (range: TimeRange, filter: SignalFilter) =>
-  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
-
-function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
-  return authDisabled
-    ? Promise.resolve(sampleSignals(rangeDays(range), filter))
-    : getSignals(range, filter);
-}
 
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
@@ -139,11 +127,18 @@ const SIGNALS_DOCS = `${DOCS_URL}/dashboard/signals`;
 const docsAnchor = (title: string) =>
   `${SIGNALS_DOCS}#${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
+// The range and filter a report is for.
+const keyOf = (range: TimeRange, filter: SignalFilter) =>
+  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
+
+const signalsQuery = (range: TimeRange, filter: SignalFilter) =>
+  pageQuery(["signals", range, filter], () => getSignals(range, filter));
+
 export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(rangeOf(search), filterOf(search));
+    return loadPage(signalsQuery(rangeOf(search), filterOf(search)));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -157,7 +152,7 @@ function SignalsPage() {
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
   const key = keyOf(range, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
+  const { report } = usePageReport(signalsQuery(range, filter), Route.useLoaderData());
   const manyRepos = spansRepos(report);
 
   function chooseRange(next: TimeRange) {
@@ -166,7 +161,7 @@ function SignalsPage() {
 
   return (
     <section>
-      <PageHeader title="Signals">
+      <PageHeader className="max-w-4xl" title="Signals">
         What makes your CI slow, costly or busier than it needs to be, and where. Updated every
         hour. <ExternalLink href={SIGNALS_DOCS}>How signals work</ExternalLink>
       </PageHeader>
@@ -568,6 +563,7 @@ function SignalCard({ signal, manyRepos }: { signal: Signal; manyRepos: boolean 
                   >
                     {repository}
                   </button>
+                  <PublicRepoMark repository={repository} />
                 </TableCell>
               </TableRow>
             )}
@@ -786,6 +782,13 @@ function BreakdownName({
     );
   }
   if (by === "trigger") return triggerName(row.name);
+  if (by === "repository")
+    return (
+      <>
+        {row.name}
+        <PublicRepoMark repository={row.name} />
+      </>
+    );
   return row.name;
 }
 
@@ -811,9 +814,7 @@ function RunsPanel({
   const [found, setFound] = useState<SignalRunsReport | "failed" | null>(null);
   useEffect(() => {
     let live = true;
-    const request = authDisabled
-      ? Promise.resolve(sampleSignalRuns(row, rangeDays(range)))
-      : getSignalRuns(row, range, filter);
+    const request = getSignalRuns(row, range, filter);
     request.then(
       (next) => live && setFound(next),
       () => live && setFound("failed"),

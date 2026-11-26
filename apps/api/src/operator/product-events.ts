@@ -16,6 +16,7 @@ import { type Db, createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { PING_WINDOW_MS, parseGithubIds, testAccounts } from "./operator-pings.ts";
+import { log } from "../log.ts";
 
 const POSTHOG_BATCH_URL = "https://us.i.posthog.com/batch/";
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
@@ -247,13 +248,10 @@ export async function sendProductEvents(
     if (!response.ok) throw new Error(`PostHog answered ${response.status}`);
     return batch.length;
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        msg: "product events not sent",
-        events: batch.length,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error("operator.product_events_not_sent", "product events not sent", {
+      events: batch.length,
+      error,
+    });
     return 0;
   }
 }

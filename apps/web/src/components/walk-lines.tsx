@@ -20,7 +20,7 @@ export function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | 
       {walk.ownOrder && <li>{order}</li>}
       {lines.map((line, index) => (
         <li
-          key={`${line.key}-${line.state}`}
+          key={index}
           className="break-words sm:truncate"
           ref={(el) => {
             if (el) el.title = el.textContent ?? "";

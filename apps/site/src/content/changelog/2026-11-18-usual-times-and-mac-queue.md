@@ -1,6 +1,7 @@
 ---
-title: Usual times, job history and the Mac queue
+title: Usual job times, job history and the Mac queue
 date: 2026-11-18
+type: Feature
 description: See how long each job usually takes and has left, list a machine's jobs with relayrunner history, and see what's waiting in RelayRunner for Mac.
 ---
 

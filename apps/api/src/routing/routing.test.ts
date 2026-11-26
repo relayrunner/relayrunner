@@ -15,6 +15,8 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
+  noRunnerPage,
+  noRunnerReason,
   retryOrder,
   holdsMachine,
   jobContext,
@@ -37,6 +39,7 @@ import {
   unavailableMachines,
   type Route,
   fits,
+  machineCpus,
   runsIsolated,
   placeNow,
   waitingDecision,
@@ -331,6 +334,27 @@ describe("a machine with a VM as a second place for jobs", () => {
     expect(chooseMachine([mac], new Map(), new Map(), ["self-hosted", "linux"])).toBe(mac);
   });
 
+  test("with cpus, the place must have at least that many, and unknown counts as enough", () => {
+    const sized = { ...mac, cpus: 12, isolatedCpus: 4 };
+    expect(fits(sized, { labels: ["Linux"], cpus: 4 })).toBe(true);
+    expect(fits(sized, { labels: ["Linux"], cpus: 8 })).toBe(false);
+    expect(fits(sized, { labels: ["self-hosted"], cpus: 8 })).toBe(true);
+    expect(runsIsolated(sized, { labels: ["self-hosted"], cpus: 8 }, ["ubuntu-latest"])).toBe(
+      false,
+    );
+    expect(fits({ ...mac, cpus: null }, { labels: ["macOS"], cpus: 64 })).toBe(true);
+    expect(chooseMachine([sized], new Map(), new Map(), { labels: ["Linux"], cpus: 8 })).toBeNull();
+  });
+
+  test("machineCpus: the machine's cores, or its VM's size where jobs run in VMs", () => {
+    expect(machineCpus({ cpuCores: 12, vmCpus: 4, isolatedOs: "linux" })).toEqual({
+      cpus: 12,
+      isolatedCpus: 4,
+    });
+    expect(machineCpus({ cpuCores: 16, vmCpus: 4, isolatedOs: null })).toEqual({ cpus: 4 });
+    expect(machineCpus({ cpuCores: 16, vmCpus: null, isolatedOs: null })).toEqual({ cpus: 16 });
+  });
+
   test("runs a job in the place that has its labels", () => {
     expect(runsIsolated(mac, ["Linux"], [])).toBe(true);
     expect(runsIsolated(mac, ["macOS"], ["ubuntu-latest"])).toBe(false);
@@ -571,6 +595,34 @@ describe("jobContext", () => {
     expect(jobContext({ ...claimed, inputs: { t: 2, d: [] } })?.machine).toEqual([]);
   });
 
+  test("reads the relay's os, arch and cpus, dropping values it can't mean", () => {
+    const inputs = {
+      t: 2,
+      d: [
+        { k: "os", v: " macOS " },
+        { k: "arch", v: "ARM64" },
+        { k: "cpus", v: { n: 8 } },
+      ],
+    };
+    expect(jobContext({ ...claimed, inputs })?.shape).toEqual({
+      os: "macos",
+      arch: "arm64",
+      cpus: 8,
+    });
+    const bad = {
+      t: 2,
+      d: [
+        { k: "os", v: "beos" },
+        { k: "arch", v: "" },
+        { k: "cpus", v: 0 },
+      ],
+    };
+    expect(jobContext({ ...claimed, inputs: bad })?.shape).toBeUndefined();
+    expect(jobContext({ ...claimed, inputs: { t: 2, d: [{ k: "cpus", v: "4" }] } })?.shape).toEqual(
+      { cpus: 4 },
+    );
+  });
+
   test("returns null when either is missing", () => {
     expect(jobContext(undefined)).toBeNull();
     expect(jobContext({})).toBeNull();
@@ -644,8 +696,45 @@ describe("decideRoute", () => {
     expect(pick).not.toHaveBeenCalled();
     expect(decision).toMatchObject({ runner: null, notInOrder: ["machine"] });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: `github` isn't set on this relay; Self-hosted isn't in your runner order.",
+      "No runner available: `github` isn't set on this relay.",
     );
+  });
+
+  test("nothing fits: the reached limit leads and repeats drop", () => {
+    const reason = noRunnerReason(
+      { ...both, github: ["auto"], blacksmith: ["blacksmith-4vcpu-ubuntu-2404"] },
+      [
+        { key: "machine", reason: "public_repo" },
+        {
+          key: "blacksmith",
+          reason: "minutes_limit",
+          minutes: {
+            account: "acme",
+            usedMinutes: 3153,
+            quotaMinutes: 3000,
+            percent: 90,
+            burnRatePerHour: null,
+          },
+        },
+        { key: "github", reason: "no_size", vcpus: 4 },
+        { key: "github", reason: "no_size", vcpus: 4 },
+      ],
+    );
+    expect(reason).toBe(
+      "No runner available: acme has used 3,153 of its 3,000 free Blacksmith minutes (105%), past the 90% limit; " +
+        "public repos never run on self-hosted machines; GitHub-hosted has no runner with 4 vCPU or more.",
+    );
+  });
+
+  test("noRunnerPage points at the page that fixes the leading reason", () => {
+    expect(
+      noRunnerPage([
+        { key: "github", reason: "no_size", vcpus: 4 },
+        { key: "blacksmith", reason: "minutes_limit" },
+      ]),
+    ).toBe("usage");
+    expect(noRunnerPage([{ key: "machine", reason: "machine_full" }])).toBe("runners");
+    expect(noRunnerPage([{ key: "github", reason: "no_size", vcpus: 4 }])).toBe("router");
   });
 
   test("a provider the order leaves out is reported even when another step answers", async () => {
@@ -669,7 +758,7 @@ describe("decideRoute", () => {
       notInOrder: ["github"],
     });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: no self-hosted machine with macOS, ARM64 is online and idle; GitHub-hosted isn't in your runner order.",
+      "No runner available: no self-hosted machine with macOS, ARM64 is online and idle.",
     );
   });
 
@@ -753,6 +842,36 @@ describe("decideRoute", () => {
     }));
     expect(two.runner === null && two.reason).toBe(
       "No runner available: every machine that fits is paused (a, b); `github` isn't set on this relay.",
+    );
+  });
+
+  test("a shaped relay's no_size skip names the platform, and the size when the provider sells it", async () => {
+    const order: RunnerOrder = { steps: [{ key: "blacksmith" }, { key: "ubicloud" }] };
+    const job = {
+      ...relayInputs({ blacksmith: ["auto"], ubicloud: ["auto"] }),
+      private: true,
+      size: 8,
+      platform: "macos" as const,
+    };
+    const decision = await decideRoute(order, job, none);
+    expect(decision.skipped).toEqual([
+      { key: "blacksmith", reason: "no_size", platform: "macos", vcpus: 8 },
+      { key: "ubicloud", reason: "no_size", platform: "macos" },
+    ]);
+    expect(decision.runner === null && decision.reason).toBe(
+      "No runner available: Blacksmith has no macOS runner with 8 vCPU or more; Ubicloud has no macOS runner.",
+    );
+  });
+
+  test("no machine that fits a shaped relay names its labels and CPUs", async () => {
+    const job = {
+      ...relayInputs({ machine: ["self-hosted", "Linux"] }),
+      private: true,
+      cpus: 4,
+    };
+    const decision = await decideRoute({ steps: [{ key: "machine" }] }, job, none);
+    expect(decision.runner === null && decision.reason).toBe(
+      "No runner available: no self-hosted machine with Linux, 4+ CPUs is online and idle.",
     );
   });
 
@@ -1674,7 +1793,7 @@ describe("decideRoute with Blacksmith's free minutes", () => {
     expect(read).not.toHaveBeenCalled();
     const failed = await decide(read, { steps: [{ key: "blacksmith", limit: { percent: 80 } }] });
     expect(failed.runner === null && failed.reason).toContain(
-      "acme has used 2,900 of its 3,000 free Blacksmith minutes (96%), past the 80% limit;",
+      "acme has used 2,900 of its 3,000 free Blacksmith minutes (96%), past the 80% limit.",
     );
   });
 });

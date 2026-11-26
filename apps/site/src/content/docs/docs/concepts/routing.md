@@ -23,13 +23,15 @@ jobs:
     steps: ...
 ```
 
-The relay takes one input per provider:
+Tell the relay what the job needs with `os`, `arch` and `cpus`, such as `os: linux` and `cpus: 4`. Every provider in your runner order can then take the job, each with its smallest runner that fits, and a machine fits when it has the OS and enough cores.
+
+To use a specific runner instead, the relay takes one input per provider:
 
 - **`machine`**: labels a self-hosted machine must have, all of them. `self-hosted` accepts any machine.
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
 - **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted).
 
-Leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
+Without `os`, `arch` or `cpus`, leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
 
 ## What happens on a push
 
@@ -85,11 +87,11 @@ To send jobs elsewhere instead of waiting, add a step after your machines, such 
 
 ## When nothing fits
 
-The relay fails straight away with one line that names why each provider couldn't take the job, such as:
+The relay fails straight away with one line that names why each provider couldn't take the job, starting with the one you can act on, such as:
 
 > No runner available: no self-hosted machine is online and idle; `github` isn't set on this relay.
 
-The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback so it doesn't happen again: give the relay a `github` label and keep GitHub-hosted in the runner order.
+The relay's log and the run's summary page show the same line, with a link to the dashboard page that fixes it, and a **RelayRunner: couldn't route** check on the commit puts the reason in the pull request's checks list. The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback so it doesn't happen again: give the relay a `github` label and keep GitHub-hosted in the runner order.
 
 ## When a machine goes away mid-job
 

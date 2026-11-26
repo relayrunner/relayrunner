@@ -1,0 +1,92 @@
+{
+  "relay": "<relay>",
+  "routed": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "blacksmith-default",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "blacksmith-big-arm",
+      "with": {
+        "arch": "arm64",
+        "cpus": "8",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "depot",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "depot-16",
+      "with": {
+        "cpus": "16",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "depot-mac",
+      "with": {
+        "os": "macos"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "warp",
+      "with": {
+        "cpus": "4",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "ubicloud",
+      "with": {
+        "cpus": "8",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "namespace",
+      "with": {
+        "cpus": "4",
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "boat",
+      "with": {
+        "os": "linux"
+      },
+      "warnings": []
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "groundbox",
+      "with": {
+        "cpus": "4",
+        "os": "linux"
+      },
+      "warnings": []
+    }
+  ]
+}

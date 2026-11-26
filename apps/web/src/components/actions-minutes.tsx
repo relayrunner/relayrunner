@@ -8,11 +8,11 @@ import {
   getActionsUsage,
   refreshActionsUsage,
   paceText,
-  sampleActionsUsage,
   needsSpendApp,
   SPEND_APP_INSTALL_URL,
   unavailableText,
 } from "@/lib/actions-usage";
+import { QuotaMeter } from "@/components/quota-meter";
 import { timeAgo } from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +28,6 @@ export function useActionsUsage() {
   const [usage, setUsage] = useState<ActionsUsage | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
-    if (authDisabled) return setUsage(sampleActionsUsage());
     let live = true;
     getActionsUsage().then(
       (read) => live && setUsage(read),
@@ -67,15 +66,18 @@ export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
           {over
             .map((account) => `${account.accountLogin}: ${usd(account.netAmount)} this month`)
             .join(" · ")}
-          . Usage went past the plan's included minutes. A "While under" limit on GitHub-hosted in
-          the Router moves jobs to your machines before that happens.
+          . Usage went past the plan's included minutes. A minutes cap on GitHub-hosted in the
+          Router moves jobs to your machines before that happens.
         </p>
       </div>
     </div>
   );
 }
 
-/** Used vs included minutes, the burn rate, and why it can't be judged when it can't. */
+/**
+ * Used vs included minutes, the burn rate, where the cycle is headed, and why it can't be judged
+ * when it can't.
+ */
 export function ActionsMinutes({
   usage,
   onRefresh,
@@ -91,6 +93,7 @@ export function ActionsMinutes({
   const quota = usage.quotaMinutes;
   const share = quota ? usage.usedMinutes / quota : 0;
   const over = usage.netAmount > 0 || share >= 1;
+  const pace = paceText(usage);
   return (
     <div className="grid gap-1.5 rounded-lg border bg-well px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
@@ -133,23 +136,15 @@ export function ActionsMinutes({
         </span>
       </div>
       {quota !== null && usage.status === "ok" && (
-        <div
-          role="meter"
-          aria-label="Included Actions minutes used this month"
-          aria-valuemin={0}
-          aria-valuemax={quota}
-          aria-valuenow={Math.round(usage.usedMinutes)}
-          className="h-1.5 overflow-hidden rounded-full bg-raised-2"
-        >
-          <div
-            className={cn(
-              "h-full rounded-full",
-              over ? "bg-destructive" : share >= 0.8 ? "bg-run" : "bg-go",
-            )}
-            style={{ width: `${Math.min(100, Math.max(share * 100, usage.usedMinutes ? 1 : 0))}%` }}
-          />
-        </div>
+        <QuotaMeter
+          label="Included Actions minutes used this month"
+          used={usage.usedMinutes}
+          quota={quota}
+          over={over}
+          projected={usage.projection?.projectedMinutes}
+        />
       )}
+      {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
       {unavailable && (
         <p className="text-xs text-muted-foreground">
           {unavailable}
@@ -200,20 +195,16 @@ export function IncludedMinutes() {
       <h2 className="font-semibold">Included minutes</h2>
       <OverageBanner accounts={usage.accounts} />
       <ul className="grid gap-3">
-        {usage.accounts.map((account) => {
-          const pace = paceText(account);
-          return (
-            <li key={account.installationId} className="grid gap-1.5">
-              {several && <span className="text-sm font-medium">{account.accountLogin}</span>}
-              <ActionsMinutes
-                usage={account}
-                onRefresh={authDisabled ? undefined : refresh}
-                refreshing={refreshing}
-              />
-              {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
-            </li>
-          );
-        })}
+        {usage.accounts.map((account) => (
+          <li key={account.installationId} className="grid gap-1.5">
+            {several && <span className="text-sm font-medium">{account.accountLogin}</span>}
+            <ActionsMinutes
+              usage={account}
+              onRefresh={authDisabled ? undefined : refresh}
+              refreshing={refreshing}
+            />
+          </li>
+        ))}
       </ul>
     </div>
   );

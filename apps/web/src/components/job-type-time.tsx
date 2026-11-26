@@ -8,16 +8,14 @@ import { Change } from "@/components/change";
 import { Count } from "@/components/count";
 import { TipRow } from "@/components/chart-parts";
 import { Legend, StackedBars, Swatch } from "@/components/stacked-bars";
-import { TypePhases } from "@/components/job-phases";
+import { TypeInside } from "@/components/job-phases";
 import { WorkflowLink } from "@/components/workflow-link";
-import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, minutesText, plural } from "@/lib/job-times";
 import {
   change,
   getJobTypeTimes,
   type JobTypeTime,
   type JobTypeTimes,
-  sampleJobTypeTimes,
   summarize,
   typeColor,
   type TypeKey,
@@ -25,11 +23,9 @@ import {
   type TypeSummary,
   type TypeTotal,
 } from "@/lib/job-types";
-import { rangeDays, rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
+import { rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn, percent } from "@/lib/utils";
-
-const load = (range: TimeRange) =>
-  authDisabled ? Promise.resolve(sampleJobTypeTimes(rangeDays(range))) : getJobTypeTimes(range);
+import { PublicRepoMark } from "@/components/public-repo";
 
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
@@ -58,7 +54,7 @@ export function JobTypes({ range, repository }: { range: TimeRange; repository: 
   useEffect(() => {
     let live = true;
     setFailed(false);
-    load(range)
+    getJobTypeTimes(range)
       .then((next) => live && setReport(next))
       .catch(() => live && setFailed(true));
     return () => {
@@ -89,7 +85,7 @@ export function JobTypes({ range, repository }: { range: TimeRange; repository: 
         <>
           <Shares summary={summary} range={range} compare={report.compare} />
           {report.days > 1 && <Daily summary={summary} />}
-          <TypePhases summary={summary} />
+          <TypeInside summary={summary} />
           <p className="max-w-[62ch] text-sm text-muted-foreground">
             The AI model sorts each job by its name, its workflow and its runner labels, and reads
             new jobs every hour. Jobs it hasn't read yet, or wasn't sure about, count as Not sorted.
@@ -244,6 +240,7 @@ function JobName({ job }: { job: JobTypeTime }) {
     <span className="text-sm">
       <span className="text-muted-foreground">
         {job.repository}
+        <PublicRepoMark repository={job.repository} />
         {job.workflow && (
           <>
             {" · "}

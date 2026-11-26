@@ -45,6 +45,49 @@ final class EventTests: XCTestCase {
     )
   }
 
+  /// The lines the CLI writes (apps/cli/fixtures/events.jsonl, checked against the CLI by its
+  /// events.rs tests), read the way the app reads them.
+  func testReadsTheLinesTheCLIWrites() throws {
+    let fixture = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .appendingPathComponent("../../../cli/fixtures/events.jsonl")
+    let lines = try String(contentsOf: fixture, encoding: .utf8)
+      .split(separator: "\n")
+      .map { Event.parse(Data($0.utf8)) }
+    let job = RunJob(
+      name: "test", workflow: "CI", repo: "acme/app",
+      url: URL(string: "https://github.com/acme/app/actions/runs/1/job/2")!,
+      runAttempt: 1, typicalMs: 150_000)
+    let expected: [Event?] = [
+      .signIn(url: URL(string: "https://app.relayrunner.dev/device?user_code=ABCD-EFGH")!, code: "ABCD-EFGH"),
+      .machine(id: "m1", name: "ada-mbp", server: URL(string: "https://app.relayrunner.dev/")!),
+      .other(type: "connecting"),
+      .other(type: "connected"),
+      .state(.init(link: .online, paused: false, jobs: [], slots: 2)),
+      .other(type: "waiting"),
+      .state(
+        .init(
+          link: .online, paused: true, jobs: ["r1"], waiting: 1, spilled: [1_763_481_000_000],
+          slots: 2)),
+      .other(type: "paused"),
+      .run(routeId: "r1", slot: 1, job: job),
+      .run(routeId: "r2", slot: 2, job: nil),
+      .jobRepo(routeId: "r1", repo: "acme/app"),
+      .other(type: "job"),
+      .jobResult(routeId: "r1", job: "test", result: "Failed"),
+      .other(type: "job-end"),
+      .other(type: "disconnected"),
+      .offline(reason: "stopped", message: nil),
+      .offline(reason: "rejected", message: "This machine was removed from the workspace."),
+      .error(code: "NOT_SIGNED_IN", message: "Sign in first.", command: nil),
+      .error(code: "UNKNOWN_COMMAND", message: "Commands are `pause` and `resume`.", command: "bogus"),
+    ]
+    XCTAssertEqual(lines.count, expected.count)
+    for (index, (read, want)) in zip(lines, expected).enumerated() {
+      XCTAssertEqual(read, want, "line \(index + 1)")
+    }
+  }
+
   func testPassesOverConnectionEventsAndSkipsWhatItCantRead() {
     XCTAssertEqual(parse(#"{"v":1,"at":"x","type":"connected"}"#), .other(type: "connected"))
     XCTAssertNil(parse(#"{"v":2,"at":"x","type":"connected"}"#))

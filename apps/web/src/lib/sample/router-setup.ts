@@ -1,6 +1,6 @@
-import type { AccountUsage } from "./actions-usage.ts";
-import type { AutoJob, AutoJobs } from "./auto-jobs.ts";
-import type { RouterSetup, RunnerGroupCheck } from "./router-setup.ts";
+import type { AccountUsage } from "../actions-usage.ts";
+import type { AutoJob, AutoJobs } from "../auto-jobs.ts";
+import type { RouterSetup, RunnerGroupCheck } from "../router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
 export function sampleRouterAccounts(
@@ -135,6 +135,7 @@ export function sampleAutoJobs(): AutoJobs {
     workflow: "CI",
     relayJob,
     size: null,
+    cpus: null,
     first: null,
     updatedAt: null,
     lastSeenAt: now - 3_600_000,
@@ -148,7 +149,7 @@ export function sampleAutoJobs(): AutoJobs {
       job(2, "relay-typecheck"),
       job(3, "relay-test", { size: 8, updatedAt: now - 2 * 86_400_000 }),
       job(4, "relay-build", { size: 4, first: "blacksmith" }),
-      job(5, "relay", { workflowPath: ".github/workflows/e2e.yml", workflow: "E2E" }),
+      job(5, "relay", { workflowPath: ".github/workflows/e2e.yml", workflow: "E2E", cpus: 16 }),
     ],
   };
 }

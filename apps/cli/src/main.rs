@@ -1,6 +1,6 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs` and
-//! `blacksmith`. It shares ~/.relayrunner with older (TypeScript) versions.
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs`,
+//! `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
 mod blacksmith;
@@ -10,6 +10,7 @@ mod credentials;
 mod device;
 mod error;
 mod events;
+mod feedback;
 mod firewall;
 mod history;
 mod init;
@@ -100,7 +101,7 @@ const COMMANDS: &[Command] = &[
     (
         "init",
         "Route this repo's GitHub Actions jobs through RelayRunner, so they run on your machine when it's online. Edits workflow files; never commits.",
-        "relayrunner init [--plan] [--apply <jobs>] [--auto] [--allow-deploy <jobs>] [--json]",
+        "relayrunner init [--plan] [--apply <jobs>] [--exact] [--allow-deploy <jobs>] [--json]",
         &[
             (
                 "--plan",
@@ -111,8 +112,8 @@ const COMMANDS: &[Command] = &[
                 "Route these jobs without prompting: comma-separated ids or file:job, or `all` for every ready job",
             ),
             (
-                "--auto",
-                "Write `auto` instead of the label for Linux x64 jobs, so their size is set on the Router page",
+                "--exact",
+                "Keep each job's runs-on label under its provider instead of writing its shape (os, arch, cpus), so only that provider and your machines take it",
             ),
             (
                 "--allow-deploy JOBS",
@@ -223,6 +224,19 @@ const COMMANDS: &[Command] = &[
             ),
         ],
     ),
+    (
+        "feedback",
+        "Send a message to the RelayRunner team. It goes with your name and email, so we can reply, unless you pass --anonymous.",
+        "relayrunner feedback \"MESSAGE\" [--category bug|confusing|feature_request|other] [--anonymous] | relayrunner feedback --file PATH",
+        &[
+            ("--file PATH", "Send what's in this file instead"),
+            ("--anonymous", "Send it without your name or email"),
+            (
+                "--category NAME",
+                "bug, confusing, feature_request or other (default: other)",
+            ),
+        ],
+    ),
 ];
 
 fn usage() -> String {
@@ -301,10 +315,7 @@ async fn main() {
             Err(e) => {
                 if rest.iter().any(|a| a == "--events") {
                     events::start();
-                    events::emit(
-                        "error",
-                        serde_json::json!({ "code": e.code, "message": e.message }),
-                    );
+                    events::emit(&events::Event::error(e.code, e.message.clone()));
                 }
                 eprintln!("{e}");
                 1
@@ -328,6 +339,7 @@ async fn main() {
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
         "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
+        "feedback" => plain(move || feedback::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
             Ok(()) => 0,
             Err(e) => {

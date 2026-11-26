@@ -125,7 +125,7 @@ describe("jobTypeTimes", () => {
     ]);
   });
 
-  test("sorts each job's step time into phases, in the window only", async () => {
+  test("sorts each job's step time into parts, in the window only", async () => {
     const steps: StepTime[] = [
       ["Set up job", 2],
       ["Run actions/checkout@v4", 3],
@@ -145,14 +145,16 @@ describe("jobTypeTimes", () => {
     const [test] = (await jobTypeTimes(createDb(env.DB), workspaceId, last(7), { now: NOW })).jobs;
     expect(test!.runs).toBe(3);
     expect(test!.stepped).toBe(2);
-    expect(test!.phases).toEqual({
-      setup: 24_000,
+    expect(test!.parts).toEqual({
+      runner: 6_000,
       checkout: 6_000,
-      dependencies: 40_000,
-      work: 120_000,
+      tools: 20_000,
+      packages: 40_000,
+      test: 120_000,
       cache: 10_000,
-      cleanup: 2_000,
     });
+    // setup-node saves its cache after the job, so the installs count as under a cache step.
+    expect(test!.cached).toEqual(["packages"]);
   });
 });
 
@@ -177,8 +179,8 @@ describe("jobRuns steps", () => {
     });
     expect(runs).toHaveLength(3);
     expect(steps).toEqual([
-      { name: "Run actions/checkout@v4", phase: "checkout", ms: 3_000 },
-      { name: "Run pnpm test", phase: "work", ms: 50_000 },
+      { name: "Run actions/checkout@v4", part: "checkout", ms: 3_000 },
+      { name: "Run pnpm test", part: "test", ms: 50_000 },
     ]);
   });
 });

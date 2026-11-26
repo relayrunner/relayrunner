@@ -10,17 +10,38 @@ jobs:
   relay-test:
     uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
-      machine: self-hosted
-      github: ubuntu-latest
+      os: linux
+      cpus: 4
 
   test:
     needs: relay-test
     runs-on: ${{ needs.relay-test.outputs.runner }}
 ```
 
-## Inputs
+## What the job needs
 
-Give one input per provider the job may use. A provider you leave out is never used for this job, even if it's in your runner order.
+Say what the job needs, and every provider in your runner order can take it. Each hosted provider gets its smallest runner that fits, and a machine fits when it has the OS and enough cores.
+
+| Input  | Default             | What it is                                                                                                                                                       |
+| ------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `os`   | `linux`             | `linux`, `macos` or `windows`.                                                                                                                                   |
+| `arch` | the OS's usual arch | `x64` or `arm64`. Left out, hosted providers use x64 for Linux and Windows and Apple silicon for macOS, and your machines fit whatever their arch.               |
+| `cpus` | the Router page     | The fewest CPUs the job needs. Left out, the job uses the size you pick for it on the Router page (see [Auto sizes](#auto-sizes)), and machines fit at any size. |
+
+```yaml
+with:
+  os: macos
+  cpus: 6
+```
+
+- **A provider with nothing that fits is skipped**, such as one with no macOS runners, or GitHub-hosted for a job that needs more than its standard runners. The Activity page says why.
+- **GitHub-hosted counts its standard runners only:** 2 vCPU on private repos and 4 on public ones for Linux, Arm and Windows, and 3 for macOS. Name a larger runner's label in `github` to use it.
+- **A machine running jobs in a VM** fits when the VM's size meets `cpus`.
+- **Shape inputs need relay.yml 1.0.0 or later**, which `@v1` follows.
+
+## Exact labels
+
+To use a specific runner, give the provider's input. With `os`, `arch` or `cpus` set, that provider uses your label as written and the other providers are still sized for the job; a `machine` label must also have the OS and arch you set. Without them, only the providers you name can take the job, and a provider you leave out is never used, even if it's in your runner order.
 
 Any input can say `auto` instead of a label. The Router then picks that provider's label for the job's size, which you set on the dashboard's Router page. See [Auto sizes](#auto-sizes).
 
@@ -68,9 +89,9 @@ jobs:
 
 - **The size** is the one you picked for the job on the Router page, or the workspace's **Default size** under **Settings** there. It starts at 2 vCPU. To pick one, find the workflow under **Workflows** and click its auto jobs. For a repo that isn't routed yet, pick sizes in **Route a repo** on the same page; they apply from the first run.
 - **A provider without that size** uses its next size up. If it has nothing that big, the job skips it, and the Activity page says why. GitHub-hosted has standard runners up to 2 vCPU.
-- **Try first**, next to the size, sends one job to a provider before the rest of your runner order.
+- **Try first**, next to the size, sends one job to a provider before the rest of your runner order. When the provider is in the order more than once, only its first step moves up, and its later steps stay where they are.
 - A workflow whose relays all name their labels shows as **Pinned** under Workflows. Its sizes stay in the file.
-- Auto sizes are for Linux x64. For macOS, Windows or Arm, write the label.
+- Auto sizes are Linux x64 unless the relay sets `os` or `arch`.
 
 ## Output
 

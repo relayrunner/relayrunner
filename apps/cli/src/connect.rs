@@ -4,7 +4,7 @@
 use crate::connection::{self, End, Report, Run, RunJob};
 use crate::credentials::{self, Credentials};
 use crate::error::Error;
-use crate::events;
+use crate::events::{self, Event};
 use crate::install::{self, Installed};
 use crate::isolated::{self, Isolation, Wanted};
 use crate::job::{self, Launcher};
@@ -14,7 +14,6 @@ use crate::share::{self, Share};
 use crate::sys::{self, blocking};
 use crate::ui;
 use crate::whoami;
-use serde_json::json;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -83,10 +82,7 @@ impl Args {
 
 fn fail(error: &Error) {
     crate::ui::error(&error.message);
-    events::emit(
-        "error",
-        json!({ "code": error.code, "message": error.message }),
-    );
+    events::emit(&Event::error(error.code, error.message.clone()));
 }
 
 /// The number of jobs at once: --concurrency, or as many VMs of the asked size as fit, or 2 with
@@ -238,10 +234,11 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         }
         None => enroll(&server, args.name.clone(), (os, arch), share).await?,
     };
-    events::emit(
-        "machine",
-        json!({ "id": credentials.machine.id, "name": credentials.machine.name, "server": credentials.server }),
-    );
+    events::emit(&Event::Machine {
+        id: credentials.machine.id.clone(),
+        name: credentials.machine.name.clone(),
+        server: credentials.server.to_string(),
+    });
 
     // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
     // Only when someone is at the terminal to answer.
@@ -482,11 +479,7 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         End::Replaced => ("replaced", None, 1),
         End::Rejected(m) => ("rejected", Some(m.clone()), 1),
     };
-    let mut offline = json!({ "reason": reason });
-    if let Some(m) = &message {
-        offline["message"] = m.clone().into();
-    }
-    events::emit("offline", offline);
+    events::emit(&Event::Offline { reason, message });
     match end {
         End::Stopped => ui::outro("Offline."),
         End::Revoked { online } => {
@@ -550,7 +543,10 @@ async fn enroll(
                 &format!("{url}\n\nConfirm the code {code} matches the one in your browser."),
                 "Sign in",
             );
-            events::emit("sign-in", json!({ "url": url, "code": code }));
+            events::emit(&Event::SignIn {
+                url: url.to_string(),
+                code: code.to_string(),
+            });
             login::open_browser(url);
             ui::spinner("Waiting for approval in the browser");
         })
@@ -747,10 +743,11 @@ async fn set_paused(credentials: Credentials, paused: bool) {
         let command = if paused { "pause" } else { "resume" };
         let message = format!("Couldn't {command}: {reason}.");
         ui::error(&message);
-        events::emit(
-            "error",
-            json!({ "code": "PAUSE_FAILED", "message": message, "command": command }),
-        );
+        events::emit(&Event::Error {
+            code: "PAUSE_FAILED".into(),
+            message,
+            command: Some(command.into()),
+        });
     }
 }
 
@@ -763,10 +760,11 @@ async fn read_commands(credentials: Credentials, stop: watch::Sender<bool>) {
             continue;
         }
         if word != "pause" && word != "resume" {
-            events::emit(
-                "error",
-                json!({ "code": "UNKNOWN_COMMAND", "message": "Commands are `pause` and `resume`.", "command": line.trim() }),
-            );
+            events::emit(&Event::Error {
+                code: "UNKNOWN_COMMAND".into(),
+                message: "Commands are `pause` and `resume`.".into(),
+                command: Some(line.trim().to_string()),
+            });
             continue;
         }
         set_paused(credentials.clone(), word == "pause").await;

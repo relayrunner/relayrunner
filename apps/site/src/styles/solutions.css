@@ -259,7 +259,7 @@ ol.sol-steps h3 {
 }
 .sol-code-bar {
   padding: 9px 16px;
-  border-bottom: 1px solid #272c35;
+  border-bottom: 1px solid #243047;
   color: #8b949e;
   font: 400 12px var(--mono);
 }
@@ -604,7 +604,18 @@ ol.sol-steps h3 {
   width: 21%;
 }
 .int-col-included {
-  width: 23%;
+  width: 18%;
+}
+.int-col-try {
+  width: 120px;
+}
+/* The Evaluate column stays in view while the table scrolls sideways on a phone. */
+.int-table .int-try {
+  position: sticky;
+  right: 0;
+  padding-inline: 12px 20px;
+  background: var(--raised);
+  text-align: right;
 }
 /* A gap between the right-aligned prices and the left-aligned plan after them. */
 .int-table .int-after-price {
