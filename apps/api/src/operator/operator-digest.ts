@@ -226,12 +226,6 @@ export async function collectDigest(
 
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const count = (n: number) => compact.format(n);
-const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`;
-
-/** " (was 9)" against the period before, or nothing when it's the same. */
-function was(now: number, before: number) {
-  return now === before ? "" : ` (was ${count(before)})`;
-}
 
 function names(list: string[]) {
   const shown = list.slice(0, NAMES_SHOWN).map((name) => `*${esc(name)}*`);
@@ -239,8 +233,30 @@ function names(list: string[]) {
   return more > 0 ? `${shown.join(", ")} and ${more} more` : shown.join(", ");
 }
 
+/** "+29%" from the period before, "new" from nothing, or blank when there's nothing to compare. */
+function change(now: number, before: number) {
+  if (before === 0) return now === 0 ? "" : "new";
+  const percent = Math.round(((now - before) / before) * 100);
+  return percent > 0 ? `+${percent}%` : percent < 0 ? `−${-percent}%` : "same";
+}
+
+/** Rows as a monospace table: the label left-aligned, the numbers right-aligned. */
+function table(rows: string[][]) {
+  const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => row[column]!.length)));
+  return rows
+    .map((row) =>
+      row
+        .map((cell, column) =>
+          column === 0 ? cell.padEnd(widths[column]!) : cell.padStart(widths[column]!),
+        )
+        .join("  ")
+        .trimEnd(),
+    )
+    .join("\n");
+}
+
 function stepName(step: string) {
-  if (step === "machine") return "machines";
+  if (step === "machine") return "Machines";
   return currentProviders().find((provider) => provider.id === step)?.name ?? step;
 }
 
@@ -252,7 +268,10 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
 });
 const shortDate = (ms: number) => dateFormat.format(ms);
 
-/** The digest as Slack mrkdwn: a heading, then only the lines with something to say. */
+/**
+ * The digest as Slack mrkdwn: a heading, the numbers as a table against the period before, then
+ * the names behind them.
+ */
 export function formatDigest(
   kind: "daily" | "weekly",
   period: Period,
@@ -265,42 +284,34 @@ export function formatDigest(
       ? `:sunrise: *Daily digest* · ${shortDate(last)}`
       : `:calendar: *Weekly digest* · ${shortDate(period.since.getTime())} to ${shortDate(last)}`;
 
-  const arrivals = [
-    now.signups > 0 && `${plural(now.signups, "signup")}${was(now.signups, before.signups)}`,
-    now.installs.length > 0 &&
-      `${plural(now.installs.length, "install")}${was(now.installs.length, before.installs.length)}: ${names(now.installs)}`,
+  const total = (counts: DigestCounts) => counts.routed.reduce((sum, row) => sum + row.jobs, 0);
+  const jobsOn = (counts: DigestCounts, step: string) =>
+    counts.routed.find((row) => row.step === step)?.jobs ?? 0;
+  const steps = [...new Set([...now.routed, ...before.routed].map((row) => row.step))];
+  const row = (label: string, a: number, b: number) => [label, count(a), count(b), change(a, b)];
+  const rows = [
+    ["", kind === "daily" ? "Yesterday" : "Last week", "Before", ""],
+    row("Signups", now.signups, before.signups),
+    row("Installs", now.installs.length, before.installs.length),
+    row("Mac app first uses", now.macAppUsers, before.macAppUsers),
+    row("Workspaces routing", now.activeWorkspaces, before.activeWorkspaces),
+    row("Jobs routed", total(now), total(before)),
+    ...steps.map((step) => row(`  ${stepName(step)}`, jobsOn(now, step), jobsOn(before, step))),
+    row("Couldn't route", now.unroutable, before.unroutable),
+    row("Machines running", now.machines, before.machines),
+    row("Machine jobs", now.machineJobs, before.machineJobs),
+    row("Machine CI minutes", now.machineMinutes, before.machineMinutes),
+  ];
+
+  const details = [
+    now.installs.length > 0 && `Installs: ${names(now.installs)}`,
     now.firstMachines.length > 0 && `First machine: ${names(now.firstMachines)}`,
     now.firstMachineRuns.length > 0 && `First run on a machine: ${names(now.firstMachineRuns)}`,
-    now.macAppUsers > 0 &&
-      `${plural(now.macAppUsers, "person", "people")} started using the Mac app`,
-  ].filter((line): line is string => Boolean(line));
-
-  const routedJobs = now.routed.reduce((sum, row) => sum + row.jobs, 0);
-  const routedBefore = before.routed.reduce((sum, row) => sum + row.jobs, 0);
-  const split = now.routed
-    .map((row) => ({ share: Math.round((row.jobs / routedJobs) * 100), step: row.step }))
-    .filter((row) => row.share > 0)
-    .map((row) => `${row.share}% ${stepName(row.step)}`)
-    .join(", ");
-  const activity = [
-    `${plural(now.activeWorkspaces, "workspace")} routed jobs${was(now.activeWorkspaces, before.activeWorkspaces)}`,
-    routedJobs > 0 &&
-      `${plural(routedJobs, "job")} routed${was(routedJobs, routedBefore)}${split ? `: ${split}` : ""}`,
-    now.unroutable > 0 &&
-      `${plural(now.unroutable, "job")} couldn't be routed${was(now.unroutable, before.unroutable)}`,
-    now.machines > 0 &&
-      `${plural(now.machines, "machine")} ran ${plural(now.machineJobs, "job")}, ${count(now.machineMinutes)} CI minutes${was(now.machineMinutes, before.machineMinutes)}`,
     now.busiest.length > 1 &&
       `Busiest: ${now.busiest.map((row) => `${esc(row.name)} ${count(row.jobs)}`).join(" · ")}`,
   ].filter((line): line is string => Boolean(line));
 
-  return [
-    heading,
-    arrivals.length
-      ? arrivals.map((line) => `• ${line}`).join("\n")
-      : "• No new signups or installs",
-    activity.map((line) => `• ${line}`).join("\n"),
-  ].join("\n");
+  return [heading, "```", table(rows), "```", ...details.map((line) => `• ${line}`)].join("\n");
 }
 
 /** One digest for `period`, with the period before it to compare. */

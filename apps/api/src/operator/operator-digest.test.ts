@@ -257,37 +257,48 @@ describe("formatDigest", () => {
         installs: ["x"],
         activeWorkspaces: 7,
         routed: [{ step: "machine", jobs: 1_500 }],
+        machines: 9,
+        machineJobs: 1_400,
         machineMinutes: 5_000,
       },
     );
     expect(text).toBe(
       [
         ":sunrise: *Daily digest* · Tue, Nov 24",
-        "• 3 signups (was 1)",
-        "• 2 installs (was 1): *example-org*, *someone*",
+        "```",
+        "                    Yesterday  Before",
+        "Signups                     3       1  +200%",
+        "Installs                    2       1  +100%",
+        "Mac app first uses          1       0    new",
+        "Workspaces routing          9       7   +29%",
+        "Jobs routed                2K    1.5K   +33%",
+        "  Machines               1.2K    1.5K   −20%",
+        "  GitHub                  800       0    new",
+        "Couldn't route              4       0    new",
+        "Machines running           11       9   +22%",
+        "Machine jobs             1.2K    1.4K   −18%",
+        "Machine CI minutes       6.2K      5K   +25%",
+        "```",
+        "• Installs: *example-org*, *someone*",
         "• First run on a machine: *Example Org*",
-        "• 1 person started using the Mac app",
-        "• 9 workspaces routed jobs (was 7)",
-        "• 2K jobs routed (was 1.5K): 60% machines, 40% GitHub",
-        "• 4 jobs couldn't be routed (was 0)",
-        "• 11 machines ran 1.2K jobs, 6.2K CI minutes (was 5K)",
         "• Busiest: Example Org 1.4K · Other Org 600",
       ].join("\n"),
     );
   });
 
-  test("a quiet week says so in one line", () => {
+  test("a quiet week is the table alone", () => {
     const week = {
       since: new Date("2026-11-23T05:00:00Z"),
       until: new Date("2026-11-30T05:00:00Z"),
     };
-    expect(formatDigest("weekly", week, empty, empty)).toBe(
-      [
-        ":calendar: *Weekly digest* · Mon, Nov 23 to Sun, Nov 29",
-        "• No new signups or installs",
-        "• 0 workspaces routed jobs",
-      ].join("\n"),
-    );
+    const text = formatDigest("weekly", week, empty, empty);
+    expect(text.split("\n").slice(0, 4)).toEqual([
+      ":calendar: *Weekly digest* · Mon, Nov 23 to Sun, Nov 29",
+      "```",
+      "                    Last week  Before",
+      "Signups                     0       0",
+    ]);
+    expect(text.endsWith("```")).toBe(true);
   });
 
   test("long name lists are cut short", async () => {
@@ -297,7 +308,7 @@ describe("formatDigest", () => {
       day(40),
       await digestContext(createDb(env.DB)),
     );
-    expect(text).toContain("No new signups or installs");
+    expect(text).toContain("Jobs routed                 0       0");
     const many = formatDigest(
       "daily",
       period,
