@@ -91,8 +91,11 @@ A `relayrunner.yml` file at `.github/relayrunner.yml` or the repo root turns on 
 ```yaml
 checks:
   pr-title: true
+  pr-description: true
   lint: [oxlint, typos]
 ```
+
+`pr-title` and `pr-description` work in every repo. `lint` is in preview for some organizations and needs the RelayRunner Checks App.
 
 Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.dev/docs/reference/repo-config.md
 
