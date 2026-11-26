@@ -449,10 +449,11 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     }),
   }),
   // A free check ran with no Actions runner, so it stands in for an Actions job that would have
-  // billed a minute: the GitHub App's PR title check run (apps/api/src/checks/pr-title-check.ts), or one lint run
-  // in the Checks App's container (src/durable-objects/lint-runner.ts), from a pull request push
-  // or a native `checks/lint` job. `check` is "PR title" or "Lint"; `url` the check run's page on
-  // GitHub, null for lint, which posts a run per tool. `pullRequest` is null for a lint run with no
+  // billed a minute: one of the GitHub App's pull request check runs, "PR title" or "PR
+  // description" (apps/api/src/checks/pull-request-checks.ts), or one lint run in the Checks App's
+  // container (src/durable-objects/lint-runner.ts), from a pull request push or a native
+  // `checks/lint` job. `check` is the check's name ("PR title", "PR description", "Lint"); `url`
+  // the check run's page on GitHub, null for lint, which posts a run per tool. `pullRequest` is null for a lint run with no
   // pull request (a native job or a re-run), which then names its commit.
   z.object({
     type: z.literal("check.completed"),

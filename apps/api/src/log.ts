@@ -47,7 +47,7 @@ const API_EVENTS = [
   "admin.workspace_deleted",
   "ai.call",
   "checks.pr_files_stopped",
-  "checks.pr_title_checked",
+  "checks.pull_request_checked",
   "email.no_binding",
   "email.not_rendered",
   "email.operators_not_read",

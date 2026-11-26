@@ -20,7 +20,7 @@ function pullRequest(action: string): WebhookMessage {
     action,
     event: "pull_request",
     repository,
-    pullRequest: { number: 3, title: "feat: x", headSha: "abc" },
+    pullRequest: { number: 3, title: "feat: x", body: "", headSha: "abc", changed: null },
   };
 }
 

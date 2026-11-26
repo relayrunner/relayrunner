@@ -3,7 +3,7 @@ title: Optimized checks
 description: Simple checks that run with no runner and no billed minutes.
 ---
 
-Simple checks like a PR title check or lint finish in seconds, but GitHub bills each job as a whole minute. An optimized check runs without a runner, so it uses no minutes.
+Simple checks like a PR title check, a PR description check or lint finish in seconds, but GitHub bills each job as a whole minute. An optimized check runs without a runner, so it uses no minutes.
 
 ## As a job
 
@@ -38,15 +38,16 @@ Lint runs in RelayRunner's own sandbox with no internet access. The job reads yo
 
 ## From repo config
 
-The PR title check and lint can also run on every pull request with no workflow at all. Lint from repo config needs the separate RelayRunner Checks GitHub App, which can read the repo's code. Add `relayrunner.yml` to the repo's root or `.github/` folder:
+The PR title, PR description and lint checks can also run on every pull request with no workflow at all. Add `relayrunner.yml` to the repo's root or `.github/` folder:
 
 ```yaml
 checks:
   pr-title: true
+  pr-description: true
   lint: [oxlint, typos]
 ```
 
-This works for public repos too. See [Repo config](/docs/reference/repo-config).
+PR title and PR description are open to every repo, public ones included, and need only the RelayRunner GitHub App. Lint from repo config needs the separate RelayRunner Checks GitHub App, which can read the repo's code. See [Repo config](/docs/reference/repo-config).
 
 ## See what they saved
 

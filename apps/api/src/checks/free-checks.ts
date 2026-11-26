@@ -1,8 +1,8 @@
-// What the free checks saved: each check run the GitHub App posts (src/checks/pr-title-check.ts), and each
-// lint run in the Checks App's container (src/durable-objects/lint-runner.ts), is a job that never
-// ran on an Actions runner. Run as a workflow, it would be a short job on ubuntu-latest, billed as
-// at least a whole minute. Each one is logged as a `check.completed` Activity event, and the Usage
-// and Activity pages sum them.
+// What the free checks saved: each check run the GitHub App posts
+// (src/checks/pull-request-checks.ts), and each lint run in the Checks App's container
+// (src/durable-objects/lint-runner.ts), is a job that never ran on an Actions runner. Run as a
+// workflow, it would be a short job on ubuntu-latest, billed as at least a whole minute. Each one
+// is logged as a `check.completed` Activity event, and the Usage and Activity pages sum them.
 
 import { recordEvent } from "../ingest/activity-log.ts";
 import { cents, classRate, pricePeriods, RUNNER_LABELS, rateFor } from "../reports/runner-rates.ts";
