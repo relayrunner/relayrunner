@@ -58,6 +58,9 @@ export interface Env extends AccessEnv {
   // Per user and agent grant: caps agent-token requests (middleware/session.ts), from the MCP
   // server or a client calling the API directly. Optional so tests run without it.
   AGENT_LIMITER?: RateLimit;
+  // Per IP and path: caps sign-in, device code and agent OAuth requests (routes/auth.ts). Optional
+  // so tests run without it.
+  AUTH_LIMITER?: RateLimit;
 
   // Workers AI, for the decision models in src/ai. Optional so tests and local dev run without
   // it; with no binding every AI call answers "off".
