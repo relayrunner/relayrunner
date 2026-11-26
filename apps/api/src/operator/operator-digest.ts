@@ -25,6 +25,7 @@ const NAMES_SHOWN = 5;
 const BUSIEST_SHOWN = 3;
 
 export type Period = { since: Date; until: Date };
+export type Digest = ReturnType<typeof formatDigest>;
 
 export type DigestCounts = {
   signups: number;
@@ -268,9 +269,13 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
 });
 const shortDate = (ms: number) => dateFormat.format(ms);
 
+/** A cell of a Block Kit table. */
+const cell = (text: string) => ({ type: "raw_text", text });
+
 /**
- * The digest as Slack mrkdwn: a heading, the numbers as a table against the period before, then
- * the names behind them.
+ * The digest: a heading, the numbers against the period before, then the names behind them. As
+ * Slack blocks with a table block, and as mrkdwn with a monospace table for where blocks don't
+ * render (notifications, Discord, or Slack refusing the blocks).
  */
 export function formatDigest(
   kind: "daily" | "weekly",
@@ -311,7 +316,44 @@ export function formatDigest(
       `Busiest: ${now.busiest.map((row) => `${esc(row.name)} ${count(row.jobs)}`).join(" · ")}`,
   ].filter((line): line is string => Boolean(line));
 
-  return [heading, "```", table(rows), "```", ...details.map((line) => `• ${line}`)].join("\n");
+  const bullets = details.map((line) => `• ${line}`).join("\n");
+  const text = [heading, "```", table(rows), "```", bullets].filter(Boolean).join("\n");
+  const [head, ...body] = rows;
+  const blocks = [
+    { type: "section", text: { type: "mrkdwn", text: heading } },
+    {
+      type: "table",
+      column_settings: [null, { align: "right" }, { align: "right" }, { align: "right" }],
+      rows: [
+        ["Metric", head![1]!, head![2]!, "Change"].map(cell),
+        ...body.map(([label, ...numbers]) =>
+          [label!.replace(/^ {2}/, "↳ "), ...numbers.map((n) => n || "–")].map(cell),
+        ),
+      ],
+    },
+    ...(bullets ? [{ type: "section", text: { type: "mrkdwn", text: bullets } }] : []),
+  ];
+  return { text, blocks };
+}
+
+/**
+ * Posts a digest to a Slack incoming webhook as blocks, falling back to its text alone when Slack
+ * refuses the blocks, so a layout Slack doesn't take never costs the digest. Throws on a failure of
+ * the text too.
+ */
+export async function postDigest(url: string, digest: Digest, fetcher: typeof fetch = fetch) {
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: digest.text, content: digest.text, blocks: digest.blocks }),
+  });
+  if (response.ok) return;
+  if (response.status >= 500) throw new Error(`webhook answered ${response.status}`);
+  log.warn("operator.digest_blocks_refused", "Slack refused the digest's blocks", {
+    status: response.status,
+    body: await response.text().catch(() => ""),
+  });
+  await postToWebhook(url, digest.text, fetcher);
 }
 
 /** One digest for `period`, with the period before it to compare. */
@@ -347,7 +389,7 @@ export async function sendOperatorDigests(
   let sent = 0;
   for (const digest of digests) {
     try {
-      await postToWebhook(url, await digest, fetcher);
+      await postDigest(url, await digest, fetcher);
       sent += 1;
     } catch (error) {
       log.error("operator.digest_not_sent", "operator digest not sent", { error });

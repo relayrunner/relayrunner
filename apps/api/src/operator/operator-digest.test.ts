@@ -228,7 +228,7 @@ describe("formatDigest", () => {
   };
 
   test("lists what's new and the routing, against the day before", () => {
-    const text = formatDigest(
+    const { text, blocks } = formatDigest(
       "daily",
       period,
       {
@@ -284,6 +284,22 @@ describe("formatDigest", () => {
         "• Busiest: Example Org 1.4K · Other Org 600",
       ].join("\n"),
     );
+    const rows = (blocks[1] as { rows: { text: string }[][] }).rows;
+    expect(rows.map((row) => row.map((cell) => cell.text))).toEqual([
+      ["Metric", "Yesterday", "Before", "Change"],
+      ["Signups", "3", "1", "+200%"],
+      ["Installs", "2", "1", "+100%"],
+      ["Mac app first uses", "1", "0", "new"],
+      ["Workspaces routing", "9", "7", "+29%"],
+      ["Jobs routed", "2K", "1.5K", "+33%"],
+      ["↳ Machines", "1.2K", "1.5K", "−20%"],
+      ["↳ GitHub", "800", "0", "new"],
+      ["Couldn't route", "4", "0", "new"],
+      ["Machines running", "11", "9", "+22%"],
+      ["Machine jobs", "1.2K", "1.4K", "−18%"],
+      ["Machine CI minutes", "6.2K", "5K", "+25%"],
+    ]);
+    expect(blocks.map((block) => block.type)).toEqual(["section", "table", "section"]);
   });
 
   test("a quiet week is the table alone", () => {
@@ -291,7 +307,7 @@ describe("formatDigest", () => {
       since: new Date("2026-11-23T05:00:00Z"),
       until: new Date("2026-11-30T05:00:00Z"),
     };
-    const text = formatDigest("weekly", week, empty, empty);
+    const { text, blocks } = formatDigest("weekly", week, empty, empty);
     expect(text.split("\n").slice(0, 4)).toEqual([
       ":calendar: *Weekly digest* · Mon, Nov 23 to Sun, Nov 29",
       "```",
@@ -299,17 +315,18 @@ describe("formatDigest", () => {
       "Signups                     0       0",
     ]);
     expect(text.endsWith("```")).toBe(true);
+    expect(blocks.map((block) => block.type)).toEqual(["section", "table"]);
   });
 
   test("long name lists are cut short", async () => {
-    const text = await buildDigest(
+    const { text } = await buildDigest(
       createDb(env.DB),
       "daily",
       day(40),
       await digestContext(createDb(env.DB)),
     );
     expect(text).toContain("Jobs routed                 0       0");
-    const many = formatDigest(
+    const { text: many } = formatDigest(
       "daily",
       period,
       { ...empty, firstMachines: ["a", "b", "c", "d", "e", "f", "g"] },
@@ -333,6 +350,25 @@ describe("sendOperatorDigests", () => {
       ":sunrise: *Daily digest* · Sun, Nov 29",
       ":calendar: *Weekly digest* · Mon, Nov 23 to Sun, Nov 29",
     ]);
+  });
+
+  test("falls back to the text when Slack refuses the blocks", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      bodies.push(body);
+      return body.blocks ? new Response("invalid_blocks", { status: 400 }) : new Response("ok");
+    });
+    const withSlack = { ...env, OPERATOR_SLACK_WEBHOOK_URL: "https://hooks.example.com/x" };
+    expect(
+      await sendOperatorDigests(
+        withSlack,
+        new Date("2026-11-25T13:00:00Z"),
+        fetcher as typeof fetch,
+      ),
+    ).toBe(1);
+    expect(bodies.map((body) => Boolean(body.blocks))).toEqual([true, false]);
+    expect(String(bodies[1]!.text)).toContain("```");
   });
 
   test("does nothing without a webhook", async () => {
