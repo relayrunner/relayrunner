@@ -60,6 +60,12 @@ const daysOf = (query: URLSearchParams) => {
 // The jobs of the last run the sample listed, so a job's steps can follow its times.
 const listedJobs = new Map<number, RunJob>();
 
+// The dev switcher's enterprise. The id has no enterprise, so GitHub serves a generated avatar.
+const ACME_ENTERPRISE = {
+  slug: "acme",
+  avatar: "https://avatars.githubusercontent.com/b/999999999?v=4",
+};
+
 const ANSWERS: [RegExp, Answer][] = [
   [/^\/usage$/, (_, q) => sampleUsageReport(daysOf(q))],
   [/^\/usage\/checks$/, (_, q) => sampleCheckSavings(daysOf(q))],
@@ -82,8 +88,8 @@ const ANSWERS: [RegExp, Answer][] = [
     () => ({
       workspaces: [
         { id: "dev", enterprise: null },
-        { id: "dev-org", enterprise: "acme" },
-        { id: "dev-org-2", enterprise: "acme" },
+        { id: "dev-org", enterprise: ACME_ENTERPRISE },
+        { id: "dev-org-2", enterprise: ACME_ENTERPRISE },
       ],
     }),
   ],

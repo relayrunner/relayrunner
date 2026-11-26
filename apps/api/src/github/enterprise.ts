@@ -19,7 +19,7 @@ import {
   listAppInstallations,
   mainAppJwt,
 } from "./github-app.ts";
-import { upsertInstallation } from "./installations.ts";
+import { enterpriseAvatarUrl, upsertInstallation } from "./installations.ts";
 import { log } from "../log.ts";
 
 /** An App installation on an enterprise, in the shape upsertInstallation takes. Null otherwise. */
@@ -106,15 +106,19 @@ export async function linkEnterpriseOrganizations(
 }
 
 /**
- * The enterprise each of a user's workspaces belongs to, by its slug, so the dashboard can group
- * them. Only enterprises RelayRunner reads (an install linked the org) are named: an org on an
+ * The enterprise each of a user's workspaces belongs to (its slug and avatar), so the dashboard
+ * can group them. Only enterprises RelayRunner reads (an install linked the org) are named: an org on an
  * enterprise plan whose enterprise hasn't installed the App reads as null, since nothing says which
  * enterprise it's in.
  */
 export async function workspaceEnterprises(db: Db, userId: string) {
   const enterprise = alias(schema.githubInstallation, "enterprise");
-  return db
-    .select({ id: schema.workspace.id, enterprise: enterprise.accountLogin })
+  const rows = await db
+    .select({
+      id: schema.workspace.id,
+      slug: enterprise.accountLogin,
+      enterpriseId: enterprise.accountId,
+    })
     .from(schema.workspaceMember)
     .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
     .innerJoin(
@@ -136,4 +140,9 @@ export async function workspaceEnterprises(db: Db, userId: string) {
       ),
     )
     .where(eq(schema.workspaceMember.userId, userId));
+  return rows.map(({ id, slug, enterpriseId }) => ({
+    id,
+    enterprise:
+      slug && enterpriseId !== null ? { slug, avatar: enterpriseAvatarUrl(enterpriseId) } : null,
+  }));
 }

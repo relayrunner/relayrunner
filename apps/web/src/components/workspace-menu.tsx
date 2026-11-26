@@ -203,16 +203,16 @@ function WorkspaceList({
               {groups.alone.map(item)}
             </>
           )}
-          {groups.enterprises.map((enterprise) => (
-            <div key={enterprise.name} role="group" aria-label={`${enterprise.name} enterprise`}>
+          {groups.enterprises.map(({ enterprise, workspaces: members }) => (
+            <div key={enterprise.slug} role="group" aria-label={`${enterprise.slug} enterprise`}>
               <DropdownMenuLabel
                 title="GitHub enterprise"
                 className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground"
               >
-                <Building2Icon aria-hidden className="size-3.5" />
-                <span className="truncate">{enterprise.name}</span>
+                <EnterpriseMark avatar={enterprise.avatar} />
+                <span className="truncate">{enterprise.slug}</span>
               </DropdownMenuLabel>
-              {enterprise.workspaces.map(item)}
+              {members.map(item)}
             </div>
           ))}
         </>
@@ -226,6 +226,21 @@ function WorkspaceList({
         </a>
       </DropdownMenuItem>
     </DropdownMenuGroup>
+  );
+}
+
+/** An enterprise's GitHub avatar, or a building icon when it fails to load. */
+function EnterpriseMark({ avatar }: { avatar: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? (
+    <Building2Icon aria-hidden className="size-3.5" />
+  ) : (
+    <img
+      src={avatar}
+      alt=""
+      onError={() => setFailed(true)}
+      className="size-4 shrink-0 rounded-[4px] border border-border object-cover"
+    />
   );
 }
 

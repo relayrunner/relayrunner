@@ -358,11 +358,17 @@ describe("workspace enterprises", () => {
 
     const response = await call("/workspaces/enterprises", cookie);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { workspaces: { id: string; enterprise: string }[] };
+    const body = (await response.json()) as { workspaces: unknown[] };
     expect(body.workspaces).toHaveLength(2);
     expect(body.workspaces).toEqual(
       expect.arrayContaining([
-        { id: inEnterprise.workspace.id, enterprise: "example-ent" },
+        {
+          id: inEnterprise.workspace.id,
+          enterprise: {
+            slug: "example-ent",
+            avatar: "https://avatars.githubusercontent.com/b/950000001?v=4",
+          },
+        },
         { id: alone.workspace.id, enterprise: null },
       ]),
     );

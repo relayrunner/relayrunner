@@ -40,6 +40,11 @@ export function accountAvatarUrl(accountId: number) {
   return `https://avatars.githubusercontent.com/u/${accountId}?v=4`;
 }
 
+/** An enterprise's avatar, which GitHub serves by the enterprise's id under /b/ rather than /u/. */
+export function enterpriseAvatarUrl(enterpriseId: number) {
+  return `https://avatars.githubusercontent.com/b/${enterpriseId}?v=4`;
+}
+
 /**
  * The installation's workspace (#316), made the first time we hear of the installation (the Setup
  * URL or the `installation.created` webhook, whichever lands first) and renamed after the account
