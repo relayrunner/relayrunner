@@ -172,7 +172,7 @@ describe("operator pings", () => {
     const pings = await collectOperatorPings(createDb(env.DB), since, until);
     expect(about(pings, user.email)).toEqual([`:wave: New signup: *${user.name}* (${user.email})`]);
     expect(about(pings, ws.slug)).toEqual([
-      `:electric_plug: App installed on the org *${ws.slug}* (all repos)`,
+      `:electric_plug: App installed on the org *<https://github.com/${ws.slug}|${ws.slug}>* (all repos)`,
     ]);
   });
 
@@ -226,9 +226,11 @@ describe("operator pings", () => {
     await unroutable(ws.id, new Date(now - 2_000), "nothing fits: machine offline");
     await unroutable(ws.id, new Date(now - 1_000), "nothing fits: github not set");
     const { since, until } = window();
-    expect(about(await collectOperatorPings(createDb(env.DB), since, until), "Stuck Co")).toEqual([
-      ':warning: *Stuck Co*: 2 runs couldn\'t be routed in the last 15 minutes. Latest in acme/app: "nothing fits: github not set"',
-    ]);
+    const pings = about(await collectOperatorPings(createDb(env.DB), since, until), "Stuck Co");
+    expect(pings).toHaveLength(1);
+    expect(pings[0]).toMatch(
+      /^:warning: \*Stuck Co\*: 2 runs couldn't be routed in the last 15 minutes\. Latest in <https:\/\/github\.com\/acme\/app\/actions\/runs\/\d+\|acme\/app>: "nothing fits: github not set"$/,
+    );
   });
 
   test("pings once when a workspace that adopted the relay takes it out", async () => {
@@ -250,7 +252,7 @@ describe("operator pings", () => {
     const pings = about(await collectOperatorPings(db, since, until), "Dropped Co");
     expect(pings).toHaveLength(1);
     expect(pings[0]).toMatch(
-      /^:leftwards_arrow_with_hook: \*Dropped Co\* took the relay out: 3 runs without it in acme\/dropped since its last relay \(CI, /,
+      /^:leftwards_arrow_with_hook: \*Dropped Co\* took the relay out: 3 runs without it in <https:\/\/github\.com\/acme\/dropped\|acme\/dropped> since its last relay \(<https:\/\/github\.com\/acme\/dropped\/blob\/HEAD\/\.github\/workflows\/ci\.yml\|CI>, /,
     );
     const later = await collectOperatorPings(db, until, new Date(until.getTime() + PING_WINDOW_MS));
     expect(about(later, "Dropped Co")).toEqual([]);
