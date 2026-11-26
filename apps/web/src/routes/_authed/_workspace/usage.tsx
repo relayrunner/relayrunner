@@ -178,13 +178,11 @@ function Overview({ loaded }: { loaded: UsageData }) {
 
           <Table
             caption="By runner"
-            exportMenu={
-              <ExportMenu
-                name="usage-by-runner"
-                rows={() => report.byRunner}
-                columns={RUNNER_EXPORT_COLUMNS}
-              />
-            }
+            exportAs={{
+              name: "usage-by-runner",
+              rows: report.byRunner,
+              columns: RUNNER_EXPORT_COLUMNS,
+            }}
             head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
             hideOnPhone={[1, 3, 5]}
             rows={report.byRunner.map((row) => [
@@ -204,13 +202,11 @@ function Overview({ loaded }: { loaded: UsageData }) {
 
           <Table
             caption="Repositories with the most short-job cost"
-            exportMenu={
-              <ExportMenu
-                name="usage-by-repo"
-                rows={() => report.byRepository}
-                columns={REPOSITORY_EXPORT_COLUMNS}
-              />
-            }
+            exportAs={{
+              name: "usage-by-repo",
+              rows: report.byRepository,
+              columns: REPOSITORY_EXPORT_COLUMNS,
+            }}
             head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
             hideOnPhone={[1]}
             rows={report.byRepository.map((repo) => [
@@ -322,18 +318,18 @@ const REPOSITORY_EXPORT_COLUMNS: ExportColumn<UsageReport["byRepository"][number
 ];
 
 /**
- * A captioned table, with `exportMenu` beside its caption. Columns whose index is in
- * `hideOnPhone` show from the sm breakpoint up.
+ * A captioned table, with an Export menu for `exportAs.rows` beside its caption. Columns whose
+ * index is in `hideOnPhone` show from the sm breakpoint up.
  */
-function Table({
+function Table<TData>({
   caption,
-  exportMenu,
+  exportAs,
   head,
   rows,
   hideOnPhone = [],
 }: {
   caption: string;
-  exportMenu?: ReactNode;
+  exportAs?: { name: string; rows: TData[]; columns: ExportColumn<TData>[] };
   head: string[];
   rows: ReactNode[][];
   hideOnPhone?: number[];
@@ -342,7 +338,15 @@ function Table({
     <div className="overflow-x-auto rounded-xl border bg-card">
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-2 sm:px-4">
         <h3 className="font-semibold">{caption}</h3>
-        {exportMenu && <div className="-my-1.5 -mr-2">{exportMenu}</div>}
+        {exportAs && (
+          <div className="-my-1.5 -mr-2">
+            <ExportMenu
+              name={exportAs.name}
+              rows={() => exportAs.rows}
+              columns={exportAs.columns}
+            />
+          </div>
+        )}
       </div>
       <table className="w-full text-sm">
         <caption className="sr-only">{caption}</caption>

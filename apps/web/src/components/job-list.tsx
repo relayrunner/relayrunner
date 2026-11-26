@@ -427,7 +427,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
                 data={tableRows}
                 getRowId={rowId}
                 getSubRows={(row) => row.subRows}
-                exportAs={{ name: "jobs", columns: EXPORT_COLUMNS, include: (row) => !row.group }}
+                exportAs={{ name: "jobs", columns: EXPORT_COLUMNS }}
                 expanded={grouped ? expanded : undefined}
                 rowClassName={groupedRowClass}
                 fullRow={(row) => {

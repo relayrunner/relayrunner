@@ -473,11 +473,7 @@ function Environments({ report, grouped }: { report: JobTimesReport; grouped: bo
         getSubRows={(env) => env.subRows}
         expanded={grouped ? expanded : undefined}
         rowClassName={(row) => (row.original.group ? "bg-muted/40 hover:bg-muted/40" : undefined)}
-        exportAs={{
-          name: "runners",
-          columns: ENVIRONMENT_EXPORT_COLUMNS,
-          include: (env) => !env.group,
-        }}
+        exportAs={{ name: "runners", columns: ENVIRONMENT_EXPORT_COLUMNS }}
       />
     </Baseline>
   );

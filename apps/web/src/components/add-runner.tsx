@@ -36,6 +36,7 @@ import {
 import { MacAppButton, MacAppLink, ON_MAC } from "@/components/mac-app";
 import { DOCS_URL } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
+import { useCopy } from "@/lib/use-copy";
 
 export const CONNECT_COMMAND = "npx relayrunner connect";
 
@@ -568,21 +569,6 @@ export function CopyCommand({ command, prompt = true }: { command: string; promp
       <CopyButton text={command} label="Copy command" />
     </div>
   );
-}
-
-/** Copies `text` on `copy()`; `copied` stays true for a moment after. */
-export function useCopy(text: string) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard can be blocked (insecure origin, permissions); the text is still selectable.
-    }
-  }
-  return { copied, copy };
 }
 
 /** An icon button that copies `text` and shows a check for a moment. */

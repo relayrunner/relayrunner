@@ -159,14 +159,10 @@ export function DataTable<TData extends RowData>({
   /**
    * Shows an Export menu above the table, saving or copying its rows as filtered and sorted:
    * `name` starts the file's name, and `columns` are what each row exports as. These are their own
-   * list, since a cell's sort key or display text rarely makes a good value in a file. `include`
-   * leaves out rows that aren't data, such as group headings.
+   * list, since a cell's sort key or display text rarely makes a good value in a file. Rows with
+   * subRows are headings over them, so only the rows under them export.
    */
-  exportAs?: {
-    name: string;
-    columns: ExportColumn<TData>[];
-    include?: (row: TData) => boolean;
-  };
+  exportAs?: { name: string; columns: ExportColumn<TData>[] };
 }) {
   const [sorting, setSorting] = useState(initialSorting);
   const table = useTable({
@@ -277,8 +273,8 @@ export function DataTable<TData extends RowData>({
           rows={() =>
             table
               .getSortedRowModel()
-              .flatRows.map((row) => row.original)
-              .filter((row) => exportAs.include?.(row) ?? true)
+              .flatRows.filter((row) => !row.subRows.length)
+              .map((row) => row.original)
           }
         />
       </div>

@@ -1,5 +1,4 @@
 import { CheckIcon, ClipboardCopyIcon, DownloadIcon, FileJsonIcon, SheetIcon } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -7,25 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { downloadRows, type ExportColumn, toMarkdown } from "@/lib/table-export";
+import { downloadRows, type ExportMenuProps, toMarkdown } from "@/lib/table-export";
+import { useCopy } from "@/lib/use-copy";
 
 /** The Export menu itself, loaded on demand by `ExportMenu`. */
-export default function ExportMenuDropdown<TData>({
-  name,
-  rows,
-  columns,
-}: {
-  name: string;
-  rows: () => TData[];
-  columns: ExportColumn<TData>[];
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    await navigator.clipboard.writeText(toMarkdown(rows(), columns));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+export default function ExportMenuDropdown<TData>({ name, rows, columns }: ExportMenuProps<TData>) {
+  const { copied, copy } = useCopy(() => toMarkdown(rows(), columns));
 
   return (
     <DropdownMenu>
