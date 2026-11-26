@@ -8,8 +8,8 @@ import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { PageTabs, USAGE_TABS as TABS, viewOf } from "@/components/page-tabs";
-import { PULL_REQUEST_RANGES, PullRequestUsage } from "@/components/pull-request-usage";
-import { getPullRequests, type PullRequestReport } from "@/lib/pull-requests";
+import { PullRequestUsage } from "@/components/pull-request-usage";
+import { getPullRequests, PULL_REQUEST_RANGES, type PullRequestReport } from "@/lib/pull-requests";
 import {
   type RangeSearch,
   rangeSearch,

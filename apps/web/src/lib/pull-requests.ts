@@ -1,6 +1,6 @@
 import { api } from "./api";
 import { interpolate } from "./chart-trend";
-import { rangeQuery, type TimeRange } from "./time-range";
+import { type RangeOptions, rangeQuery, type TimeRange } from "./time-range";
 
 /** One pull request's CI in GET /api/usage/pull-requests. Minutes are run time; money is USD. */
 export type PullRequestMinutes = {
@@ -19,6 +19,11 @@ export type PullRequestReport = {
   pullRequests: PullRequestMinutes[];
   /** Minutes of jobs no pull request was found for, per repo. */
   outside: { repository: string; minutes: number }[];
+};
+
+/** The view reads jobs' own rows, which the API keeps 62 days, so it has no 90-day range. */
+export const PULL_REQUEST_RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
 };
 
 export function getPullRequests(range: TimeRange) {

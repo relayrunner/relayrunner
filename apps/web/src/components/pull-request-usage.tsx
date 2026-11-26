@@ -6,16 +6,16 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RepoSelect, repositoriesOf } from "@/components/repo-select";
 import { minutesText } from "@/lib/job-times";
-import { type PullRequestMinutes, type PullRequestReport, summarize } from "@/lib/pull-requests";
+import {
+  PULL_REQUEST_RANGES,
+  type PullRequestMinutes,
+  type PullRequestReport,
+  summarize,
+} from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
-import type { RangeOptions, TimeRange } from "@/lib/time-range";
+import type { TimeRange } from "@/lib/time-range";
 import { money } from "@/lib/usage";
 import { percent } from "@/lib/utils";
-
-/** The view reads jobs' own rows, which the API keeps 62 days, so it has no 90-day range. */
-export const PULL_REQUEST_RANGES: RangeOptions = {
-  presets: ["7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
-};
 
 const minutesOf = (minutes: number) => minutesText(minutes * 60_000);
 const min = (minutes: number) => `${minutesOf(minutes)} min`;
