@@ -17,6 +17,11 @@ export const PERFORMANCE_TABS = [
   { value: "types", label: "Job types" },
 ] as const satisfies Tab<string>[];
 
+export const USAGE_TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "pull-requests", label: "Pull requests" },
+] as const satisfies Tab<string>[];
+
 /** `?view=` from the URL when it names one of the page's tabs. The first tab is the default. */
 export function viewOf<V extends string>(tabs: readonly Tab<V>[], value: unknown): V | undefined {
   return tabs.slice(1).find((tab) => tab.value === value)?.value;

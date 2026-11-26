@@ -7,8 +7,17 @@ import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
-import { type RangeSearch, rangeSearch, useSetSearch } from "@/lib/search-params";
-import { type RangeOptions, rangePhrase, type TimeRange } from "@/lib/time-range";
+import { PageTabs, USAGE_TABS as TABS, viewOf } from "@/components/page-tabs";
+import { PullRequestUsage } from "@/components/pull-request-usage";
+import { getPullRequests, type PullRequestReport } from "@/lib/pull-requests";
+import {
+  type RangeSearch,
+  rangeSearch,
+  textParam,
+  unlessDefault,
+  useSetSearch,
+} from "@/lib/search-params";
+import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -36,114 +45,171 @@ function load(range: TimeRange): Promise<UsageData> {
   }));
 }
 
-const { validateSearch, rangeOf, toSearch } = rangeSearch(RANGES, DEFAULT_RANGE);
+const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
+
+type View = (typeof TABS)[number]["value"];
+type UsageSearch = RangeSearch & { view?: View; repo?: string };
+type Loaded =
+  | { view: "overview"; usage: UsageData }
+  | { view: "pull-requests"; pullRequests: PullRequestReport };
 
 const usageQuery = (range: TimeRange) => pageQuery(["usage", range], () => load(range));
+const pullRequestsQuery = (range: TimeRange) =>
+  pageQuery(["usage", "pull-requests", range], () => getPullRequests(range));
 
 export const Route = createFileRoute("/_authed/_workspace/usage")({
-  validateSearch,
-  loader: ({ location }) => loadPage(usageQuery(rangeOf(validateSearch(location.search)))),
-  // A new range loads in the page, keeping the last one up meanwhile.
-  shouldReload: ({ cause }) => cause !== "stay",
+  validateSearch: (search: Record<string, unknown>): UsageSearch => ({
+    view: viewOf(TABS, search.view),
+    ...ranges.validateSearch(search),
+    repo: textParam(search.repo),
+  }),
+  loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
+  // Each view loads its first range here, and another range in the page.
+  loader: async ({ deps: { view }, location }): Promise<Loaded> => {
+    const range = ranges.rangeOf(location.search as UsageSearch);
+    if (view === "pull-requests")
+      return { view, pullRequests: await loadPage(pullRequestsQuery(range)) };
+    return { view, usage: await loadPage(usageQuery(range)) };
+  },
+  shouldReload: ({ cause }) => cause === "enter",
   component: UsagePage,
 });
 
 function UsagePage() {
-  const range = rangeOf(Route.useSearch());
-  const setSearch = useSetSearch<RangeSearch>();
-  const {
-    report: { report, checks },
-  } = usePageReport(usageQuery(range), Route.useLoaderData());
-
-  function chooseRange(next: TimeRange) {
-    setSearch(toSearch(next));
-  }
-
-  const { totals } = report;
-  const shortShare = totals.jobs ? Math.round((totals.shortJobs / totals.jobs) * 100) : 0;
-
+  const loaded = Route.useLoaderData();
   return (
     <section>
       <PageHeader className="max-w-4xl" title="Usage">
         Every job in your connected repos, whichever runner took it. GitHub bills each job by the
         minute, rounded up, so a job that finishes in seconds still pays for a whole minute.
       </PageHeader>
-      <div className="grid max-w-4xl gap-6">
-        <TimeRangePicker {...RANGES} value={range} onChange={chooseRange} />
-
-        {checks.checks > 0 && (
-          <SectionBoundary>
-            <FreeChecks savings={checks} />
-          </SectionBoundary>
-        )}
-
-        {totals.jobs === 0 ? (
-          <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            No finished jobs in {rangePhrase(range)}. Jobs show up here once the GitHub App sees
-            them run in a connected repo.
-          </p>
+      <div className="max-w-4xl">
+        <PageTabs tabs={TABS} value={loaded.view} />
+        {loaded.view === "pull-requests" ? (
+          <PullRequests loaded={loaded.pullRequests} />
         ) : (
-          <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <StatTile
-                label={`Jobs under ${report.shortJobSeconds}s`}
-                value={<Count value={totals.shortJobs} />}
-                detail={`${shortShare}% of ${count(totals.jobs)} jobs`}
-              />
-              <StatTile
-                label="Spent on short jobs"
-                value={money(totals.shortCost)}
-                detail={`${minutes(totals.shortBilledMinutes)} billed minutes`}
-              />
-              <StatTile
-                label="Lost to rounding up"
-                value={money(totals.roundingCost)}
-                detail={`of ${money(totals.cost)} estimated for all jobs`}
-              />
-            </div>
-
-            <Table
-              caption="By runner"
-              head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
-              hideOnPhone={[1, 3, 5]}
-              rows={report.byRunner.map((row) => [
-                <span key="runner">
-                  {row.label}
-                  <span className="ml-1.5 text-muted-foreground">
-                    {row.perMinute ? `${money(row.perMinute)}/min` : "free"}
-                  </span>
-                </span>,
-                <Count key="jobs" value={row.jobs} />,
-                <Count key="shortJobs" value={row.shortJobs} />,
-                minutes(row.billedMinutes),
-                money(row.shortCost),
-                money(row.cost),
-              ])}
-            />
-
-            <Table
-              caption="Repositories with the most short-job cost"
-              head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
-              hideOnPhone={[1]}
-              rows={report.byRepository.map((repo) => [
-                <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
-                <Count key="jobs" value={repo.jobs} />,
-                <Count key="shortJobs" value={repo.shortJobs} />,
-                money(repo.shortCost),
-              ])}
-            />
-
-            <p className="max-w-[62ch] text-sm text-muted-foreground">
-              Estimates use GitHub's per-minute prices for private repos: ubuntu-slim $0.002,
-              ubuntu-latest $0.006, windows-latest $0.010, macOS $0.062. Standard runners in public
-              repos and self-hosted runners are free. Larger runners are priced as ubuntu-latest, so
-              their cost is a floor. Skipped jobs and jobs cancelled before a runner took them
-              aren't counted.
-            </p>
-          </>
+          <Overview loaded={loaded.usage} />
         )}
       </div>
     </section>
+  );
+}
+
+function useRange() {
+  const search = Route.useSearch();
+  const range = ranges.rangeOf(search);
+  const setSearch = useSetSearch<UsageSearch>();
+  const picker = (
+    <TimeRangePicker
+      {...RANGES}
+      value={range}
+      onChange={(next) => setSearch(ranges.toSearch(next))}
+    />
+  );
+  return { search, range, setSearch, picker };
+}
+
+function PullRequests({ loaded }: { loaded: PullRequestReport }) {
+  const { search, range, setSearch, picker } = useRange();
+  const { report } = usePageReport(pullRequestsQuery(range), loaded);
+  return (
+    <SectionBoundary>
+      <PullRequestUsage
+        report={report}
+        from={resolveRange(range).from}
+        repository={search.repo ?? "all"}
+        onRepository={(next) => setSearch({ repo: unlessDefault(next, "all") })}
+        picker={picker}
+      />
+    </SectionBoundary>
+  );
+}
+
+function Overview({ loaded }: { loaded: UsageData }) {
+  const { range, picker } = useRange();
+  const {
+    report: { report, checks },
+  } = usePageReport(usageQuery(range), loaded);
+
+  const { totals } = report;
+  const shortShare = totals.jobs ? Math.round((totals.shortJobs / totals.jobs) * 100) : 0;
+
+  return (
+    <div className="grid gap-6">
+      {picker}
+
+      {checks.checks > 0 && (
+        <SectionBoundary>
+          <FreeChecks savings={checks} />
+        </SectionBoundary>
+      )}
+
+      {totals.jobs === 0 ? (
+        <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
+          No finished jobs in {rangePhrase(range)}. Jobs show up here once the GitHub App sees them
+          run in a connected repo.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatTile
+              label={`Jobs under ${report.shortJobSeconds}s`}
+              value={<Count value={totals.shortJobs} />}
+              detail={`${shortShare}% of ${count(totals.jobs)} jobs`}
+            />
+            <StatTile
+              label="Spent on short jobs"
+              value={money(totals.shortCost)}
+              detail={`${minutes(totals.shortBilledMinutes)} billed minutes`}
+            />
+            <StatTile
+              label="Lost to rounding up"
+              value={money(totals.roundingCost)}
+              detail={`of ${money(totals.cost)} estimated for all jobs`}
+            />
+          </div>
+
+          <Table
+            caption="By runner"
+            head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
+            hideOnPhone={[1, 3, 5]}
+            rows={report.byRunner.map((row) => [
+              <span key="runner">
+                {row.label}
+                <span className="ml-1.5 text-muted-foreground">
+                  {row.perMinute ? `${money(row.perMinute)}/min` : "free"}
+                </span>
+              </span>,
+              <Count key="jobs" value={row.jobs} />,
+              <Count key="shortJobs" value={row.shortJobs} />,
+              minutes(row.billedMinutes),
+              money(row.shortCost),
+              money(row.cost),
+            ])}
+          />
+
+          <Table
+            caption="Repositories with the most short-job cost"
+            head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
+            hideOnPhone={[1]}
+            rows={report.byRepository.map((repo) => [
+              <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
+              <Count key="jobs" value={repo.jobs} />,
+              <Count key="shortJobs" value={repo.shortJobs} />,
+              money(repo.shortCost),
+            ])}
+          />
+
+          <p className="max-w-[62ch] text-sm text-muted-foreground">
+            Estimates use GitHub's per-minute prices for private repos: ubuntu-slim $0.002,
+            ubuntu-latest $0.006, windows-latest $0.010, macOS $0.062. Standard runners in public
+            repos and self-hosted runners are free. Larger runners are priced as ubuntu-latest, so
+            their cost is a floor. Skipped jobs and jobs cancelled before a runner took them aren't
+            counted.
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -32,6 +32,7 @@ import { sampleSignalRuns, sampleSignals } from "./signals";
 import { sampleLogBucket, sampleTelemetry } from "./telemetry";
 import { sampleActivityOptions, sampleActivityPage } from "./activity";
 import { sampleJobRuns } from "./job-runs";
+import { samplePullRequests } from "./pull-requests";
 import { sampleCheckSavings, sampleUsageReport } from "./usage";
 import {
   sampleProviderSpend,
@@ -70,6 +71,13 @@ const ACME_ENTERPRISE = {
 const ANSWERS: [RegExp, Answer][] = [
   [/^\/usage$/, (_, q) => sampleUsageReport(daysOf(q))],
   [/^\/usage\/checks$/, (_, q) => sampleCheckSavings(daysOf(q))],
+  [
+    /^\/usage\/pull-requests$/,
+    (_, q) => {
+      const { from, to } = windowOf(q);
+      return samplePullRequests(from, to);
+    },
+  ],
   [
     /^\/activity$/,
     (_, q) =>
