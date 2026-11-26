@@ -338,6 +338,37 @@ describe("roles (#134)", () => {
   });
 });
 
+describe("workspace enterprises", () => {
+  test("names the enterprise each of the user's workspaces is in, and only theirs", async () => {
+    const { cookie } = await signIn();
+    const inEnterprise = await createWorkspace(cookie, "Ent org", "ent-org");
+    const alone = await createWorkspace(cookie, "Lone org", "lone-org");
+    const outsider = await createWorkspace((await signIn()).cookie, "Other", "ent-other");
+    const now = Date.now();
+    await env.DB.batch([
+      env.DB.prepare(
+        "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (?, ?, 'example-ent', 'Enterprise', ?, ?)",
+      ).bind(950_000_001, 950_000_001, now, now),
+      ...[inEnterprise, outsider].map(({ workspace }) =>
+        env.DB.prepare(
+          "insert into github_enterprise_organization (organization_id, enterprise_installation_id, created_at, updated_at) values (?, ?, ?, ?)",
+        ).bind(workspace.installationId, 950_000_001, now, now),
+      ),
+    ]);
+
+    const response = await call("/workspaces/enterprises", cookie);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { workspaces: { id: string; enterprise: string }[] };
+    expect(body.workspaces).toHaveLength(2);
+    expect(body.workspaces).toEqual(
+      expect.arrayContaining([
+        { id: inEnterprise.workspace.id, enterprise: "example-ent" },
+        { id: alone.workspace.id, enterprise: null },
+      ]),
+    );
+  });
+});
+
 describe("machine counts (#136)", () => {
   test("counts each member's live, claimed machines and nobody else's", async () => {
     const { user, cookie } = await signIn();

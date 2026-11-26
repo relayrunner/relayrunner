@@ -29,6 +29,7 @@ import {
   lt,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 import { recordOverage } from "../reports/activity.ts";
 import { createAuth } from "../auth/auth.ts";
@@ -131,6 +132,9 @@ export interface AccountUsage {
   // The enterprise whose shared minutes these are (its slug), when the org is in one we read.
   // Every number above is then the enterprise's.
   enterprise: string | null;
+  // With `enterprise`: this org's own share of the enterprise's used minutes. Only on the
+  // dashboard's reads (withProjection).
+  orgUsedMinutes?: number;
   // Where the cycle is headed at the recent pace. Only on the dashboard's reads (withProjection),
   // not routing's; null without a quota or on the cycle's first day.
   projection?: MinutesProjection | null;
@@ -695,9 +699,18 @@ export async function accountUsage(
 
   // An org in an enterprise we read is judged against the enterprise's shared minutes.
   if (installation.enterpriseInstallationId !== null) {
-    const shared = await accountUsage(db, installation.enterpriseInstallationId, now, {
-      withProjection,
-    });
+    // The org's own share is only read for the dashboard, alongside the enterprise's.
+    const [shared, orgUsedMinutes] = await Promise.all([
+      accountUsage(db, installation.enterpriseInstallationId, now, { withProjection }),
+      withProjection
+        ? orgShareOfEnterprise(
+            db,
+            installation.enterpriseInstallationId,
+            installation.accountLogin,
+            cycleStart(now),
+          )
+        : undefined,
+    ]);
     if (shared)
       return {
         ...shared,
@@ -706,6 +719,7 @@ export async function accountUsage(
         accountType: installation.accountType,
         spendApp,
         enterprise: shared.accountLogin,
+        ...(orgUsedMinutes !== undefined && { orgUsedMinutes }),
       };
   }
 
@@ -806,6 +820,36 @@ async function currentTotals(
     repoPrivacy(db, installation.id, installation.accountLogin),
   ]);
   return cycleTotals(rows, privacy);
+}
+
+// An org's own minutes in its enterprise's report this cycle: the enterprise's rows for the org's
+// repos, which the poll names "org/repo" (cycleItems).
+async function orgShareOfEnterprise(
+  db: Db,
+  enterpriseInstallationId: number,
+  orgLogin: string,
+  start: Date,
+) {
+  const [rows, privacy] = await Promise.all([
+    db
+      .select({
+        repositoryName: schema.actionsUsage.repositoryName,
+        unitType: schema.actionsUsage.unitType,
+        grossAmount: schema.actionsUsage.grossAmount,
+        netAmount: schema.actionsUsage.netAmount,
+      })
+      .from(schema.actionsUsage)
+      .where(
+        and(
+          eq(schema.actionsUsage.installationId, enterpriseInstallationId),
+          eq(schema.actionsUsage.cycleStart, start),
+          sql`lower(${schema.actionsUsage.repositoryName}) like ${`${orgLogin.toLowerCase()}/%`}`,
+        ),
+      ),
+    // The same privacy the enterprise's own totals use, keyed by "org/repo".
+    enterpriseRepoPrivacy(db, enterpriseInstallationId),
+  ]);
+  return cycleTotals(rows, privacy).usedMinutes;
 }
 
 // The cycle's totals as the last successful poll stored them.

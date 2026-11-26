@@ -419,6 +419,15 @@ describe("enterprise", () => {
         usedMinutes: 1750,
         budget: { amountUsd: 50, preventFurtherUsage: true },
       });
+
+    // The dashboard's read also says how much of that each org used itself.
+    expect(await accountUsage(db, org.installationId, NOW, { withProjection: true })).toMatchObject(
+      { usedMinutes: 1750, orgUsedMinutes: 1000 },
+    );
+    expect(
+      await accountUsage(db, other.installationId, NOW, { withProjection: true }),
+    ).toMatchObject({ orgUsedMinutes: 500 });
+    expect(await accountUsage(db, org.installationId, NOW)).not.toHaveProperty("orgUsedMinutes");
   });
 
   test("a refused enterprise read asks the enterprise to accept the permission", async () => {

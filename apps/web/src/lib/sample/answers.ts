@@ -76,6 +76,17 @@ const ANSWERS: [RegExp, Answer][] = [
   ],
   [/^\/activity\/options$/, () => sampleActivityOptions()],
   [/^\/usage\/actions$/, () => sampleActionsUsage()],
+  // The dev switcher's orgs (components/workspace-menu.tsx), two of them in one enterprise.
+  [
+    /^\/workspaces\/enterprises$/,
+    () => ({
+      workspaces: [
+        { id: "dev", enterprise: null },
+        { id: "dev-org", enterprise: "acme" },
+        { id: "dev-org-2", enterprise: "acme" },
+      ],
+    }),
+  ],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   // `?sample=history`: a new installation whose run history is still being read.
   [

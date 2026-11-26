@@ -36,6 +36,8 @@ export interface AccountUsage {
   spendApp: boolean | null;
   // The enterprise whose shared minutes these are, when the org is in one RelayRunner reads.
   enterprise: string | null;
+  // With `enterprise`: this org's own share of the enterprise's used minutes.
+  orgUsedMinutes?: number;
   // Where the cycle is headed at the recent pace (apps/api/src/providers/minutes-projection.ts).
   // Null without a quota or on the cycle's first day.
   projection?: MinutesProjection | null;

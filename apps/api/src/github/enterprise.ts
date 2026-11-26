@@ -8,7 +8,8 @@
 // enterprise's slug as its login. It never gets a workspace: the billing poll reads its usage
 // (src/providers/actions-billing.ts), learns which orgs belong to it from the report, and each of those
 // orgs' workspaces is judged against the enterprise's minutes.
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import type { GitHubInstallation } from "./github.ts";
@@ -102,4 +103,37 @@ export async function linkEnterpriseOrganizations(
         enterpriseInstallationId,
       ),
     });
+}
+
+/**
+ * The enterprise each of a user's workspaces belongs to, by its slug, so the dashboard can group
+ * them. Only enterprises RelayRunner reads (an install linked the org) are named: an org on an
+ * enterprise plan whose enterprise hasn't installed the App reads as null, since nothing says which
+ * enterprise it's in.
+ */
+export async function workspaceEnterprises(db: Db, userId: string) {
+  const enterprise = alias(schema.githubInstallation, "enterprise");
+  return db
+    .select({ id: schema.workspace.id, enterprise: enterprise.accountLogin })
+    .from(schema.workspaceMember)
+    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
+    .innerJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.workspace.installationId),
+    )
+    .leftJoin(
+      schema.githubEnterpriseOrganization,
+      and(
+        eq(schema.githubEnterpriseOrganization.organizationId, schema.githubInstallation.accountId),
+        eq(schema.githubInstallation.accountType, "Organization"),
+      ),
+    )
+    .leftJoin(
+      enterprise,
+      and(
+        eq(enterprise.id, schema.githubEnterpriseOrganization.enterpriseInstallationId),
+        isNull(enterprise.suspendedAt),
+      ),
+    )
+    .where(eq(schema.workspaceMember.userId, userId));
 }

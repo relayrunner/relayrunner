@@ -1,5 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
-import { CheckIcon, ChevronsUpDownIcon, LogOutIcon, PlusIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Building2Icon, CheckIcon, ChevronsUpDownIcon, LogOutIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -15,6 +16,11 @@ import { isWorkspacePage, signOut } from "@/lib/session";
 import { portableSearch } from "@/lib/portable-search";
 import { githubInstallHref } from "@/lib/github";
 import { cn } from "@/lib/utils";
+import {
+  getWorkspaceEnterprises,
+  groupByEnterprise,
+  type WorkspaceEnterprise,
+} from "@/lib/workspace-enterprises";
 import { clearWorkspaceCaches } from "@/lib/workspace-cache";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
@@ -47,6 +53,13 @@ export function WorkspaceMenu({
   // time someone clicks.
   const { data } = useListOrganizations();
   const workspaces = authDisabled ? devWorkspaces : (data ?? []);
+  // Which enterprise each is in, read alongside the list so the menu opens already grouped.
+  const { data: enterprises } = useQuery({
+    queryKey: ["workspace-enterprises"],
+    queryFn: getWorkspaceEnterprises,
+    enabled: workspaces.length > 1,
+    staleTime: 10 * 60_000,
+  });
 
   async function switchTo(id: string) {
     if (id === workspace.id) return;
@@ -123,7 +136,12 @@ export function WorkspaceMenu({
             <DropdownMenuSeparator />
           </>
         )}
-        <WorkspaceList workspaces={workspaces} current={workspace.id} onSelect={switchTo} />
+        <WorkspaceList
+          workspaces={workspaces}
+          enterprises={enterprises?.workspaces ?? []}
+          current={workspace.id}
+          onSelect={switchTo}
+        />
         {user && (
           <>
             <DropdownMenuSeparator />
@@ -138,45 +156,64 @@ export function WorkspaceMenu({
   );
 }
 
-// The `VITE_AUTH_DISABLED=true` dev preview's switcher: its one workspace and an org with no avatar.
+// The `VITE_AUTH_DISABLED=true` dev preview's switcher: its one workspace, and two orgs with no
+// avatar in one enterprise (lib/sample/answers.ts).
 const devWorkspaces = [
   { id: "dev", name: "Dev workspace", logo: "https://github.com/relayrunner.png?size=96" },
   { id: "dev-org", name: "acme-labs", logo: null },
+  { id: "dev-org-2", name: "acme-tools", logo: null },
 ];
 
 /**
  * The user's workspaces, one per GitHub account the App is installed on, plus "Add an
- * organization", which installs the App somewhere new. With one workspace there is nothing to
- * switch to, so only "Add an organization" shows.
+ * organization", which installs the App somewhere new. Orgs in an enterprise RelayRunner reads sit
+ * under the enterprise's name. With one workspace there is nothing to switch to, so only "Add an
+ * organization" shows.
  */
 function WorkspaceList({
   workspaces,
+  enterprises,
   current,
   onSelect,
 }: {
   workspaces: { id: string; name: string; logo?: string | null }[];
+  enterprises: WorkspaceEnterprise[];
   current: string;
   onSelect: (id: string) => void;
 }) {
+  const groups = groupByEnterprise(workspaces, enterprises);
+  const item = (workspace: (typeof workspaces)[number]) => (
+    <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
+      <WorkspaceMark name={workspace.name} logo={workspace.logo} className="size-5 text-[11px]" />
+      <span className="truncate">{workspace.name}</span>
+      {workspace.id === current && (
+        <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
+      )}
+    </DropdownMenuItem>
+  );
   return (
     <DropdownMenuGroup>
       {workspaces.length > 1 && (
         <>
-          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-            Workspaces
-          </DropdownMenuLabel>
-          {workspaces.map((workspace) => (
-            <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
-              <WorkspaceMark
-                name={workspace.name}
-                logo={workspace.logo}
-                className="size-5 text-[11px]"
-              />
-              <span className="truncate">{workspace.name}</span>
-              {workspace.id === current && (
-                <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
-              )}
-            </DropdownMenuItem>
+          {groups.alone.length > 0 && (
+            <>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                Workspaces
+              </DropdownMenuLabel>
+              {groups.alone.map(item)}
+            </>
+          )}
+          {groups.enterprises.map((enterprise) => (
+            <div key={enterprise.name} role="group" aria-label={`${enterprise.name} enterprise`}>
+              <DropdownMenuLabel
+                title="GitHub enterprise"
+                className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground"
+              >
+                <Building2Icon aria-hidden className="size-3.5" />
+                <span className="truncate">{enterprise.name}</span>
+              </DropdownMenuLabel>
+              {enterprise.workspaces.map(item)}
+            </div>
           ))}
         </>
       )}

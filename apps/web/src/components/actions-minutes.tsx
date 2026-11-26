@@ -1,4 +1,4 @@
-import { RefreshCwIcon, TriangleAlert } from "lucide-react";
+import { Building2Icon, RefreshCwIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authDisabled } from "@/lib/auth-client";
 import { githubInstallHref } from "@/lib/github";
@@ -14,7 +14,7 @@ import {
 } from "@/lib/actions-usage";
 import { QuotaMeter } from "@/components/quota-meter";
 import { timeAgo } from "@/lib/machines";
-import { cn } from "@/lib/utils";
+import { cn, count as compactCount, percent } from "@/lib/utils";
 
 // One GitHub account's Actions minutes this month (#116, #117), and the alarm when GitHub has
 // billed overage. Used on Settings > GitHub and the GitHub provider page.
@@ -113,11 +113,16 @@ export function ActionsMinutes({
         <span className="flex items-center gap-1.5 text-muted-foreground">
           <span>
             {usage.burnRatePerHour !== null && `${count(usage.burnRatePerHour)} min/hour · `}
-            {usage.enterprise
-              ? `Shared with ${usage.enterprise}`
-              : usage.plan
-                ? `${planName(usage.plan)} plan`
-                : "Plan unknown"}
+            {usage.enterprise ? (
+              <>
+                <Building2Icon aria-hidden className="mr-1 inline size-3.5 align-[-2px]" />
+                Shared with {usage.enterprise}
+              </>
+            ) : usage.plan ? (
+              `${planName(usage.plan)} plan`
+            ) : (
+              "Plan unknown"
+            )}
           </span>
           {onRefresh && (
             <button
@@ -143,6 +148,15 @@ export function ActionsMinutes({
           over={over}
           projected={usage.projection?.projectedMinutes}
         />
+      )}
+      {usage.orgUsedMinutes !== undefined && usage.usedMinutes > 0 && (
+        <p
+          className="text-xs text-muted-foreground"
+          title={`${count(usage.orgUsedMinutes)} minutes`}
+        >
+          {usage.accountLogin} used {compactCount(usage.orgUsedMinutes)} min of these (
+          {percent(usage.orgUsedMinutes / usage.usedMinutes)}).
+        </p>
       )}
       {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
       {unavailable && (

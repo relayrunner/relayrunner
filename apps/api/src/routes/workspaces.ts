@@ -49,6 +49,7 @@ import {
   setAutoJob,
 } from "../routing/auto-jobs.ts";
 import { log } from "../log.ts";
+import { workspaceEnterprises } from "../github/enterprise.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted, and changes one only
@@ -93,6 +94,11 @@ export const workspaceRoutes = new Hono<AppEnv>()
       installations: installations.map(present),
     });
   })
+  // The enterprise each of the user's workspaces is in (null when none RelayRunner reads), for
+  // grouping them in the workspace switcher.
+  .get("/enterprises", requireUser, async (c) =>
+    c.json({ workspaces: await workspaceEnterprises(c.var.db, c.var.user!.id) }),
+  )
   // How many live machines each member owns, keyed by user id, for the Members page (#136).
   // Same filter as GET /api/machines: claimed and not revoked.
   .get("/current/machine-counts", requireUser, requireWorkspace, async (c) => {
