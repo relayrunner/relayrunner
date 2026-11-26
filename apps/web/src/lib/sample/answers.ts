@@ -71,13 +71,7 @@ const ACME_ENTERPRISE = {
 const ANSWERS: [RegExp, Answer][] = [
   [/^\/usage$/, (_, q) => sampleUsageReport(daysOf(q))],
   [/^\/usage\/checks$/, (_, q) => sampleCheckSavings(daysOf(q))],
-  [
-    /^\/usage\/pull-requests$/,
-    (_, q) => {
-      const { from, to } = windowOf(q);
-      return samplePullRequests(from, to);
-    },
-  ],
+  [/^\/usage\/pull-requests$/, (_, q) => samplePullRequests(windowOf(q))],
   [
     /^\/activity$/,
     (_, q) =>

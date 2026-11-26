@@ -104,25 +104,30 @@ describe("pull request minutes", () => {
     }
 
     const now = Date.now();
-    const report = await pullRequestReport(db, workspace.id, { from: now - DAY_MS, to: now }, now);
+    const report = await pullRequestReport(db, INSTALLATION, { from: now - DAY_MS, to: now }, now);
 
-    expect(report.pullRequests).toMatchObject([
-      {
-        repository: "acme/app",
-        number: 12,
-        title: "Add login",
-        minutes: 15,
-        rerunMinutes: 3,
-        billedMinutes: 15,
-        cost: 0.09,
-        jobs: 4,
-        runs: 2,
-        commits: 2,
-      },
-      { number: 13, title: "Fix typo", minutes: 1, runs: 1, commits: 1 },
-    ]);
-    expect(report.outside).toEqual([
-      { repository: "acme/app", minutes: 6.5, billedMinutes: 7, cost: 0.042, jobs: 2 },
-    ]);
+    expect(report).toEqual({
+      pullRequests: [
+        {
+          repository: "acme/app",
+          number: 12,
+          title: "Add login",
+          minutes: 15,
+          rerunMinutes: 3,
+          cost: 0.09,
+          commits: 2,
+        },
+        {
+          repository: "acme/app",
+          number: 13,
+          title: "Fix typo",
+          minutes: 1,
+          rerunMinutes: 0,
+          cost: 0.006,
+          commits: 1,
+        },
+      ],
+      outside: [{ repository: "acme/app", minutes: 6.5 }],
+    });
   });
 });

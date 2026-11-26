@@ -8,13 +8,12 @@
  * repo and branch to a pull request another run on that branch named. The default branch is never
  * matched. What's left counts as outside pull requests, per repo.
  *
- * Reads job_timing's own rows, so the window starts no further back than RAW_RETENTION_DAYS.
+ * Reads job_timing's own rows, so the route keeps the window within RAW_RETENTION_DAYS.
  */
-import { and, eq, gte, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import { loadPriceBook } from "../providers/prices.ts";
-import { DAY_MS, RAW_RETENTION_DAYS } from "../time.ts";
-import { BILLED_MINUTES, DURATION_MS } from "./job-sql.ts";
+import { BILLED_MINUTES, DURATION_MS, RAN_ON_RUNNER } from "./job-sql.ts";
 import type { Window } from "./report-window.ts";
 import { cents, pricePeriods, rateFor, runnerClass } from "./runner-rates.ts";
 
@@ -29,61 +28,44 @@ export interface PullRequestMinutes {
   /** Time its jobs ran, and the part of it from re-runs (attempt 2 and up). */
   minutes: number;
   rerunMinutes: number;
-  /** After GitHub rounds each job up to a whole minute. */
-  billedMinutes: number;
-  /** Estimated USD, after free public-repo minutes. */
+  /** Estimated USD after GitHub rounds each job up to a minute, less free public-repo minutes. */
   cost: number;
-  jobs: number;
-  /** Workflow runs, each counted once however many attempts it had. */
-  runs: number;
   /** Distinct commits that ran. */
   commits: number;
-  /** When its newest job finished, epoch ms. */
-  lastAt: number;
-}
-
-export interface OutsidePullRequests {
-  repository: string;
-  minutes: number;
-  billedMinutes: number;
-  cost: number;
-  jobs: number;
 }
 
 export interface PullRequestReport {
-  /** Where the report starts, epoch ms: the window's start, or as far back as jobs are kept. */
-  from: number;
-  to: number;
   /** The most minutes first. */
   pullRequests: PullRequestMinutes[];
-  /** Jobs no pull request could be found for, per repo, the most minutes first. */
-  outside: OutsidePullRequests[];
+  /** Minutes of jobs no pull request could be found for, per repo. */
+  outside: { repository: string; minutes: number }[];
 }
 
 // A pull request's key, and a branch's, within a repo.
 const prKey = (repository: string, number: number) => `${repository}#${number}`;
 const branchKey = (repository: string, branch: string) => `${repository}\u0000${branch}`;
 
+type Keyed = { repository: string; number: number | null; branch: string | null };
+
 export async function pullRequestReport(
   db: Db,
-  workspaceId: string,
-  window: Window,
+  installationId: number,
+  { from, to }: Window,
   now = Date.now(),
 ): Promise<PullRequestReport> {
-  const from = Math.max(window.from, now - RAW_RETENTION_DAYS * DAY_MS);
-  const to = window.to;
   const book = await loadPriceBook(db, now);
   const prices = pricePeriods(book, job.completedAt, from, to);
-
   const counted = and(
-    eq(schema.workspace.id, workspaceId),
+    eq(job.installationId, installationId),
     gte(job.completedAt, new Date(from)),
     lt(job.completedAt, new Date(to)),
-    isNotNull(job.startedAt),
-    isNotNull(job.runnerName),
-    ne(sql`coalesce(${job.conclusion}, '')`, "skipped"),
+    RAN_ON_RUNNER,
   );
-  const onDefault = sql<number>`coalesce(${run.headBranch} = ${run.defaultBranch}, 0)`;
+  const offDefault = sql`${run.headBranch} is not ${run.defaultBranch}`;
+  // The branch a run without a pull request is matched by: none on the default branch.
+  const unnamedBranch = sql<
+    string | null
+  >`case when ${run.pullRequestNumber} is null and ${offDefault} then ${run.headBranch} end`;
 
   // Sums per pull request or branch, grouped by what prices a job too.
   const sumsQuery = db
@@ -91,18 +73,15 @@ export async function pullRequestReport(
       period: prices.period,
       repository: job.repositoryFullName,
       number: run.pullRequestNumber,
-      branch: run.headBranch,
-      onDefault,
-      rerun: sql<number>`(${job.runAttempt} > 1)`,
+      branch: unnamedBranch,
       labels: job.labels,
       runnerGroupName: job.runnerGroupName,
       private: schema.githubRepository.private,
-      jobs: sql<number>`count(*)`,
       runMs: sql<number>`sum(${DURATION_MS})`,
+      rerunMs: sql<number>`sum(case when ${job.runAttempt} > 1 then ${DURATION_MS} else 0 end)`,
       billedMinutes: sql<number>`sum(${BILLED_MINUTES})`,
     })
     .from(job)
-    .innerJoin(schema.workspace, eq(schema.workspace.installationId, job.installationId))
     .leftJoin(run, and(eq(run.id, job.runId), eq(run.runAttempt, job.runAttempt)))
     .leftJoin(schema.githubRepository, eq(schema.githubRepository.id, job.repositoryId))
     .where(counted)
@@ -110,116 +89,77 @@ export async function pullRequestReport(
       ...prices.groupBy,
       job.repositoryFullName,
       run.pullRequestNumber,
-      run.headBranch,
-      onDefault,
-      sql`(${job.runAttempt} > 1)`,
+      unnamedBranch,
       job.labels,
       job.runnerGroupName,
       schema.githubRepository.private,
     );
 
-  // Runs, commits and the newest title per pull request or branch. The bare title comes from the
-  // row holding max(completed_at), as SQLite picks it.
-  const lastAt = sql<number>`max(${job.completedAt})`;
+  // Per pull request and branch off the default one: its commits, which don't add up across the
+  // sums' groups, and its newest run's title, which SQLite takes from the row holding
+  // max(completed_at). Named rows also say which pull request each branch belongs to.
   const metaQuery = db
     .select({
       repository: job.repositoryFullName,
       number: run.pullRequestNumber,
       branch: run.headBranch,
-      runs: sql<number>`count(distinct ${job.runId})`,
       commits: sql<number>`count(distinct ${run.headSha})`,
-      lastAt,
+      lastAt: sql<number>`max(${job.completedAt})`,
       title: run.displayTitle,
     })
     .from(job)
-    .innerJoin(schema.workspace, eq(schema.workspace.installationId, job.installationId))
     .innerJoin(run, and(eq(run.id, job.runId), eq(run.runAttempt, job.runAttempt)))
-    .where(and(counted, sql`not ${onDefault}`))
+    .where(and(counted, offDefault))
     .groupBy(job.repositoryFullName, run.pullRequestNumber, run.headBranch);
 
   const [sums, metas] = await Promise.all([sumsQuery, metaQuery]);
 
-  // Each branch's pull request, from runs that named one. The newest wins on a reused branch.
-  const prOfBranch = new Map<string, { number: number; lastAt: number }>();
-  for (const meta of metas) {
-    if (meta.number === null || meta.branch === null) continue;
-    const key = branchKey(meta.repository, meta.branch);
-    const known = prOfBranch.get(key);
-    if (!known || Number(meta.lastAt) > known.lastAt)
-      prOfBranch.set(key, { number: meta.number, lastAt: Number(meta.lastAt) });
+  // Each branch's pull request, the newest named run winning on a reused branch; and the title of
+  // each pull request's newest named run.
+  const branches = new Map<string, number>();
+  const titles = new Map<string, string | null>();
+  for (const meta of metas
+    .filter((meta) => meta.number !== null)
+    .toSorted((a, b) => Number(a.lastAt) - Number(b.lastAt))) {
+    if (meta.branch !== null) branches.set(branchKey(meta.repository, meta.branch), meta.number!);
+    titles.set(prKey(meta.repository, meta.number!), meta.title);
   }
-  const numberOf = (row: {
-    repository: string;
-    number: number | null;
-    branch: string | null;
-    onDefault?: number;
-  }) =>
-    row.number ??
-    (row.branch !== null && !row.onDefault
-      ? prOfBranch.get(branchKey(row.repository, row.branch))?.number
-      : undefined);
+  const numberOf = ({ repository, number, branch }: Keyed) =>
+    number ?? (branch === null ? undefined : branches.get(branchKey(repository, branch)));
 
   const pullRequests = new Map<string, PullRequestMinutes>();
-  const outside = new Map<string, OutsidePullRequests>();
+  const outside = new Map<string, number>();
   for (const row of sums) {
-    const perMinute = rateFor(
-      book,
-      runnerClass(row.labels, row.runnerGroupName),
-      row.private,
-      prices.at(Number(row.period)),
-    );
     const minutes = Number(row.runMs) / 60_000;
-    const billedMinutes = Number(row.billedMinutes);
-    const jobs = Number(row.jobs);
-    const cost = billedMinutes * perMinute;
     const number = numberOf(row);
     if (number === undefined) {
-      const sum = outside.get(row.repository) ?? {
-        repository: row.repository,
-        minutes: 0,
-        billedMinutes: 0,
-        cost: 0,
-        jobs: 0,
-      };
-      sum.minutes += minutes;
-      sum.billedMinutes += billedMinutes;
-      sum.cost += cost;
-      sum.jobs += jobs;
-      outside.set(row.repository, sum);
+      outside.set(row.repository, (outside.get(row.repository) ?? 0) + minutes);
       continue;
     }
-    const pr = pullRequestOf(pullRequests, row.repository, number);
+    const key = prKey(row.repository, number);
+    const pr = pullRequests.get(key) ?? {
+      repository: row.repository,
+      number,
+      title: titles.get(key) ?? null,
+      minutes: 0,
+      rerunMinutes: 0,
+      cost: 0,
+      commits: 0,
+    };
+    const cls = runnerClass(row.labels, row.runnerGroupName);
     pr.minutes += minutes;
-    if (row.rerun) pr.rerunMinutes += minutes;
-    pr.billedMinutes += billedMinutes;
-    pr.cost += cost;
-    pr.jobs += jobs;
+    pr.rerunMinutes += Number(row.rerunMs) / 60_000;
+    pr.cost +=
+      Number(row.billedMinutes) * rateFor(book, cls, row.private, prices.at(Number(row.period)));
+    pullRequests.set(key, pr);
   }
-
-  // How each pull request's title was picked, as [named it, when].
-  const titleRanks = new Map<string, readonly [number, number]>();
   for (const meta of metas) {
     const number = numberOf(meta);
-    if (number === undefined) continue;
-    const key = prKey(meta.repository, number);
-    const pr = pullRequests.get(key);
-    if (!pr) continue;
-    pr.runs += Number(meta.runs);
-    pr.commits += Number(meta.commits);
-    const at = Number(meta.lastAt);
-    if (at > pr.lastAt) pr.lastAt = at;
-    // A run that named the pull request titles it over a push run's commit message, then the newest.
-    const rank = [meta.number === null ? 0 : 1, at] as const;
-    const best = titleRanks.get(key) ?? [-1, 0];
-    if (meta.title !== null && (rank[0] > best[0] || (rank[0] === best[0] && at >= best[1]))) {
-      pr.title = meta.title;
-      titleRanks.set(key, rank);
-    }
+    const pr = number === undefined ? undefined : pullRequests.get(prKey(meta.repository, number));
+    if (pr) pr.commits += Number(meta.commits);
   }
 
   return {
-    from,
-    to,
     pullRequests: [...pullRequests.values()]
       .map((pr) => ({
         ...pr,
@@ -227,37 +167,12 @@ export async function pullRequestReport(
         rerunMinutes: tenths(pr.rerunMinutes),
         cost: cents(pr.cost),
       }))
-      .sort((a, b) => b.minutes - a.minutes || b.lastAt - a.lastAt),
-    outside: [...outside.values()]
-      .map((sum) => ({ ...sum, minutes: tenths(sum.minutes), cost: cents(sum.cost) }))
-      .sort((a, b) => b.minutes - a.minutes),
-  };
-}
-
-function pullRequestOf(
-  pullRequests: Map<string, PullRequestMinutes>,
-  repository: string,
-  number: number,
-) {
-  const key = prKey(repository, number);
-  let pr = pullRequests.get(key);
-  if (!pr) {
-    pr = {
+      .sort((a, b) => b.minutes - a.minutes || b.number - a.number),
+    outside: [...outside].map(([repository, minutes]) => ({
       repository,
-      number,
-      title: null,
-      minutes: 0,
-      rerunMinutes: 0,
-      billedMinutes: 0,
-      cost: 0,
-      jobs: 0,
-      runs: 0,
-      commits: 0,
-      lastAt: 0,
-    };
-    pullRequests.set(key, pr);
-  }
-  return pr;
+      minutes: tenths(minutes),
+    })),
+  };
 }
 
 const tenths = (value: number) => Math.round(value * 10) / 10;

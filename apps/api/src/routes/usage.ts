@@ -3,7 +3,7 @@ import { refreshWorkspaceUsage, workspaceActionsUsage } from "../providers/actio
 import type { AppEnv } from "../app.ts";
 import { freeCheckSavings } from "../checks/free-checks.ts";
 import { usageReport } from "../ingest/job-timings.ts";
-import { JOB_TIMING_RETENTION_DAYS } from "../time.ts";
+import { JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS } from "../time.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { pullRequestReport } from "../reports/pull-request-minutes.ts";
@@ -22,11 +22,11 @@ export const usageRoutes = new Hono<AppEnv>()
     const window = requireWindow(c.req.query(), USAGE_RANGE);
     return c.json(await usageReport(c.var.db, c.var.workspace.id, window));
   })
-  // CI minutes per pull request (src/reports/pull-request-minutes.ts), over at most the days
-  // job_timing keeps its own rows.
+  // CI minutes per pull request (src/reports/pull-request-minutes.ts), as far back as job_timing
+  // keeps its own rows.
   .get("/pull-requests", requireUser, requireWorkspace, async (c) => {
-    const window = requireWindow(c.req.query(), USAGE_RANGE);
-    return c.json(await pullRequestReport(c.var.db, c.var.workspace.id, window));
+    const window = requireWindow(c.req.query(), { ...USAGE_RANGE, maxDays: RAW_RETENTION_DAYS });
+    return c.json(await pullRequestReport(c.var.db, c.var.workspace.installationId, window));
   })
   .get("/checks", requireUser, requireWorkspace, async (c) => {
     const window = requireWindow(c.req.query(), USAGE_RANGE);

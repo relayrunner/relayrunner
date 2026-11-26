@@ -3,21 +3,22 @@ import { useMemo } from "react";
 import { Count } from "@/components/count";
 import { StatTile } from "@/components/stat-tile";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { TimeRangePicker } from "@/components/range-picker";
+import { RepoSelect, repositoriesOf } from "@/components/repo-select";
 import { minutesText } from "@/lib/job-times";
 import { type PullRequestMinutes, type PullRequestReport, summarize } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
+import type { RangeOptions, TimeRange } from "@/lib/time-range";
 import { money } from "@/lib/usage";
 import { percent } from "@/lib/utils";
 
-const DAY_MS = 86_400_000;
-const min = (minutes: number) => `${minutesText(minutes * 60_000)} min`;
+/** The view reads jobs' own rows, which the API keeps 62 days, so it has no 90-day range. */
+export const PULL_REQUEST_RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
+};
+
+const minutesOf = (minutes: number) => minutesText(minutes * 60_000);
+const min = (minutes: number) => `${minutesOf(minutes)} min`;
 
 /**
  * Usage › Pull requests: CI minutes per pull request across its pushes and re-runs, the typical
@@ -26,21 +27,19 @@ const min = (minutes: number) => `${minutesText(minutes * 60_000)} min`;
  */
 export function PullRequestUsage({
   report,
-  from,
+  range,
+  onRange,
   repository,
   onRepository,
-  picker,
 }: {
   report: PullRequestReport;
-  /** Where the range asked for starts, epoch ms, to say when the report starts later. */
-  from: number;
+  range: TimeRange;
+  onRange: (range: TimeRange) => void;
   repository: string;
   onRepository: (repository: string) => void;
-  picker: React.ReactNode;
 }) {
   const repositories = useMemo(
-    () =>
-      [...new Set([...report.pullRequests, ...report.outside].map((row) => row.repository))].sort(),
+    () => repositoriesOf([...report.pullRequests, ...report.outside]),
     [report],
   );
   const showRepository = repositories.length > 1 && repository === "all";
@@ -50,28 +49,12 @@ export function PullRequestUsage({
     const pullRequests = report.pullRequests.filter(keep);
     return { pullRequests, summary: summarize(pullRequests, report.outside.filter(keep)) };
   }, [report, repository]);
-  // A day of slack, so a calendar month starting at the reader's midnight doesn't count.
-  const clipped = report.from - from > DAY_MS;
 
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        {picker}
-        {repositories.length > 1 && (
-          <Select value={repository} onValueChange={onRepository}>
-            <SelectTrigger size="sm" aria-label="Repo">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All repos</SelectItem>
-              {repositories.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <TimeRangePicker {...PULL_REQUEST_RANGES} value={range} onChange={onRange} />
+        <RepoSelect value={repository} repositories={repositories} onChange={onRepository} />
       </div>
 
       {summary.count === 0 ? (
@@ -90,7 +73,7 @@ export function PullRequestUsage({
             <StatTile
               label="Spend per pull request"
               value={money(summary.cost.median)}
-              detail={`average ${money(summary.cost.average)}, ${money(summary.totalCost)} in all`}
+              detail={`average ${money(summary.cost.average)}, ${money(summary.cost.total)} in all`}
             />
             <StatTile
               label="Pull requests"
@@ -113,8 +96,6 @@ export function PullRequestUsage({
         Pushes to a branch before its pull request opened count toward it. Typical is the median
         pull request. Spend uses the same per-minute estimates as the Overview, after GitHub rounds
         each job up to a whole minute.
-        {clipped &&
-          ` Pull requests cover the last ${Math.round((report.to - report.from) / DAY_MS)} days, as far back as jobs are kept.`}
       </p>
     </div>
   );
@@ -153,14 +134,14 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: { ...NUM, className: "whitespace-nowrap" },
-    cell: ({ getValue }) => minutesText(getValue() * 60_000),
+    cell: ({ getValue }) => minutesOf(getValue()),
   }),
   column.accessor("rerunMinutes", {
     header: "Re-runs",
     sortFn: "basic",
     sortDescFirst: true,
     meta: { ...NUM, hideOnPhone: true, info: "Minutes from re-run attempts of its runs." },
-    cell: ({ getValue }) => (getValue() ? minutesText(getValue() * 60_000) : "–"),
+    cell: ({ getValue }) => (getValue() ? minutesOf(getValue()) : "–"),
   }),
   column.accessor("commits", {
     header: "Commits",

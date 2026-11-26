@@ -8,7 +8,7 @@ import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { PageTabs, USAGE_TABS as TABS, viewOf } from "@/components/page-tabs";
-import { PullRequestUsage } from "@/components/pull-request-usage";
+import { PULL_REQUEST_RANGES, PullRequestUsage } from "@/components/pull-request-usage";
 import { getPullRequests, type PullRequestReport } from "@/lib/pull-requests";
 import {
   type RangeSearch,
@@ -17,7 +17,7 @@ import {
   unlessDefault,
   useSetSearch,
 } from "@/lib/search-params";
-import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { type RangeOptions, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -53,6 +53,13 @@ type Loaded =
   | { view: "overview"; usage: UsageData }
   | { view: "pull-requests"; pullRequests: PullRequestReport };
 
+// The Overview's longer ranges reach past what the Pull requests view can read, which falls back
+// to its default.
+function pullRequestRange(search: UsageSearch): TimeRange {
+  const range = ranges.rangeOf(search);
+  return PULL_REQUEST_RANGES.presets.includes(range as never) ? range : DEFAULT_RANGE;
+}
+
 const usageQuery = (range: TimeRange) => pageQuery(["usage", range], () => load(range));
 const pullRequestsQuery = (range: TimeRange) =>
   pageQuery(["usage", "pull-requests", range], () => getPullRequests(range));
@@ -66,10 +73,14 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
   loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
-    const range = ranges.rangeOf(location.search as UsageSearch);
-    if (view === "pull-requests")
+    if (view === "pull-requests") {
+      const range = pullRequestRange(location.search as UsageSearch);
       return { view, pullRequests: await loadPage(pullRequestsQuery(range)) };
-    return { view, usage: await loadPage(usageQuery(range)) };
+    }
+    return {
+      view,
+      usage: await loadPage(usageQuery(ranges.rangeOf(location.search as UsageSearch))),
+    };
   },
   shouldReload: ({ cause }) => cause === "enter",
   component: UsagePage,
@@ -95,38 +106,27 @@ function UsagePage() {
   );
 }
 
-function useRange() {
-  const search = Route.useSearch();
-  const range = ranges.rangeOf(search);
-  const setSearch = useSetSearch<UsageSearch>();
-  const picker = (
-    <TimeRangePicker
-      {...RANGES}
-      value={range}
-      onChange={(next) => setSearch(ranges.toSearch(next))}
-    />
-  );
-  return { search, range, setSearch, picker };
-}
-
 function PullRequests({ loaded }: { loaded: PullRequestReport }) {
-  const { search, range, setSearch, picker } = useRange();
+  const search = Route.useSearch();
+  const range = pullRequestRange(search);
+  const setSearch = useSetSearch<UsageSearch>();
   const { report } = usePageReport(pullRequestsQuery(range), loaded);
   return (
     <SectionBoundary>
       <PullRequestUsage
         report={report}
-        from={resolveRange(range).from}
+        range={range}
+        onRange={(next) => setSearch(ranges.toSearch(next))}
         repository={search.repo ?? "all"}
         onRepository={(next) => setSearch({ repo: unlessDefault(next, "all") })}
-        picker={picker}
       />
     </SectionBoundary>
   );
 }
 
 function Overview({ loaded }: { loaded: UsageData }) {
-  const { range, picker } = useRange();
+  const range = ranges.rangeOf(Route.useSearch());
+  const setSearch = useSetSearch<UsageSearch>();
   const {
     report: { report, checks },
   } = usePageReport(usageQuery(range), loaded);
@@ -136,7 +136,11 @@ function Overview({ loaded }: { loaded: UsageData }) {
 
   return (
     <div className="grid gap-6">
-      {picker}
+      <TimeRangePicker
+        {...RANGES}
+        value={range}
+        onChange={(next) => setSearch(ranges.toSearch(next))}
+      />
 
       {checks.checks > 0 && (
         <SectionBoundary>

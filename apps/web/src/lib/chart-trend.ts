@@ -86,9 +86,12 @@ export function periodStarts(times: number[], periodOf: (at: number) => number) 
 }
 
 /** The q-quantile (0 to 1) of ascending values, interpolated the way the API's job times are. */
-export function quantile(sorted: number[], q: number) {
+export function interpolate(sorted: number[], q: number) {
   const at = (sorted.length - 1) * q;
   const lo = Math.floor(at);
   const hi = Math.ceil(at);
-  return Math.round(sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo));
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo);
 }
+
+/** interpolate, rounded to a whole number, for milliseconds. */
+export const quantile = (sorted: number[], q: number) => Math.round(interpolate(sorted, q));
