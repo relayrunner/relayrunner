@@ -113,14 +113,17 @@ function SubStep({
 }) {
   return (
     <li className={cn("flex items-center gap-3", !done && !current && "text-muted-foreground")}>
-      <span
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded-full border text-xs",
-          done && "border-go-edge bg-go-soft text-go",
-          current && "border-foreground",
-        )}
-      >
-        {done ? <CheckIcon aria-label="Done" className="size-3" /> : n}
+      {/* As wide as the GitHub badge above, so the circles share its center line. */}
+      <span className="flex w-9 shrink-0 justify-center">
+        <span
+          className={cn(
+            "flex size-5 items-center justify-center rounded-full border text-xs",
+            done && "border-go-edge bg-go-soft text-go",
+            current && "border-foreground",
+          )}
+        >
+          {done ? <CheckIcon aria-label="Done" className="size-3" /> : n}
+        </span>
       </span>
       {children}
     </li>
