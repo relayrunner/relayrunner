@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.23.0
+
+### Minor Changes
+
+- 0426091: `relayrunner eval` is now `relayrunner benchmark`. `eval` still works, so scripts that use it keep running.
+
 ## 0.22.0
 
 ### Minor Changes
