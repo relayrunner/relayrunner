@@ -15,7 +15,8 @@ import type { Env } from "../env.ts";
 import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { type AdapterContext, ADAPTERS, ProviderAuthError } from "../provider-billing/index.ts";
 import { adapterTools, byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
-import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";
+import { sealToken, tokenHint } from "./provider-tokens.ts";
+import { connectionBearer } from "./boat-oauth.ts";
 import { errorMessage } from "../errors.ts";
 import { log } from "../log.ts";
 
@@ -138,7 +139,7 @@ export function parseOptions(
 }
 
 /** The GitHub account a workspace is installed on. */
-async function workspaceLogin(db: Db, workspaceId: string): Promise<string | null> {
+export async function workspaceLogin(db: Db, workspaceId: string): Promise<string | null> {
   const [row] = await db
     .select({ login: schema.githubInstallation.accountLogin })
     .from(schema.workspace)
@@ -267,7 +268,7 @@ export async function testConnection(
   const where = byConnection(schema.providerConnection, workspaceId, provider);
   const [row] = await db.select().from(schema.providerConnection).where(where).limit(1);
   if (!row) return null;
-  const token = await openToken(env, workspaceId, provider, row.token);
+  const token = await connectionBearer(env, db, workspaceId, provider, row.token);
   const verified = await verifyToken(provider, token, row.options, adapterTools(env, workspaceId));
   const update = verified.ok
     ? { accountName: verified.accountName, ...NO_FAILURE }

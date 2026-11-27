@@ -109,6 +109,11 @@ export const ERRORS = {
     message: "Another provider, or GitHub's own runners, already use labels like that.",
   },
   PROVIDER_NOT_CONNECTED: { status: 404, message: "That provider isn't connected." },
+  PROVIDER_SIGN_IN_UNAVAILABLE: {
+    status: 404,
+    message:
+      "Signing in to that provider isn't set up here. Paste an API key in Settings › Providers instead.",
+  },
   PROVIDER_ORGANIZATION_MISMATCH: {
     status: 400,
     message:

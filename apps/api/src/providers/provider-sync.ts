@@ -19,7 +19,7 @@ import {
   type Usage,
   type UsageWindow,
 } from "../provider-billing/index.ts";
-import { openToken } from "./provider-tokens.ts";
+import { connectionBearer } from "./boat-oauth.ts";
 import { errorMessage } from "../errors.ts";
 import { log } from "../log.ts";
 
@@ -104,7 +104,7 @@ export async function syncConnection(
   if (!connection || !isBillingProvider(provider)) return;
 
   try {
-    const token = await openToken(env, workspaceId, provider, connection.token);
+    const token = await connectionBearer(env, db, workspaceId, provider, connection.token, fetcher);
     const window = syncWindow(connection.syncedThrough, now);
     const usage = await ADAPTERS[provider].usage(
       { token, options: connection.options, ...adapterTools(env, workspaceId, fetcher) },

@@ -12,11 +12,10 @@
 import type { StartLimit, StartWindow } from "@relayrunner/activity";
 import { and, eq } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
-import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import { boatLimits, type StartsLeft } from "../provider-billing/boat.ts";
 import { ProviderAuthError } from "../provider-billing/index.ts";
-import { openToken } from "./provider-tokens.ts";
+import { connectionBearer, type OAuthEnv } from "./boat-oauth.ts";
 import { log } from "../log.ts";
 
 // The windows whose full cap pauses a job, shortest first.
@@ -24,7 +23,7 @@ export const PAUSING_WINDOWS: readonly StartWindow[] = ["hour", "day"];
 
 /** The workspace's Boat starts left, or null when there's no connection to ask or the read fails. */
 export async function readBoatStarts(
-  env: Pick<Env, "PROVIDER_TOKEN_KEY">,
+  env: OAuthEnv,
   db: Db,
   workspaceId: string,
   fetcher: typeof fetch = fetch,
@@ -40,7 +39,7 @@ export async function readBoatStarts(
   // A refused key stays refused until someone pastes a new one, which clears the failure.
   if (!connection || connection.failure === "token_rejected") return null;
   try {
-    const token = await openToken(env, workspaceId, "boat", connection.token);
+    const token = await connectionBearer(env, db, workspaceId, "boat", connection.token, fetcher);
     return await boatLimits({ token, options: {}, fetch: fetcher });
   } catch (error) {
     log.warn("provider.boat_limits_unreadable", "boat limits unreadable", { workspaceId, error });

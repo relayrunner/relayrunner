@@ -63,3 +63,115 @@ export const boat: BillingAdapter = {
     return { jobs: [], days: [] };
   },
 };
+
+// ---- Readiness: what Evaluate's Connect step checks before a run (src/providers/boat-readiness.ts)
+
+/** The plan of the wallet a CI job bills, from /limits. */
+export interface BoatPlan {
+  /** Boat's plan key, such as box_20, or `trial` before any payment. */
+  key: string | null;
+  dollars: number | null;
+  /** Whether `runs-on: boat` jobs run: the $20 plan or higher (or an unlimited account). */
+  runsCi: boolean;
+  /** Boat's own reason it can't start anything now, such as a suspended account. */
+  blockedReason: string | null;
+}
+
+interface RawPlan {
+  sandboxPlanKey?: unknown;
+  sandboxPlanDollars?: unknown;
+  unlimited?: unknown;
+  canStart?: unknown;
+  startBlockedReason?: unknown;
+  blockedReason?: unknown;
+}
+
+const text = (value: unknown) => (typeof value === "string" && value ? value : null);
+
+export function parsePlan(body: RawPlan): BoatPlan {
+  const key = text(body.sandboxPlanKey);
+  const dollars = num(body.sandboxPlanDollars);
+  const canStart = body.canStart !== false;
+  const paid = body.unlimited === true || (key !== "trial" && (dollars ?? 0) >= 20);
+  return {
+    key,
+    dollars,
+    runsCi: paid && canStart,
+    blockedReason: canStart ? null : (text(body.startBlockedReason) ?? text(body.blockedReason)),
+  };
+}
+
+/** The plan of `org`'s wallet (a Boat organization id, or `personal`), else the active one. */
+export async function boatPlan(ctx: AdapterContext, org?: string | null): Promise<BoatPlan> {
+  const query = org ? `?${new URLSearchParams({ org })}` : "";
+  return parsePlan(await requestJson<RawPlan>(ctx, `${BASE}/limits${query}`));
+}
+
+export interface BoatCiRepository {
+  fullName: string;
+  private: boolean;
+  /** ok, no-jobs, failing, or public-blocked (a public repo, whose jobs never run on Boat). */
+  status: string;
+}
+
+/** One install of Boat's CI GitHub App the account can see. */
+export interface BoatCiInstall {
+  account: string;
+  accountType: string;
+  /** The Boat organization whose wallet pays; null for the personal wallet. */
+  teamId: string | null;
+  /** GitHub's page to choose the install's repositories. */
+  manageUrl: string | null;
+  repositories: BoatCiRepository[];
+}
+
+interface RawCi {
+  installations?: {
+    accountLogin?: unknown;
+    accountType?: unknown;
+    teamId?: unknown;
+    manageUrl?: unknown;
+    repositories?: { fullName?: unknown; private?: unknown; status?: unknown }[];
+  }[];
+}
+
+export function parseCi(body: RawCi): BoatCiInstall[] {
+  return (body.installations ?? []).flatMap((install) => {
+    const account = text(install.accountLogin);
+    if (!account) return [];
+    return [
+      {
+        account,
+        accountType: text(install.accountType) ?? "User",
+        teamId: text(install.teamId),
+        manageUrl: text(install.manageUrl),
+        repositories: (install.repositories ?? []).flatMap((repo) => {
+          const fullName = text(repo.fullName);
+          return fullName
+            ? [{ fullName, private: repo.private !== false, status: text(repo.status) ?? "ok" }]
+            : [];
+        }),
+      },
+    ];
+  });
+}
+
+/** Boat's CI installs on one GitHub account (`GET /ci?account=`), with no job list. */
+export async function boatCiInstalls(
+  ctx: AdapterContext,
+  account: string,
+): Promise<BoatCiInstall[]> {
+  const query = new URLSearchParams({ account, limit: "1" });
+  const installs = parseCi(await requestJson<RawCi>(ctx, `${BASE}/ci?${query}`));
+  // `account` narrows Boat's answer already; matching again keeps a looser server honest.
+  return installs.filter((i) => i.account.toLowerCase() === account.toLowerCase());
+}
+
+/** The Boat account's name: its GitHub login when it signed up with GitHub. */
+export async function boatAccountName(ctx: AdapterContext): Promise<string | null> {
+  const body = await requestJson<{ user?: { login?: unknown; displayName?: unknown } }>(
+    ctx,
+    `${BASE}/me`,
+  );
+  return text(body.user?.login) ?? text(body.user?.displayName);
+}

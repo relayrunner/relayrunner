@@ -11,11 +11,13 @@ import { canManage } from "@/lib/roles";
 import { EvaluationView, EvaluateHeader } from "@/features/evaluations/evaluation-view";
 import { Setup } from "@/features/evaluations/setup";
 
-type EvaluateSearch = { id?: string };
+// `boat`: how the trip to Boat's sign-in ended (connected, cancelled or failed), set by the API.
+type EvaluateSearch = { id?: string; boat?: string };
 
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider_/evaluate")({
   validateSearch: (search: Record<string, unknown>): EvaluateSearch => ({
     id: typeof search.id === "string" && search.id ? search.id : undefined,
+    boat: typeof search.boat === "string" && search.boat ? search.boat : undefined,
   }),
   component: EvaluatePage,
 });

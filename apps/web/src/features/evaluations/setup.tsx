@@ -42,10 +42,32 @@ import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { EVALUATE_STEP, EvaluateStepper } from "@/components/evaluate-stepper";
 import { usePolled, workflowFile, about } from "@/features/evaluations/shared";
+import { BoatSetup } from "@/features/evaluations/boat-setup";
 
 // ---- Setup: connect, then choose -----------------------------------------------------------------
 
-export function Setup({
+export function Setup(props: {
+  provider: string;
+  workspaceId: string;
+  account: string | null;
+  editable: boolean;
+}) {
+  // Boat says itself whether it can run the workspace's jobs, once its account is connected.
+  return props.provider === "boat" ? (
+    <BoatSetup
+      {...props}
+      fallback={<AppSetup {...props} />}
+      choose={(repoNote) => (
+        <Choose provider={props.provider} editable={props.editable} repoNote={repoNote} />
+      )}
+    />
+  ) : (
+    <AppSetup {...props} />
+  );
+}
+
+/** Connect by installing the provider's GitHub App, which GitHub shows us on an organization. */
+function AppSetup({
   provider,
   workspaceId,
   account,
@@ -176,7 +198,19 @@ function Connect({
 const workflowKey = (w: Pick<EvaluationWorkflow, "repositoryId" | "path">) =>
   `${w.repositoryId}:${w.path}`;
 
-function Choose({ provider, editable }: { provider: string; editable: boolean }) {
+/**
+ * Pick the workflow and machine, and start. `repoNote` says, for the picked repository, why the
+ * provider can't run it yet (Boat's app doesn't see it, say); a note holds back Start.
+ */
+function Choose({
+  provider,
+  editable,
+  repoNote,
+}: {
+  provider: string;
+  editable: boolean;
+  repoNote?: (repository: string) => ReactNode;
+}) {
   const { name } = providerInfo(provider);
   const navigate = useNavigate();
   const sizes = evaluationSizes(provider);
@@ -205,6 +239,8 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
   );
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const repository = repos.find(([id]) => id === repositoryId)?.[1] ?? null;
+  const note = repository && repoNote ? repoNote(repository) : null;
 
   async function start() {
     if (!workflow) return;
@@ -356,6 +392,13 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
         </div>
       </Field>
 
+      {note && (
+        <div className="flex gap-2 rounded-xl border border-run/40 bg-run/5 px-4 py-3 text-sm">
+          <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-run" />
+          <div className="grid gap-1">{note}</div>
+        </div>
+      )}
+
       {workflow &&
         (workflow.relayed !== false ? (
           <Plan provider={provider} workflow={workflow} />
@@ -366,7 +409,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          disabled={!workflow || workflow.relayed === false || !editable || starting}
+          disabled={!workflow || workflow.relayed === false || !!note || !editable || starting}
           onClick={() => void start()}
         >
           {starting ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}

@@ -116,6 +116,11 @@ export interface Env extends AccessEnv {
   // (src/providers/provider-tokens.ts), from the Secrets Store. Optional so tests and local dev run without
   // it; connecting a provider fails until it's set.
   PROVIDER_TOKEN_KEY?: SecretsStoreSecret;
+  // The "RelayRunner" OAuth app on Boat (src/providers/boat-oauth.ts): connecting Boat in one click.
+  // The client id is a var; the secret is in the Secrets Store. Without the id, Boat connects only
+  // with a pasted API key, as before.
+  BOAT_OAUTH_CLIENT_ID?: string;
+  BOAT_OAUTH_CLIENT_SECRET?: SecretsStoreSecret;
   // Logging (src/log.ts). The version every line carries, and optional overrides: LOG_LEVEL
   // (debug, info, warn or error; info by default), LOG_FORMAT (json, or pretty for a terminal) and
   // LOG_ENV (production by default).

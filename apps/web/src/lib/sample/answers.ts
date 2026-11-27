@@ -211,6 +211,9 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/telemetry$/, () => sampleTelemetry()],
   [/^\/log-bucket$/, () => sampleLogBucket()],
   [/^\/workspaces\/[^/]+\/runner-order$/, () => sampleRunnerOrder()],
+  // Boat's Evaluate page: `?sample=boat-connect` not connected yet, `?sample=boat-trial` connected
+  // on the free trial, `?sample=boat-app` on a plan without Boat's GitHub App; otherwise ready.
+  [/^\/providers\/boat\/readiness$/, () => sampleBoatReadiness(sampleParam())],
   // On a provider's Evaluate page, `?sample=connect`: its GitHub App isn't installed yet;
   // `?sample=personal`: a personal account, where GitHub can't tell, so the person confirms it.
   [
@@ -334,4 +337,36 @@ function sampleServiceStatus() {
   const state = localStorage.getItem("rr-status-preview");
   if (!state || !(state in SAMPLE_INCIDENTS)) return { state: "operational", incident: null };
   return { state, incident: SAMPLE_INCIDENTS[state] };
+}
+
+function sampleBoatReadiness(sample: string | null) {
+  const connected = sample !== "boat-connect";
+  const runsCi = connected && sample !== "boat-trial";
+  const installed = runsCi && sample !== "boat-app";
+  return {
+    signIn: true,
+    connected,
+    rejected: false,
+    accountName: connected ? "acme-dev" : null,
+    githubAccount: "acme",
+    plan: connected
+      ? {
+          key: runsCi ? "box_20" : "trial",
+          dollars: runsCi ? 20 : 0,
+          runsCi,
+          blockedReason: null,
+        }
+      : null,
+    install: installed
+      ? {
+          manageUrl: "https://github.com/organizations/acme/settings/installations/1",
+          repositories: [
+            { fullName: "acme/api", private: true, status: "ok" },
+            { fullName: "acme/web", private: true, status: "ok" },
+          ],
+        }
+      : null,
+    unreachable: false,
+    ready: runsCi && installed,
+  };
 }

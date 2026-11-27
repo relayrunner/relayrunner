@@ -1,5 +1,6 @@
 import { isBillingProvider } from "@relayrunner/providers";
 import { Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { blacksmithMinutes } from "../providers/blacksmith-minutes.ts";
@@ -22,6 +23,10 @@ import { chartBuckets, requireWindow } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../reports/job-times.ts";
 import { requireManager } from "../auth/roles.ts";
+import { dashboardPath } from "../github/github.ts";
+import { log } from "../log.ts";
+import { authorizeUrl, boatOAuthConfigured, exchangeCode, pkce } from "../providers/boat-oauth.ts";
+import { boatReadiness, saveBoatGrant } from "../providers/boat-connect.ts";
 import { AppError } from "@relayrunner/errors";
 
 const ConnectBody = z.object({
@@ -32,6 +37,25 @@ const ConnectBody = z.object({
 // The Providers page and each provider's page: the workspace's jobs over ?from=&to= or the last
 // ?days=N days (default 14), as far back as job_timing keeps each job.
 const RANGE = { maxDays: RAW_RETENTION_DAYS, defaultDays: DEFAULT_DAYS };
+
+// "Connect Boat" (src/providers/boat-oauth.ts): the PKCE verifier and state ride in a cookie scoped
+// to these routes for the trip to Boat and back, so neither shows up in a URL.
+const BOAT_OAUTH_COOKIE = "rr_boat_oauth";
+const BOAT_OAUTH_PATH = "/api/providers/boat";
+const BOAT_LANDING = "/providers/boat/evaluate";
+const BoatOAuthCookie = z.object({
+  state: z.string(),
+  verifier: z.string(),
+  workspaceId: z.string(),
+  next: z.string(),
+});
+
+/** `next` with ?boat=<outcome> added, for the page to say what happened. */
+function landing(next: string, outcome: "connected" | "cancelled" | "failed") {
+  const url = new URL(next, "https://dashboard.invalid");
+  url.searchParams.set("boat", outcome);
+  return `${url.pathname}${url.search}`;
+}
 
 export const providerRoutes = new Hono<AppEnv>()
   // Every provider, with the ones operators changed or added in the admin. Signed-in users only;
@@ -62,6 +86,64 @@ export const providerRoutes = new Hono<AppEnv>()
       spend: await workspaceSpend(c.var.db, c.var.workspace.installationId),
     }),
   )
+  // Evaluate's Boat Connect step: whether Boat can run the workspace's jobs yet, read live.
+  .get("/boat/readiness", requireUser, requireWorkspace, async (c) =>
+    c.json(await boatReadiness(c.env, c.var.db, c.var.workspace.id)),
+  )
+  // Send the browser to Boat's sign-in, to come back to /boat/callback and then ?next=.
+  .get("/boat/connect", requireUser, requireWorkspace, requireManager, async (c) => {
+    if (!boatOAuthConfigured(c.env)) throw new AppError("PROVIDER_SIGN_IN_UNAVAILABLE");
+    // Boat comes back to the one registered host, so the cookie has to be set there.
+    const production = new URL(c.env.BETTER_AUTH_URL).origin;
+    const here = new URL(c.req.url);
+    if (here.origin !== production)
+      return c.redirect(`${production}${here.pathname}${here.search}`);
+    const { verifier, challenge, state } = await pkce();
+    const cookie = {
+      state,
+      verifier,
+      workspaceId: c.var.workspace.id,
+      next: dashboardPath(c.req.query("next")) ?? BOAT_LANDING,
+    } satisfies z.infer<typeof BoatOAuthCookie>;
+    setCookie(c, BOAT_OAUTH_COOKIE, JSON.stringify(cookie), {
+      path: BOAT_OAUTH_PATH,
+      httpOnly: true,
+      secure: here.protocol === "https:",
+      // Boat's redirect back is a top-level GET, which Lax cookies ride along on.
+      sameSite: "Lax",
+      maxAge: 15 * 60,
+    });
+    return c.redirect(authorizeUrl(c.env, { challenge, state }));
+  })
+  .get("/boat/callback", requireUser, requireWorkspace, requireManager, async (c) => {
+    const raw = getCookie(c, BOAT_OAUTH_COOKIE);
+    deleteCookie(c, BOAT_OAUTH_COOKIE, { path: BOAT_OAUTH_PATH });
+    const saved = BoatOAuthCookie.safeParse(
+      (() => {
+        try {
+          return JSON.parse(raw ?? "");
+        } catch {
+          return null;
+        }
+      })(),
+    );
+    if (!saved.success) return c.redirect(landing(BOAT_LANDING, "failed"));
+    const { state, verifier, workspaceId, next } = saved.data;
+    if (c.req.query("error") === "access_denied") return c.redirect(landing(next, "cancelled"));
+    const code = c.req.query("code");
+    // The state proves this browser started the trip; the workspace must still be the one it was
+    // for, so a switch meanwhile can't connect Boat to another.
+    if (!code || c.req.query("state") !== state || workspaceId !== c.var.workspace.id)
+      return c.redirect(landing(next, "failed"));
+    try {
+      const grant = await exchangeCode(c.env, { code, verifier });
+      await saveBoatGrant(c.env, c.var.db, { workspaceId, userId: c.var.user!.id, grant });
+    } catch (error) {
+      log.warn("provider.boat_connect_failed", "boat oauth connect failed", { workspaceId, error });
+      return c.redirect(landing(next, "failed"));
+    }
+    return c.redirect(landing(next, "connected"));
+  })
   .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.
   .put("/:provider/connection", async (c) => {

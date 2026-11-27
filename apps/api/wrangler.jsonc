@@ -69,6 +69,9 @@
     "GITHUB_CHECKS_APP_ID": "5672393",
     // The RelayRunner Spend App's numeric ID: the separate, opt-in App that reads org billing.
     "GITHUB_SPEND_APP_ID": "5718856",
+    // The "RelayRunner" OAuth app on Boat (boat app list), for "Connect Boat" in Evaluate. Its redirect
+    // URI is <BETTER_AUTH_URL>/api/providers/boat/callback. Empty: Boat connects by pasted key only.
+    "BOAT_OAUTH_CLIENT_ID": "",
     // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
     // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"
@@ -155,6 +158,15 @@
       "binding": "PROVIDER_TOKEN_KEY",
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "PROVIDER_TOKEN_KEY",
+    },
+    // The Boat OAuth app's client secret (src/providers/boat-oauth.ts). Its client id is
+    // BOAT_OAUTH_CLIENT_ID in vars. Create it once with
+    //   cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 \
+    //     --body "$(jq -n --arg v "<secret>" '[{name: "BOAT_OAUTH_CLIENT_SECRET", value: $v, scopes: ["workers"]}]')"
+    {
+      "binding": "BOAT_OAUTH_CLIENT_SECRET",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "BOAT_OAUTH_CLIENT_SECRET",
     },
   ],
   "d1_databases": [
