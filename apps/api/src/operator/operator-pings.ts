@@ -2,7 +2,7 @@
  * Tells operators about early-access milestones in Slack: a new signup, an App install, a
  * workspace's first machine and its first job on a machine, someone's first use of the Mac app,
  * runs that couldn't be routed, and a workspace that adopted the relay and then took it out
- * (src/routing/stickiness.ts, checked against the default branch by relay-on-default.ts). The 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
+ * (src/routing/stickiness.ts, judged from default-branch runs). The 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
  * D1 and posts one message per ping to OPERATOR_SLACK_WEBHOOK_URL. Nothing is stored: each window
  * is read once, so a skipped cron run skips its pings. An uninstall can't wait for the cron, since
  * it deletes the workspace: pingUninstall posts it from the webhook.
@@ -17,20 +17,11 @@ import { type Db, createDb, isMissingTable, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { SETTLE_MS, workspaceStickiness } from "../routing/stickiness.ts";
-import { type RelayOnDefault, relayOnDefaultBranch } from "../routing/relay-on-default.ts";
-import { appInstallationToken } from "../github/github-app.ts";
 import { log } from "../log.ts";
 import { DAY_MS } from "../time.ts";
 
 export const PING_WINDOW_MS = 15 * 60 * 1000;
 
-/** Where a workflow's relay stands on its repo's default branch (relay-on-default.ts). */
-export type RelayCheck = (
-  installationId: number,
-  repository: string,
-  workflowPath: string,
-  lastRelayAt: Date,
-) => Promise<RelayOnDefault>;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
 
 /** Escapes text for Slack's mrkdwn, so a name can't add formatting or links. */
@@ -118,15 +109,13 @@ export async function testAccounts(db: Db, githubIds: number[]) {
 
 /**
  * The pings for what happened in [since, until), oldest first. `ignoredGithubIds` are test
- * accounts to leave out, like our own. `relayCheck`, when given, vets each "took the relay out"
- * against the workflow file on the default branch.
+ * accounts to leave out, like our own.
  */
 export async function collectOperatorPings(
   db: Db,
   since: Date,
   until: Date,
   ignoredGithubIds: number[] = [],
-  relayCheck?: RelayCheck,
 ): Promise<string[]> {
   const tests = await testAccounts(db, ignoredGithubIds);
   const ours = new Set([...(await internalWorkspaceIds(db)), ...tests.workspaces]);
@@ -384,7 +373,6 @@ export async function collectOperatorPings(
       .select({
         id: schema.workspace.id,
         name: schema.workspace.name,
-        installationId: schema.workspace.installationId,
       })
       .from(schema.workspace)
       .where(
@@ -396,20 +384,6 @@ export async function collectOperatorPings(
     const byId = new Map(rows.map((row) => [row.id, row]));
     for (const [workspaceId, state] of removed) {
       const workspace = byId.get(workspaceId);
-      // A relay only ever tried on branches, or still on the default branch, wasn't taken out. If
-      // GitHub can't tell us, ping anyway.
-      if (relayCheck && workspace && state.workflowPath) {
-        const onDefault = await relayCheck(
-          workspace.installationId,
-          state.repository,
-          state.workflowPath,
-          new Date(state.lastRelayAt),
-        ).catch((error: unknown) => {
-          log.warn("operator.relay_check_failed", "couldn't check the default branch", { error });
-          return "removed" as const;
-        });
-        if (onDefault !== "removed") continue;
-      }
       const lastRelay = new Date(state.lastRelayAt).toUTCString();
       pings.push({
         at: Date.parse(state.since),
@@ -489,13 +463,6 @@ export async function sendOperatorPings(
     since,
     until,
     parseGithubIds(env.OPERATOR_PINGS_IGNORE_GITHUB_IDS),
-    async (installationId, repository, workflowPath, lastRelayAt) =>
-      relayOnDefaultBranch(
-        await appInstallationToken(env, installationId),
-        repository,
-        workflowPath,
-        lastRelayAt,
-      ),
   );
   let sent = 0;
   for (const text of pings) {

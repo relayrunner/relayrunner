@@ -101,16 +101,27 @@ describe("stickinessOf", () => {
   });
 
   test("events the relay never ran on don't count against it", () => {
-    // Routes its pull requests; pushes to main run the same workflow without a pick.
-    const relayed = [run(30, "relayrunner", true), run(20, "feature", true)];
+    // Relays its pull requests and main's scheduled runs; pushes to main run without a pick.
+    const relayed = [run(30, "main", true, { event: "schedule" }), run(20, "feature", true)];
     const pushes = [run(10, "main", false), run(9, "main", false), run(8, "main", false)];
     expect(stateOf([...relayed, ...pushes])?.state).toBe("adopted");
-    // Pull requests without it still count.
-    const prs = [run(7, "fresh-1", false), run(6, "fresh-2", false), run(5, "fresh-3", false)];
-    expect(stateOf([...relayed, ...pushes, ...prs])).toMatchObject({
+    const nightly = [7, 6, 5].map((h) => run(h, "main", false, { event: "schedule" }));
+    expect(stateOf([...relayed, ...pushes, ...nightly])).toMatchObject({
       state: "removed",
       runsWithout: 3,
     });
+  });
+
+  test("a workflow that never relayed on the default branch is never removed", () => {
+    // Only routes its pull requests, or the relay was never merged: new branches can't tell.
+    const state = stateOf([
+      run(30, "relayrunner", true),
+      run(20, "feature", true),
+      run(7, "fresh-1", false),
+      run(6, "fresh-2", false),
+      run(5, "fresh-3", false),
+    ]);
+    expect(state?.state).toBe("adopted");
   });
 
   test("runs still going, skipped or cancelled don't count against it", () => {
@@ -163,15 +174,17 @@ describe("stickinessOf", () => {
     expect(state?.state).toBe("adopted");
   });
 
-  test("branches first seen after adoption do count", () => {
+  test("a gated relay skipped on new branches doesn't count against it", () => {
+    // Main still relays; PR branches whose changes don't reach the relay job run without a pick.
     const state = stateOf([
       run(30, "relayrunner", true),
       run(20, "main", true),
       run(10, "fresh-1", false),
       run(9, "fresh-2", false),
       run(8, "fresh-3", false),
+      run(7, "fresh-3", false),
     ]);
-    expect(state?.state).toBe("removed");
+    expect(state?.state).toBe("adopted");
   });
 
   test("relaying again puts it back to adopted", () => {

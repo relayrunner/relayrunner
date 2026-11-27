@@ -77,7 +77,6 @@ const API_EVENTS = [
   "operator.digest_blocks_refused",
   "operator.digest_not_sent",
   "operator.ping_not_sent",
-  "operator.relay_check_failed",
   "operator.uninstall_ping_failed",
   "operator.product_events_not_sent",
   "pick.actor_not_found",

@@ -117,7 +117,7 @@ async function unroutable(workspaceId: string, occurredAt: Date, reason: string)
 }
 
 /** A first-attempt CI run on main, first seen at `seenAt`, with a pick when relayed. */
-async function ciRun(installationId: number, seenAt: Date, relayed: boolean) {
+async function ciRun(installationId: number, seenAt: Date, relayed: boolean, branch = "main") {
   ids += 1;
   const runId = 90_000 + ids;
   const db = createDb(env.DB);
@@ -131,7 +131,7 @@ async function ciRun(installationId: number, seenAt: Date, relayed: boolean) {
     workflowPath: ".github/workflows/ci.yml",
     defaultBranch: "main",
     event: "push",
-    headBranch: "main",
+    headBranch: branch,
     headSha: "abc",
     status: "completed",
     conclusion: "success",
@@ -258,7 +258,8 @@ describe("operator pings", () => {
     expect(about(later, "Dropped Co")).toEqual([]);
   });
 
-  test("checks the default branch before saying the relay was taken out", async () => {
+  test("runs off the default branch without the relay don't say it was taken out", async () => {
+    // A gated relay skipped on a PR branch, or a branch that never had it: only main counts.
     const { workspace: ws } = await workspace("Branch Co");
     const db = createDb(env.DB);
     const [row] = await db
@@ -267,29 +268,12 @@ describe("operator pings", () => {
       .where(eq(schema.workspace.id, ws.id));
     const installationId = row!.installationId;
     const now = Date.now();
-    const lastRelay = new Date(now - 5 * 3_600_000);
-    await ciRun(installationId, lastRelay, true);
-    await ciRun(installationId, new Date(now - 4 * 3_600_000), false);
-    await ciRun(installationId, new Date(now - 3 * 3_600_000), false);
-    await ciRun(installationId, new Date(now - SETTLE_MS - 1_000), false);
+    await ciRun(installationId, new Date(now - 5 * 3_600_000), true);
+    await ciRun(installationId, new Date(now - 4 * 3_600_000), false, "docs-only");
+    await ciRun(installationId, new Date(now - 3 * 3_600_000), false, "docs-only");
+    await ciRun(installationId, new Date(now - SETTLE_MS - 1_000), false, "docs-only");
     const { since, until } = window();
-    const pings = (check: Parameters<typeof collectOperatorPings>[4]) =>
-      collectOperatorPings(db, since, until, [], check).then((all) => about(all, "Branch Co"));
-
-    const check = vi.fn().mockResolvedValue("never_merged");
-    expect(await pings(check)).toEqual([]);
-    expect(check).toHaveBeenCalledWith(
-      installationId,
-      "acme/dropped",
-      ".github/workflows/ci.yml",
-      lastRelay,
-    );
-    expect(await pings(vi.fn().mockResolvedValue("present"))).toEqual([]);
-    expect(await pings(vi.fn().mockResolvedValue("removed"))).toHaveLength(1);
-    // GitHub couldn't answer: ping anyway.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(await pings(vi.fn().mockRejectedValue(new Error("502")))).toHaveLength(1);
-    warn.mockRestore();
+    expect(about(await collectOperatorPings(db, since, until), "Branch Co")).toEqual([]);
   });
 
   test("pings an uninstall before the workspace is forgotten", async () => {

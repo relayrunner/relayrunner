@@ -7,12 +7,15 @@
  * - adopted: the relay ran on the repo's default branch, or on a second branch (once merged, new
  *   branches carry it, which covers workflows that only run on pull requests).
  * - trial_abandoned: never adopted, and no relayed run for TRIAL_IDLE_MS.
- * - removed: adopted, then REMOVED_AFTER runs on up-to-date code (the default branch, or a branch
- *   first seen after adoption) that finished with no relay at all, for events the relay ran on.
- *   Branches cut before the merge never had it, so they don't count. Nor do events the relay
- *   never ran on (a workflow that only routes its pull requests), runs still going, or runs that
- *   ended before their jobs ran (skipped, cancelled, broken YAML). Since is when the last of those
- *   runs settled and finished. It goes back to adopted when the workflow relays again.
+ * - removed: the relay ran on the default branch, then REMOVED_AFTER default-branch runs since
+ *   the last relay anywhere finished with no relay at all, for events it ran on there. Only the
+ *   default branch counts: other branches may have been cut before the merge, or run a gated
+ *   workflow that skips the relay for some changes, and we can't read workflow files to tell
+ *   (the App's Contents access is relayrunner.yml only). So a workflow that never relayed on the
+ *   default branch (one that only routes its pull requests, or a relay never merged) stays
+ *   adopted. Nor do runs still going count, or runs that ended before their jobs ran (skipped,
+ *   cancelled, broken YAML). Since is when the last of those runs settled and finished. It goes
+ *   back to adopted when the workflow relays again.
  *
  * A run is relayed when it had a pick job, wherever the pick sent it (a machine, GitHub, a hosted
  * provider, or nowhere), so a job routed to GitHub never looks like a drop. Only first attempts
@@ -87,7 +90,6 @@ interface WorkflowState {
 function workflowState(
   runs: StickinessRun[],
   isDefault: (branch: string | null) => boolean,
-  branchFirstSeen: Map<string | null, number>,
   now: number,
 ): WorkflowState | null {
   const relayed = runs.filter((run) => run.relayed);
@@ -108,8 +110,9 @@ function workflowState(
       ? { ...base, state: "trial_abandoned", since: idleSince, branch: first.branch }
       : { ...base, state: "trying", since: first.startedAt, branch: first.branch };
   }
-  // Only events the relay ran on count: a workflow may route its pull requests and not its pushes.
-  const events = new Set(relayed.map((run) => run.event));
+  // Only default-branch runs, for events the relay ran on there: a workflow may route its pull
+  // requests and not its pushes.
+  const events = new Set(relayed.filter((run) => isDefault(run.branch)).map((run) => run.event));
   // When each run without the relay could first count: settled and finished. Later reads never
   // move this earlier, so the operator ping goes out once.
   const countedAt = runs
@@ -117,9 +120,9 @@ function workflowState(
       (run) =>
         !run.relayed &&
         run.finishedAt !== null &&
+        isDefault(run.branch) &&
         events.has(run.event) &&
-        run.startedAt > last.startedAt &&
-        (isDefault(run.branch) || (branchFirstSeen.get(run.branch) ?? 0) >= adoption.startedAt),
+        run.startedAt > last.startedAt,
     )
     .map((run) => Math.max(run.seenAt, run.finishedAt ?? 0) + SETTLE_MS)
     .sort((a, b) => a - b);
@@ -165,10 +168,6 @@ export function stickinessOf(runs: StickinessRun[], now: number): Map<number, St
       const known = repoRuns.findLast((run) => run.defaultBranch)?.defaultBranch ?? null;
       const isDefault = (branch: string | null) =>
         branch !== null && (known ? branch === known : branch === "main" || branch === "master");
-      const branchFirstSeen = new Map<string | null, number>();
-      for (const run of repoRuns) {
-        if (!branchFirstSeen.has(run.branch)) branchFirstSeen.set(run.branch, run.startedAt);
-      }
       // Older runs have only a name: give them the path a newer run of that name has.
       const pathOf = new Map<string, string>();
       for (const run of repoRuns)
@@ -176,7 +175,7 @@ export function stickinessOf(runs: StickinessRun[], now: number): Map<number, St
       const workflowOf = (run: StickinessRun) =>
         run.workflowPath ?? pathOf.get(run.workflowName) ?? `name:${run.workflowName}`;
       for (const workflowRuns of Map.groupBy(repoRuns, workflowOf).values()) {
-        const state = workflowState(workflowRuns, isDefault, branchFirstSeen, now);
+        const state = workflowState(workflowRuns, isDefault, now);
         if (state) states.push(state);
       }
     }
