@@ -1,5 +1,7 @@
 // A minimal client for GitHub's self-hosted runner protocol, which has no public spec. It uses only
+import { desc } from "drizzle-orm";
 import { log } from "../log.ts";
+import { type Db, schema } from "../db/index.ts";
 import { GitHubError } from "../github/github-api.ts";
 // fetch and WebCrypto so it runs in a Durable Object. Ported from the PR #21 spike (apps/gateway),
 // which tested it against github.com in November 2026; see that README for what it found.
@@ -409,9 +411,14 @@ async function fetchLatestRunnerVersion() {
  * The newest actions/runner release, which RunnerClient reports to GitHub. Looked up at most once
  * an hour per isolate and location. A version up to an hour old costs nothing: GitHub keeps sending
  * jobs to an older runner for weeks after a newer release (see RunnerClient). When GitHub fails,
- * the last known version is used, so a GitHub outage doesn't hold up a pick.
+ * the last known version is used, so a GitHub outage doesn't hold up a pick. With none known (a
+ * fresh deploy during the outage), the newest release in D1 is used: the hourly cron saves those
+ * from api.github.com (src/machines/runner-releases.ts), which can answer when github.com doesn't.
  */
-export async function latestRunnerVersion(now = Date.now()) {
+export async function latestRunnerVersion({
+  db,
+  now = Date.now(),
+}: { db?: Db; now?: number } = {}) {
   if (known && now - known.fetchedAt < RUNNER_VERSION_TTL_MS) return known.version;
   const cache = locationCache();
   const cached = await readLocationCache(cache);
@@ -433,13 +440,39 @@ export async function latestRunnerVersion(now = Date.now()) {
       .catch(() => {});
     return version;
   } catch (error) {
-    if (!known) throw error;
-    log.warn("runner.version_lookup_failed", "using the last known runner version", {
-      version: known.version,
-      ageMinutes: Math.round((now - known.fetchedAt) / 60_000),
-      error: error instanceof Error ? error.message : String(error),
+    const message = error instanceof Error ? error.message : String(error);
+    if (known) {
+      log.warn("runner.version_lookup_failed", "using the last known runner version", {
+        version: known.version,
+        ageMinutes: Math.round((now - known.fetchedAt) / 60_000),
+        error: message,
+      });
+      return known.version;
+    }
+    const saved = db ? await newestSavedRelease(db) : undefined;
+    if (!saved) throw error;
+    // Kept like a looked-up version, so the picks after this one don't wait on github.com either.
+    known = { version: saved, fetchedAt: now };
+    log.warn("runner.version_lookup_failed", "using the newest saved runner release", {
+      version: saved,
+      source: "d1",
+      error: message,
     });
-    return known.version;
+    return saved;
+  }
+}
+
+// The newest release the cron saved, or none when D1 has none or can't be read.
+async function newestSavedRelease(db: Db) {
+  try {
+    const [row] = await db
+      .select({ version: schema.runnerRelease.version })
+      .from(schema.runnerRelease)
+      .orderBy(desc(schema.runnerRelease.publishedAt))
+      .limit(1);
+    return row?.version;
+  } catch {
+    return undefined;
   }
 }
 

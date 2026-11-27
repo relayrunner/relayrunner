@@ -245,7 +245,7 @@ export class PickRunner extends DurableObject<Env> {
       runnerId = jit.runnerId;
 
       stage = "runner_version";
-      const version = await latestRunnerVersion();
+      const version = await latestRunnerVersion({ db: createDb(this.env.DB) });
       stage = "session";
       client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), version);
       await client.openSession();

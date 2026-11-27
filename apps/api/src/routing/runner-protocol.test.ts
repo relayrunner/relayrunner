@@ -1,4 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { createDb, schema } from "../db/index.ts";
+import { createTestEnv } from "../testing.ts";
 import {
   decodeJitConfig,
   latestRunnerVersion,
@@ -307,22 +309,42 @@ describe("latestRunnerVersion", () => {
   test("reuses the version for an hour, then looks again", async () => {
     const fetcher = vi.fn(redirect("2.338.2"));
     vi.stubGlobal("fetch", fetcher);
-    await latestRunnerVersion(0);
-    await expect(latestRunnerVersion(RUNNER_VERSION_TTL_MS - 1)).resolves.toBe("2.338.2");
+    await latestRunnerVersion({ now: 0 });
+    await expect(latestRunnerVersion({ now: RUNNER_VERSION_TTL_MS - 1 })).resolves.toBe("2.338.2");
     expect(fetcher).toHaveBeenCalledTimes(1);
     vi.stubGlobal("fetch", redirect("2.339.0"));
-    await expect(latestRunnerVersion(RUNNER_VERSION_TTL_MS)).resolves.toBe("2.339.0");
+    await expect(latestRunnerVersion({ now: RUNNER_VERSION_TTL_MS })).resolves.toBe("2.339.0");
   });
 
   test("falls back to the last known version when GitHub fails", async () => {
     vi.stubGlobal("fetch", redirect("2.338.2"));
-    await latestRunnerVersion(0);
+    await latestRunnerVersion({ now: 0 });
     vi.stubGlobal("fetch", async () => new Response("bad gateway", { status: 520 }));
-    await expect(latestRunnerVersion(2 * RUNNER_VERSION_TTL_MS)).resolves.toBe("2.338.2");
+    await expect(latestRunnerVersion({ now: 2 * RUNNER_VERSION_TTL_MS })).resolves.toBe("2.338.2");
     vi.stubGlobal("fetch", async () => {
       throw new TypeError("network error");
     });
-    await expect(latestRunnerVersion(3 * RUNNER_VERSION_TTL_MS)).resolves.toBe("2.338.2");
+    await expect(latestRunnerVersion({ now: 3 * RUNNER_VERSION_TTL_MS })).resolves.toBe("2.338.2");
+  });
+
+  test("falls back to the newest saved release when GitHub fails and none is known", async () => {
+    const db = createDb((await createTestEnv()).DB);
+    await db.insert(schema.runnerRelease).values([
+      { version: "2.338.0", publishedAt: new Date("2026-10-30T00:00:00Z") },
+      { version: "2.338.2", publishedAt: new Date("2026-11-19T00:00:00Z") },
+    ]);
+    const fetcher = vi.fn(async () => new Response(null, { status: 504 }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(latestRunnerVersion({ db, now: 0 })).resolves.toBe("2.338.2");
+    // Kept like a looked-up version: the next pick doesn't wait on github.com.
+    await expect(latestRunnerVersion({ db, now: 60_000 })).resolves.toBe("2.338.2");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test("still fails when GitHub fails and D1 has no release", async () => {
+    const db = createDb((await createTestEnv()).DB);
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 504 }));
+    await expect(latestRunnerVersion({ db })).rejects.toThrow("Status 504");
   });
 
   test("shares the version through the location's cache", async () => {
@@ -334,14 +356,14 @@ describe("latestRunnerVersion", () => {
       },
     });
     vi.stubGlobal("fetch", redirect("2.338.2"));
-    await latestRunnerVersion(0);
+    await latestRunnerVersion({ now: 0 });
     resetRunnerVersionCache(); // another isolate in the same location
     const fetcher = vi.fn(redirect("2.339.0"));
     vi.stubGlobal("fetch", fetcher);
-    await expect(latestRunnerVersion(60_000)).resolves.toBe("2.338.2");
+    await expect(latestRunnerVersion({ now: 60_000 })).resolves.toBe("2.338.2");
     expect(fetcher).not.toHaveBeenCalled();
     resetRunnerVersionCache();
     vi.stubGlobal("fetch", async () => new Response(null, { status: 520 }));
-    await expect(latestRunnerVersion(5 * RUNNER_VERSION_TTL_MS)).resolves.toBe("2.338.2");
+    await expect(latestRunnerVersion({ now: 5 * RUNNER_VERSION_TTL_MS })).resolves.toBe("2.338.2");
   });
 });

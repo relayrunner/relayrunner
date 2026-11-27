@@ -81,7 +81,7 @@ async function endJob(env: Env, work: StrandedWork) {
         log: { msg: "relayrunner stranded runner registered on the org", ...work },
       },
     ),
-    latestRunnerVersion(),
+    latestRunnerVersion({ db }),
   ]);
   // GitHub removes a JIT runner once its job is done; until then, this one is ours to remove.
   let registered = true;
