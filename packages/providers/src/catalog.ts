@@ -29,6 +29,8 @@ export interface CatalogProvider extends ProviderInfo {
   prefixes: string[];
   /** An https image URL for its mark. Only added providers use it; ones in code have their own. */
   logoUrl?: string;
+  /** The price file the provider publishes, which the daily price check reads. */
+  priceUrl?: string;
   /** In the code list. An operator can change its text but not remove it. */
   builtIn: boolean;
   status: ProviderStatus;
@@ -52,6 +54,7 @@ export interface ProviderRow {
   dashboardUrl: string | null;
   docsUrl: string | null;
   logoUrl: string | null;
+  priceUrl: string | null;
   status: ProviderStatus;
   /** Null keeps the code's choice. */
   featured: boolean | null;
@@ -93,6 +96,7 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
     dashboardUrl: optional(row.dashboardUrl),
     docsUrl: optional(row.docsUrl),
     logoUrl: base ? undefined : optional(row.logoUrl),
+    priceUrl: optional(row.priceUrl),
     prefixes: base ? base.prefixes : row.prefixes,
     builtIn: Boolean(base),
     // Off only applies to added providers: code matches its own providers' labels elsewhere too.

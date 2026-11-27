@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relayrunner.dev/schemas/runner-prices.json",
+  "title": "Runner price file",
+  "description": "List prices a CI runner service publishes on its own site, usually at /.well-known/runner-prices.json, for tools that estimate what jobs cost. See https://relayrunner.dev/docs/contribute/publish-prices",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "prices"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": {
+      "enum": [1],
+      "description": "The format version. Every version this schema accepts is listed."
+    },
+    "prices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate", "per", "usd_per_minute"],
+        "properties": {
+          "rate": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The rate's id: a runner size or platform, such as linux or acme-4vcpu."
+          },
+          "per": {
+            "enum": ["vcpu", "runner"],
+            "description": "What one minute of the rate is priced per."
+          },
+          "usd_per_minute": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "description": "The list price of one minute in US dollars, as a decimal string."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "The UTC day the price starts. Leave it out for a price that applies now."
+          }
+        }
+      }
+    }
+  }
+}

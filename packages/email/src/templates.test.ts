@@ -156,12 +156,25 @@ describe("templates", () => {
   it("price check lists changes and unreadable pages", () => {
     const email = renderPriceCheckEmail({
       changes: [{ name: "Depot linux", price: "$0.0035/min", from: "2026-11-20" }],
+      applied: [],
       failures: [{ name: "Blacksmith", error: "answered 404" }],
       pricesUrl: "https://app.example/admin/prices",
     });
     expect(email.subject).toBe("[prices] 1 price changed");
     expect(email.text).toContain("Depot linux: $0.0035/min from 2026-11-20");
-    expect(email.text).toContain("Blacksmith: couldn't read the price page (answered 404)");
+    expect(email.text).toContain("Blacksmith: couldn't read prices (answered 404)");
     expect(email.text).toContain("https://app.example/admin/prices");
+  });
+
+  it("price check separates prices that already apply from ones waiting", () => {
+    const email = renderPriceCheckEmail({
+      changes: [],
+      applied: [{ name: "Groundbox groundbox-4vcpu", price: "$0.007/min", from: "2026-12-01" }],
+      failures: [],
+      pricesUrl: "https://app.example/admin/prices",
+    });
+    expect(email.subject).toBe("[prices] 1 price changed");
+    expect(email.text).toContain("Applied from the providers' own price files:");
+    expect(email.text).not.toContain("Waiting for your approval");
   });
 });

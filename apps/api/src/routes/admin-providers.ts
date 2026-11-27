@@ -49,6 +49,7 @@ const ProviderBody = z.object({
   dashboardUrl: url,
   docsUrl: url,
   logoUrl: url,
+  priceUrl: url,
   // Left out: a new provider starts Hidden, and a saved one keeps what it had.
   status: status.optional(),
   featured: z.boolean().optional(),
@@ -102,6 +103,7 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   dashboardUrl: provider.dashboardUrl ?? null,
   docsUrl: provider.docsUrl ?? null,
   logoUrl: provider.logoUrl ?? null,
+  priceUrl: provider.priceUrl ?? null,
   status: provider.status,
   // A provider in code keeps following the code until someone changes Featured.
   featured: provider.builtIn && !provider.updatedBy ? null : provider.featured,

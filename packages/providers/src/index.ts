@@ -388,6 +388,8 @@ export {
   BASE_BOOK,
   BASE_PRICES,
   dayMs,
+  dayOf,
+  isDay,
   priceAt,
   GITHUB_LABELS,
   type GitHubRunner,
@@ -405,6 +407,7 @@ export {
   rateName,
   ratePrices,
   rateText,
+  rateUnit,
   platformOf,
   runnerPlatform,
   type RunnerPlatform,
@@ -414,6 +417,7 @@ export {
 } from "./prices.ts";
 export { type CatalogRow, type CatalogRunner, runnerCatalog } from "./runner-catalog.ts";
 export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-sources.ts";
+export { parsePriceFile, PRICE_FILE_PATH, priceFileSource } from "./price-file.ts";
 export {
   BILLING_PROVIDER_IDS,
   BILLING_PROVIDERS,

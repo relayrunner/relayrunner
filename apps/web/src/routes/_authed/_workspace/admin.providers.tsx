@@ -4,6 +4,7 @@ import {
   PROVIDER_STATUSES,
   type ProviderStatus,
 } from "@relayrunner/providers/catalog";
+import { PRICE_FILE_PATH } from "@relayrunner/providers";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PencilIcon, PlusIcon, RotateCcwIcon, StarIcon, Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -330,6 +331,7 @@ const EMPTY: ProviderFields = {
   dashboardUrl: "",
   docsUrl: "",
   logoUrl: "",
+  priceUrl: "",
   status: "hidden",
   featured: false,
 };
@@ -344,6 +346,7 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   dashboardUrl: provider.dashboardUrl ?? "",
   docsUrl: provider.docsUrl ?? "",
   logoUrl: provider.logoUrl ?? "",
+  priceUrl: provider.priceUrl ?? "",
   status: provider.status,
   featured: provider.featured,
 });
@@ -527,6 +530,17 @@ function ProviderForm({
           />
         </Field>
       </div>
+      <Field
+        label="Price file"
+        hint="Prices the provider publishes for us. The daily check reads it and applies changes on its own."
+      >
+        <Input
+          type="url"
+          placeholder={`https://example.com${PRICE_FILE_PATH}`}
+          value={fields.priceUrl}
+          onChange={(e) => set("priceUrl")(e.target.value)}
+        />
+      </Field>
       {!codeMatched && (
         <Field
           label="Logo link"

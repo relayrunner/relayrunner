@@ -1,9 +1,11 @@
-import { PRICE_SOURCES, type PriceSource } from "@relayrunner/providers";
+import { readFileSync } from "node:fs";
+import { parsePriceFile, PRICE_SOURCES, type PriceSource } from "@relayrunner/providers";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Env } from "../env.ts";
 import { checkPrices } from "./price-check.ts";
 import { createDb } from "../db/index.ts";
 import { forgetPriceBook, readPriceBook } from "./prices.ts";
+import { forgetCatalog } from "./provider-catalog.ts";
 import * as testing from "../testing.ts";
 
 const source = (provider: string) => PRICE_SOURCES.find((s) => s.provider === provider)!;
@@ -155,6 +157,68 @@ describe("price sources", () => {
   });
 });
 
+// A price file holding these prices.
+const file = (prices: unknown[], extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ version: 1, prices, ...extra });
+
+describe("price files", () => {
+  test("read each price, and leave out rates RelayRunner doesn't have", () => {
+    expect(
+      parsePriceFile(
+        "groundbox",
+        file([
+          { rate: "groundbox-4vcpu", per: "runner", usd_per_minute: "0.007", from: "2026-12-01" },
+          { rate: "macos", per: "runner", usd_per_minute: "0.05" },
+          { rate: "groundbox-64vcpu", per: "runner", usd_per_minute: "0.1" },
+        ]),
+      ),
+    ).toEqual([
+      { rate: "groundbox-4vcpu", usd: 0.007, from: "2026-12-01" },
+      { rate: "macos", usd: 0.05 },
+    ]);
+  });
+
+  test("match the published JSON Schema field for field", () => {
+    const schema = JSON.parse(
+      readFileSync(
+        new URL("../../../site/public/schemas/runner-prices.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    const price = schema.properties.prices.items;
+    // Every field the schema allows parses, and both refuse anything else.
+    const entry = Object.fromEntries(
+      Object.keys(price.properties).map((key) => [
+        key,
+        { rate: "linux", per: "vcpu", usd_per_minute: "0.002", from: "2026-12-01" }[key],
+      ]),
+    );
+    const root = { $schema: schema.$id, version: 1, prices: [entry] };
+    expect(Object.keys(root).sort()).toEqual(Object.keys(schema.properties).sort());
+    expect(parsePriceFile("blacksmith", JSON.stringify(root))).toHaveLength(1);
+    expect(schema.additionalProperties).toBe(false);
+    expect(price.additionalProperties).toBe(false);
+  });
+
+  test("reject the whole file on anything out of place", () => {
+    const linux = { rate: "linux", per: "vcpu", usd_per_minute: "0.002" };
+    const bad: [string, string][] = [
+      ["not json", "not JSON"],
+      [JSON.stringify({ version: 2, prices: [linux] }), "version must be 1"],
+      [file([]), "at least one price"],
+      [file([linux], { currency: "USD" }), 'unknown field "currency"'],
+      [file([{ ...linux, note: "hi" }]), 'unknown field "note"'],
+      [file([{ ...linux, usd_per_minute: 0.002 }]), "decimal string"],
+      [file([{ ...linux, from: "Dec 1" }]), "from must be a day"],
+      [file([{ ...linux, per: "runner" }]), "priced per vcpu, not per runner"],
+      [file([linux, linux]), "listed twice"],
+      [file([{ ...linux, usd_per_minute: "2" }]), "unlikely price"],
+    ];
+    for (const [body, error] of bad)
+      expect(() => parsePriceFile("blacksmith", body), body).toThrow(error);
+  });
+});
+
 describe("checkPrices", () => {
   let env: Env;
   const send = vi.fn();
@@ -172,11 +236,15 @@ describe("checkPrices", () => {
     forgetPriceBook();
     await env.DB.prepare("delete from price_finding").run();
     await env.DB.prepare("delete from price_check").run();
+    await env.DB.prepare("delete from provider_price").run();
+    await env.DB.prepare("delete from provider").run();
+    forgetCatalog();
   });
 
   const fetcher =
-    (pages: Record<string, string | null>) =>
+    (pages: Record<string, string | null>, files: Record<string, string> = {}) =>
     async (url: RequestInfo | URL): Promise<Response> => {
+      if (Object.hasOwn(files, String(url))) return new Response(files[String(url)]);
       const s = PRICE_SOURCES.find((s: PriceSource) => s.url === String(url))!;
       const page = pages[s.provider];
       return page == null ? new Response("gone", { status: 404 }) : new Response(page);
@@ -255,5 +323,106 @@ describe("checkPrices", () => {
 
     await checkPrices(env, new Date("2026-11-21T06:00:00Z"), fetcher(broken));
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  describe("from a provider's price file", () => {
+    const url = "https://groundbox.example/.well-known/runner-prices.json";
+    const setPriceUrl = async (provider: string) => {
+      await env.DB.prepare(
+        "insert into provider (id, name, summary, labels, prefixes, status, price_url, updated_by, updated_at) values (?, ?, '', '', '[]', 'live', ?, 'ops', 0)",
+      )
+        .bind(provider, provider, url)
+        .run();
+      forgetCatalog();
+    };
+    // Groundbox prices each runner whole.
+    const priceFile = (prices: { rate: string; usd: string; from?: string }[]) =>
+      file(
+        prices.map(({ rate, usd, from }) => ({ rate, per: "runner", usd_per_minute: usd, from })),
+      );
+
+    test("applies a change from today on, and holds a big jump or a backdated one", async () => {
+      await setPriceUrl("groundbox");
+      const results = await checkPrices(
+        env,
+        now,
+        fetcher(PAGES, {
+          [url]: priceFile([
+            { rate: "groundbox-4vcpu", usd: "0.0075", from: "2026-12-01" },
+            // Ten times today's price: a typo until someone looks.
+            { rate: "groundbox-8vcpu", usd: "0.055" },
+            // Already priced jobs don't change on their own.
+            { rate: "groundbox-2vcpu", usd: "0.004", from: "2026-11-01" },
+            // Matches: nothing to do.
+            { rate: "macos", usd: "0.05" },
+          ]),
+        }),
+      );
+      const groundbox = results.find((r) => r.provider === "groundbox")!;
+      expect(groundbox.applied.map(({ rate, usd }) => ({ rate, usd }))).toEqual([
+        { rate: "groundbox-4vcpu", usd: 0.0075 },
+      ]);
+      expect(await pendingRows()).toEqual([
+        { provider: "groundbox", rate: "groundbox-2vcpu", usd: 0.004, from: "2026-11-01" },
+        { provider: "groundbox", rate: "groundbox-8vcpu", usd: 0.055, from: "2026-11-20" },
+      ]);
+      const book = await readPriceBook(createDb(env.DB));
+      expect(book.usd("groundbox", "groundbox-4vcpu", Date.parse("2026-12-01"))).toBe(0.0075);
+      expect(book.usd("groundbox", "groundbox-4vcpu", now.getTime())).toBe(0.006);
+      expect(await env.DB.prepare("select created_by, source from provider_price").first()).toEqual(
+        { created_by: "price file", source: url },
+      );
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0]![0].subject).toBe("[prices] 3 prices changed");
+
+      // The provider changes the coming price again before it starts: its newest one wins.
+      await checkPrices(
+        env,
+        new Date("2026-11-21T06:00:00Z"),
+        fetcher(PAGES, {
+          [url]: priceFile([{ rate: "groundbox-4vcpu", usd: "0.008", from: "2026-12-01" }]),
+        }),
+      );
+      expect(
+        (await readPriceBook(createDb(env.DB))).usd(
+          "groundbox",
+          "groundbox-4vcpu",
+          Date.parse("2026-12-01"),
+        ),
+      ).toBe(0.008);
+    });
+
+    test("reads the file in place of the provider's page", async () => {
+      await setPriceUrl("depot");
+      // Depot's page would read fine; its file says one price changed.
+      const results = await checkPrices(
+        env,
+        now,
+        fetcher(
+          { ...PAGES, depot: null },
+          {
+            [url]: file([{ rate: "linux", per: "vcpu", usd_per_minute: "0.0032" }]),
+          },
+        ),
+      );
+      const depot = results.filter((r) => r.provider === "depot");
+      expect(depot).toHaveLength(1);
+      expect(depot[0]!.error).toBeNull();
+      expect(depot[0]!.applied.map(({ rate, usd }) => ({ rate, usd }))).toEqual([
+        { rate: "linux", usd: 0.0032 },
+      ]);
+    });
+
+    test("ignores a broken file and says why", async () => {
+      await setPriceUrl("groundbox");
+      const results = await checkPrices(
+        env,
+        now,
+        fetcher(PAGES, { [url]: file([{ rate: "macos" }]) }),
+      );
+      const groundbox = results.find((r) => r.provider === "groundbox")!;
+      expect(groundbox.error).toBe('prices[0]: per must be "vcpu" or "runner"');
+      expect(groundbox.applied).toEqual([]);
+    });
   });
 });

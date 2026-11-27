@@ -204,10 +204,14 @@ export const ADDED_RATE = "runner";
  * Whether a provider has this rate: one RATES lists, or the per-runner rate of a provider RATES
  * doesn't price (the admin only records that one for providers operators added).
  */
-export const isRate = (provider: string, rate: string) =>
-  Object.hasOwn(RATES, provider)
-    ? Object.hasOwn(RATES[provider as PricedProvider], rate)
-    : rate === ADDED_RATE;
+export const isRate = (provider: string, rate: string) => rateUnit(provider, rate) !== null;
+
+/** What a minute of a rate is per: one vCPU or the whole runner. Null for a rate it doesn't have. */
+export function rateUnit(provider: string, rate: string): "vcpu" | "runner" | null {
+  if (!Object.hasOwn(RATES, provider)) return rate === ADDED_RATE ? "runner" : null;
+  const rates: Record<string, "vcpu" | "runner"> = RATES[provider as PricedProvider];
+  return Object.hasOwn(rates, rate) ? rates[rate]! : null;
+}
 
 /**
  * USD for a minute of one rate (per vCPU or per runner, as RATES says), from `from` (a UTC day,
@@ -348,6 +352,12 @@ export const BASE_PRICES: PriceRow[] = [
 
 /** A UTC day (YYYY-MM-DD) as epoch ms at its midnight. */
 export const dayMs = (day: string) => Date.parse(`${day}T00:00:00Z`);
+
+/** Whether a string is a UTC day, YYYY-MM-DD. */
+export const isDay = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(dayMs(day));
+
+/** The UTC day a moment falls on, YYYY-MM-DD. */
+export const dayOf = (date: Date) => date.toISOString().slice(0, 10);
 
 /** Price rows, ready to look up. Build one with priceBook. */
 export interface PriceBook {
