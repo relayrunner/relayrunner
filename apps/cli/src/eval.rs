@@ -241,14 +241,11 @@ fn pick_workspace(workspaces: &[Value]) -> Result<String, Error> {
     let unclear = || {
         Error::new(
             "WORKSPACE_UNCLEAR",
-            format!(
-                "Name the workspace with --workspace: {}.",
-                if slugs.is_empty() {
-                    "you have none".into()
-                } else {
-                    slugs.join(", ")
-                }
-            ),
+            if slugs.is_empty() {
+                "You're not in a workspace yet. Install RelayRunner's GitHub App on your account or organization, or ask an owner to accept your request, then run this again.".to_string()
+            } else {
+                format!("Name the workspace with --workspace: {}.", slugs.join(", "))
+            },
         )
     };
     if !ui::can_ask() || workspaces.is_empty() {
@@ -642,6 +639,16 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         .as_array()
         .cloned()
         .unwrap_or_default();
+    if workflows.is_empty() && repo.is_none() {
+        // A new account: RelayRunner only sees runs from after its GitHub App was installed.
+        ui::error(
+            "No workflow runs have reached RelayRunner yet. It sees runs from after its GitHub App was installed.",
+        );
+        ui::info(
+            "Route a workflow with `relayrunner init`, push, and run this again once that run finishes.",
+        );
+        return Ok(NEEDS_YOU);
+    }
     let repo = match repo {
         Some(repo) => repo,
         None => pick_repo(&workflows, can_ask)?,
@@ -652,8 +659,11 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         .collect();
     if in_repo.is_empty() {
         ui::error(&format!(
-            "No workflows in {repo} ran in the last 14 days that this workspace can see. Check --repo and --workspace."
+            "No workflows in {repo} ran in the last 14 days that this workspace can see."
         ));
+        ui::info(
+            "Check --repo and --workspace. In a new account, route a workflow with `relayrunner init`, push, and run this again once that run finishes.",
+        );
         return Ok(NEEDS_YOU);
     }
     let workflow = match &args.workflow {

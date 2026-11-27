@@ -140,7 +140,7 @@ Evaluates a hosted provider on one of your workflows: it runs the whole workflow
 
 In a clone, the command uses that repo and the workspace on its GitHub account; `--repo` and `--workspace` pick others. It walks through the same steps as the dashboard. If the provider's GitHub App isn't on your organization yet, it shows how to install it and waits until it's there. On a personal account, where GitHub doesn't show which apps are installed, you confirm that yourself. A workflow whose jobs don't go through a relay needs `relayrunner init` first, and one without `workflow_dispatch` shows the line to add and starts after the next push to the default branch.
 
-While it runs, `s` stops it and keeps the runs that finished, `o` opens it in the dashboard, and Ctrl-C leaves it running. Only workspace owners and admins can start or stop one. Run `relayrunner login` first if this computer isn't signed in.
+While it runs, `s` stops it and keeps the runs that finished, `o` opens it in the dashboard, and Ctrl-C leaves it running. Only workspace owners and admins can start or stop one. If this computer isn't signed in, it signs you in first, and someone new to RelayRunner signs up and installs its GitHub App on the way. RelayRunner sees only runs from after the app was installed, so in a new account route a workflow with `relayrunner init` and push before evaluating it.
 
 | Exit code | When                                                                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
