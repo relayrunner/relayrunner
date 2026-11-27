@@ -2,6 +2,7 @@ import { CatchBoundary, Link, useRouter, type ErrorComponentProps } from "@tanst
 import { RotateCwIcon, TriangleAlert } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { PageMessage } from "@/components/page-message";
 import { cn } from "@/lib/utils";
 import { AppError } from "@relayrunner/errors";
 
@@ -62,51 +63,6 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
           {isStaleBuild(error) ? "Reload" : "Try again"}
         </Button>
       )}
-    </PageMessage>
-  );
-}
-
-/** A whole-page message in place of a page: a title, a line and what to do next. */
-function PageMessage({
-  alert = false,
-  icon,
-  title,
-  body,
-  className,
-  children,
-}: {
-  alert?: boolean;
-  icon?: ReactNode;
-  title: string;
-  body: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      role={alert ? "alert" : undefined}
-      className={cn("grid min-h-[60vh] place-content-center p-4 text-center", className)}
-    >
-      <div className="grid max-w-md justify-items-center gap-3">
-        {icon}
-        <h1 className="text-lg font-semibold">{title}</h1>
-        <p className="text-muted-foreground">{body}</p>
-        <div className="mt-1 flex gap-2">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A page that doesn't exist. A workspace page that throws `notFound()`, such as an unknown
- * provider, sets this as its own `notFoundComponent` so it shows inside the app, with the sidebar.
- */
-export function PageNotFound({ className }: { className?: string }) {
-  return (
-    <PageMessage title="Not found" body="That page doesn't exist." className={className}>
-      <Button asChild variant="outline">
-        <Link to="/runners">Go to Runners</Link>
-      </Button>
     </PageMessage>
   );
 }

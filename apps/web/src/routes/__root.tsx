@@ -1,5 +1,5 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
-import { PageNotFound } from "@/components/error-boundary";
+import { PageNotFound } from "@/components/page-message";
 
 export const Route = createRootRoute({
   component: () => <Outlet />,
