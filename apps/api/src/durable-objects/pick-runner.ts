@@ -218,7 +218,10 @@ export class PickRunner extends DurableObject<Env> {
       scope = minted.scope;
       runnerId = jit.runnerId;
 
-      client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), await latestRunnerVersion());
+      client = new RunnerClient(
+        decodeJitConfig(jit.encodedJitConfig),
+        await latestRunnerVersion({ db: createDb(this.env.DB) }),
+      );
       await client.openSession();
       const request = await waitForJob(client, WAIT_FOR_JOB_MS);
       const job = request ? await client.claim(request) : null;

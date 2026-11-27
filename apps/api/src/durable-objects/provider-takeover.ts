@@ -236,7 +236,7 @@ async function endJob(env: Env, token: string, work: TakeoverWork, slow: boolean
         log: { msg: "relayrunner takeover runner registered on the org", jobId: work.jobId },
       },
     ),
-    latestRunnerVersion(),
+    latestRunnerVersion({ db }),
   ]);
   // GitHub removes a JIT runner once its job is done; until then, this one is ours to remove.
   let registered = true;
