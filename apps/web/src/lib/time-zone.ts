@@ -159,6 +159,10 @@ export function parseDateText(text: string) {
 /** A day as "Nov 14". */
 export const shortDate = (ms: number) => formatTime(ms, { month: "short", day: "numeric" });
 
+/** "Dec 1" in UTC, for days that are UTC by definition, such as a billing month's reset. */
+export const utcShortDate = (ms: number | string | Date) =>
+  new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 /** A list's heading for the day `ms` falls in: "Today", "Yesterday", "Nov 14", "Nov 14, 2025". */
 export function dayHeading(ms: number, now = Date.now()) {
   const today = startOfDay(now);

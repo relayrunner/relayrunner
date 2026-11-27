@@ -18,6 +18,7 @@ import {
   type WorkflowRow,
 } from "@/lib/job-times";
 import { type TimeRange, trendPhrase } from "@/lib/time-range";
+import { type ExportColumn, seconds } from "@/lib/table-export";
 import { cn } from "@/lib/utils";
 import { PublicRepoMark } from "@/components/public-repo";
 
@@ -85,6 +86,19 @@ const [Context, useContext] = createCellContext<{
   range: TimeRange;
   environments: Environment[];
 }>("Workflows");
+
+// A workflow's export: its run counts and times in seconds, and its cost in USD.
+const EXPORT_COLUMNS: ExportColumn<Row>[] = [
+  { header: "Repo", value: (row) => row.repository },
+  { header: "Workflow", value: (row) => row.workflow },
+  { header: "Runs", value: (row) => row.wall?.runs ?? 0 },
+  { header: "Passed", value: (row) => row.wall?.successes ?? 0 },
+  { header: "Median (s)", value: (row) => seconds(row.wall?.medianMs) },
+  { header: "p90 (s)", value: (row) => seconds(row.wall?.p90Ms) },
+  { header: "Waiting (s)", value: (row) => seconds(row.wall?.waitMs) },
+  { header: "Cost per run (USD)", value: (row) => row.usd },
+  { header: "Spent (USD)", value: (row) => row.spentUsd },
+];
 
 const END = { align: "end" } as const;
 const column = dataTableColumns<Row>();
@@ -365,6 +379,7 @@ export const PerformanceWorkflows = memo(function PerformanceWorkflows({
             data={rows}
             getRowId={(row) => row.id}
             initialSorting={[{ id: "runs", desc: true }]}
+            exportAs={{ name: "workflows", columns: EXPORT_COLUMNS }}
             rowClassName={() => "relative hover:bg-secondary/30"}
             empty="No workflows in this repo in the window."
           />

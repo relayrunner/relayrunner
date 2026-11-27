@@ -1,8 +1,10 @@
 ---
 /*
  * The integrations index: cards for the featured runner clouds, then every hosted runner's plan and
- * list price in one table (src/lib/provider-table.ts), then the runners you host yourself.
+ * list price in one table (src/lib/provider-table.ts), then the runners you host yourself. Each table
+ * row links to the provider's page, which has the Evaluate button.
  */
+import Chevron from "../../components/Chevron.astro";
 import CloseBox from "../../components/CloseBox.astro";
 import LandingPage from "../../layouts/LandingPage.astro";
 import { integrationPath, SUGGEST_EMAIL, SUGGEST_ISSUE_URL } from "../../lib/integrations";
@@ -17,7 +19,6 @@ import {
   UNPRICED_ROWS,
 } from "../../lib/provider-table";
 import { PRICES_AS_OF, PROVIDERS } from "../../lib/providers";
-import { evaluable, evaluateHref } from "../../lib/evaluate";
 
 const own = [
   {
@@ -109,16 +110,16 @@ const first = cellKey("linux", 2);
           <col class="int-col-price" />
           <col class="int-col-plan" />
           <col class="int-col-included" />
-          <col class="int-col-try" />
+          <col class="int-col-go" />
         </colgroup>
         <thead>
           <tr>
             <th scope="col">Provider</th>
             <th scope="col" class="num">Per minute</th>
-            <th scope="col" class="num">Per hour</th>
-            <th scope="col" class="int-after-price">Plan</th>
-            <th scope="col">Included</th>
-            <th scope="col" class="int-try"><span class="visually-hidden">Evaluate</span></th>
+            <th scope="col" class="num int-wide">Per hour</th>
+            <th scope="col" class="int-after-price int-wide">Plan</th>
+            <th scope="col" class="int-wide">Included</th>
+            <td class="int-go"></td>
           </tr>
         </thead>
         <tbody>
@@ -157,18 +158,12 @@ const first = cellKey("linux", 2);
                   <td class="num" data-min>
                     {cell && minuteText(cell.usd)}
                   </td>
-                  <td class="num int-mute" data-hour>
+                  <td class="num int-mute int-wide" data-hour>
                     {cell && hourText(cell.usd)}
                   </td>
-                  <td class="int-after-price">{row.plan}</td>
-                  <td class="int-mute">{row.included}</td>
-                  <td class="int-try">
-                    {evaluable(row.id) && (
-                      <a class="btn-ghost btn-sm" href={evaluateHref(row.id)}>
-                        Evaluate<span class="visually-hidden"> {row.name}</span>
-                      </a>
-                    )}
-                  </td>
+                  <td class="int-after-price int-wide">{row.plan}</td>
+                  <td class="int-mute int-wide">{row.included}</td>
+                  <td class="int-go"><Chevron /></td>
                 </tr>
               );
             })
@@ -184,16 +179,10 @@ const first = cellKey("linux", 2);
                     </span>
                   </a>
                 </th>
-                <td colspan="4" class="num int-mute">
+                <td colspan="4" class="num int-mute int-why">
                   {row.why}
                 </td>
-                <td class="int-try">
-                  {evaluable(row.id) && (
-                    <a class="btn-ghost btn-sm" href={evaluateHref(row.id)}>
-                      Evaluate<span class="visually-hidden"> {PROVIDERS[row.id].name}</span>
-                    </a>
-                  )}
-                </td>
+                <td class="int-go"><Chevron /></td>
               </tr>
             ))
           }

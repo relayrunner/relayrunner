@@ -33,6 +33,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ExportMenu } from "@/components/export-menu";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   PHONE_HIDDEN,
@@ -44,6 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { ExportColumn } from "@/lib/table-export";
 import { cn } from "@/lib/utils";
 
 type ColumnMeta = {
@@ -129,6 +131,7 @@ export function DataTable<TData extends RowData>({
   rowClassName,
   fullRow,
   sectionOf,
+  exportAs,
 }: {
   columns: Columns<TData>;
   data: TData[];
@@ -153,6 +156,13 @@ export function DataTable<TData extends RowData>({
    * heading differs from the one before, while the table is in the data's own order.
    */
   sectionOf?: (row: TData) => string;
+  /**
+   * Shows an Export menu above the table, saving or copying its rows as filtered and sorted:
+   * `name` starts the file's name, and `columns` are what each row exports as. These are their own
+   * list, since a cell's sort key or display text rarely makes a good value in a file. Rows with
+   * subRows are headings over them, so only the rows under them export.
+   */
+  exportAs?: { name: string; columns: ExportColumn<TData>[] };
 }) {
   const [sorting, setSorting] = useState(initialSorting);
   const table = useTable({
@@ -175,7 +185,7 @@ export function DataTable<TData extends RowData>({
     [rows, sorting, sectionOf],
   );
 
-  return (
+  const tableElement = (
     <Table className="tabular-nums">
       {caption && <TableCaption>{caption}</TableCaption>}
       <TableHeader>
@@ -252,6 +262,24 @@ export function DataTable<TData extends RowData>({
         </TableBody>
       )}
     </Table>
+  );
+  if (!exportAs) return tableElement;
+  return (
+    <div className="grid gap-1">
+      <div className="-mt-1 flex justify-end">
+        <ExportMenu
+          name={exportAs.name}
+          columns={exportAs.columns}
+          rows={() =>
+            table
+              .getSortedRowModel()
+              .flatRows.filter((row) => !row.subRows.length)
+              .map((row) => row.original)
+          }
+        />
+      </div>
+      {tableElement}
+    </div>
   );
 }
 

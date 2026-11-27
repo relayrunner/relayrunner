@@ -136,31 +136,31 @@ async function releases({ kind, prefix, file }: (typeof RELEASES)[number]): Prom
 async function platformUpdates(): Promise<Entry[]> {
   const files = (await readdir(UPDATES).catch(() => [])).filter((file) => file.endsWith(".md"));
   return Promise.all(
-    files.map(async (file) => {
-      const raw = await readFile(new URL(file, UPDATES), "utf8");
-      const [, frontmatter = "", body = raw] =
-        raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/) ?? [];
-      const field = (key: string) =>
-        frontmatter
-          .match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]
-          .trim()
-          .replace(/^(["'])(.*)\1$/, "$2");
-      const title = field("title");
-      const date = new Date(`${field("date")}T00:00:00Z`);
-      const type = UPDATE_TYPES.find((name) => name === field("type"));
-      if (!title || Number.isNaN(date.getTime()) || !type) {
-        throw new Error(
-          `src/content/changelog/${file} needs a title, a date (YYYY-MM-DD) and a type (${UPDATE_TYPES.join(", ")})`,
-        );
-      }
-      const slug = file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "");
-      if (PAGES.some((page) => page.id === `${CHANGELOG_ID}/${slug}`)) {
-        throw new Error(`src/content/changelog/${file}: "${slug}" is taken by a changelog view`);
-      }
-      const description = field("description");
-      return { kind: "Platform" as const, title, date, body: body.trim(), slug, description, type };
-    }),
+    files.map(async (file) => parseUpdate(file, await readFile(new URL(file, UPDATES), "utf8"))),
   );
+}
+
+function parseUpdate(file: string, raw: string): Entry {
+  const [, frontmatter = "", body = raw] = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/) ?? [];
+  const field = (key: string) =>
+    frontmatter
+      .match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2");
+  const title = field("title");
+  const date = new Date(`${field("date")}T00:00:00Z`);
+  const type = UPDATE_TYPES.find((name) => name === field("type"));
+  if (!title || Number.isNaN(date.getTime()) || !type) {
+    throw new Error(
+      `src/content/changelog/${file} needs a title, a date (YYYY-MM-DD) and a type (${UPDATE_TYPES.join(", ")})`,
+    );
+  }
+  const slug = file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "");
+  if (PAGES.some((page) => page.id === `${CHANGELOG_ID}/${slug}`)) {
+    throw new Error(`src/content/changelog/${file}: "${slug}" is taken by a changelog view`);
+  }
+  const description = field("description");
+  return { kind: "Platform", title, date, body: body.trim(), slug, description, type };
 }
 
 /** Newest first. A release with no known date (a shallow clone) keeps its place after the newer one. */
@@ -175,9 +175,19 @@ function byDate(entries: Entry[]) {
   return entries.sort((a, b) => time.get(b)! - time.get(a)!);
 }
 
-/** The newest platform updates, for the homepage's What's new. */
-export async function latestUpdates(count: number) {
-  const updates = byDate(await platformUpdates()).slice(0, count);
+/**
+ * The newest platform updates, for the homepage's What's new. Pages are bundled, so the files come
+ * from Vite's glob rather than a path relative to this module, which points into dist/ at build.
+ */
+export function latestUpdates(count: number) {
+  const files = import.meta.glob<string>("../content/changelog/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  });
+  const all = Object.entries(files).map(([path, raw]) => parseUpdate(path.split("/").pop()!, raw));
+  if (!all.length) throw new Error("What's new found no platform updates in src/content/changelog");
+  const updates = byDate(all).slice(0, count);
   return updates.map(({ title, date, slug, type }) => ({
     title,
     date: date!,

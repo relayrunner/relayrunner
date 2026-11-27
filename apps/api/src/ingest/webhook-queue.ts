@@ -33,7 +33,7 @@ import { recordJobTiming, withTimeout } from "./job-timings.ts";
 import { lintTarget, startLintChecks } from "../checks/lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { containerRunnerAllowed, usesContainerRunner } from "../routing/container-runner.ts";
-import { checkPullRequestTitle } from "../checks/pr-title-check.ts";
+import { checkPullRequest } from "../checks/pull-request-checks.ts";
 import {
   recordRepositoryEvent,
   removeRepositories,
@@ -317,7 +317,7 @@ export async function processWebhook(
     }
     case "pull_request":
       // Throws to retry: a check run that never posts leaves the PR without its check.
-      await checkPullRequestTitle(env, message);
+      await checkPullRequest(env, message);
       return { handler: "pull_request" };
   }
   return { handler: "ignored" };

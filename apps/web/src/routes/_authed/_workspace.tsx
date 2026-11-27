@@ -42,7 +42,7 @@ import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "re
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { PagePending } from "@/components/page-pending";
-import { HISTORY_TABS, PERFORMANCE_TABS, type Tab } from "@/components/page-tabs";
+import { HISTORY_TABS, PERFORMANCE_TABS, type Tab, USAGE_TABS } from "@/components/page-tabs";
 import { GithubIcon } from "@/components/provider-logos";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { StatusBanner, StatusLink } from "@/components/service-status";
@@ -177,7 +177,7 @@ const nav = [
 const analyticsNav = [
   { to: "/signals", label: "Signals", icon: RadarIcon },
   { to: "/performance", label: "Performance", icon: GaugeIcon, tabs: PERFORMANCE_TABS },
-  { to: "/usage", label: "Usage", icon: ChartColumnIcon },
+  { to: "/usage", label: "Usage", icon: ChartColumnIcon, tabs: USAGE_TABS },
 ] as const satisfies NavItem[];
 
 // Operators only (user.role = "operator"). Cloudflare Access still gates these pages.

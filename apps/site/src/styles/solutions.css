@@ -606,16 +606,39 @@ ol.sol-steps h3 {
 .int-col-included {
   width: 18%;
 }
-.int-col-try {
-  width: 120px;
+.int-col-go {
+  width: 52px;
 }
-/* The Evaluate column stays in view while the table scrolls sideways on a phone. */
-.int-table .int-try {
-  position: sticky;
-  right: 0;
-  padding-inline: 12px 20px;
-  background: var(--raised);
+/* Each row links to its provider's page: the provider link covers the whole row. */
+.int-table tbody tr {
+  position: relative;
+}
+.int-table tbody th a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.int-table tbody th a:focus-visible {
+  outline: none;
+}
+.int-table tbody th a:focus-visible::after {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.int-table tbody tr:hover > * {
+  background: var(--line-soft);
+}
+.int-table .int-go {
+  padding-inline: 0 20px;
+  color: var(--mute);
   text-align: right;
+}
+.int-table .int-go svg {
+  display: block;
+  margin-left: auto;
+}
+.int-table tbody tr:hover .int-go {
+  color: var(--ink);
 }
 /* A gap between the right-aligned prices and the left-aligned plan after them. */
 .int-table .int-after-price {
@@ -629,7 +652,7 @@ ol.sol-steps h3 {
   vertical-align: middle;
   white-space: nowrap;
 }
-.int-table thead th {
+.int-table thead tr > * {
   padding-block: 12px;
   border-bottom-color: var(--line);
   color: var(--mute);
@@ -687,6 +710,77 @@ ol.sol-steps h3 {
 }
 .int-unpriced img {
   opacity: 0.75;
+}
+/* On a phone each row is the provider, its price per minute and a chevron; the provider's page has
+   the rest, so the table never scrolls sideways. */
+@media (max-width: 900px) {
+  .int-table {
+    overflow-x: visible;
+  }
+  .int-table table,
+  .int-table thead,
+  .int-table tbody {
+    display: block;
+    min-width: 0;
+  }
+  .int-table colgroup,
+  .int-table .int-wide {
+    display: none;
+  }
+  .int-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 36px;
+    align-items: center;
+  }
+  .int-table tr[hidden] {
+    display: none;
+  }
+  .int-table th,
+  .int-table td {
+    padding: 14px 0 14px 16px;
+  }
+  .int-table thead th,
+  .int-table thead td {
+    padding-block: 12px;
+  }
+  .int-table thead td,
+  .int-table tbody td.int-go {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding-inline: 0 16px;
+  }
+  /* Cells in a grid row differ in height, so the row draws the line and the hover. */
+  .int-table tr > *,
+  .int-table tbody tr:hover > * {
+    border-bottom: 0;
+    background: none;
+  }
+  .int-table tr {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .int-table thead tr {
+    border-bottom-color: var(--line);
+  }
+  .int-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .int-table tbody tr:hover {
+    background: var(--line-soft);
+  }
+  .int-table tbody th span {
+    min-width: 0;
+  }
+  .int-table tbody th b,
+  .int-table tbody th code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .int-table td.int-why {
+    max-width: 9em;
+    white-space: normal;
+    font-size: 13px;
+  }
 }
 .int-note {
   margin-top: 14px;

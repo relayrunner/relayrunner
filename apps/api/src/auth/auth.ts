@@ -245,11 +245,28 @@ export function workspaces() {
   });
 }
 
+// Better Auth's errors when someone calls an endpoint for a feature RelayRunner leaves off (email
+// and password, magic links, a provider other than GitHub, verification email, deleting a user).
+// Only scanners send those, so they're info, not errors in Workers Issues.
+const FEATURE_OFF =
+  /(is not enabled|isn't enabled|are not enabled|is disabled\. Enable it|^Provider not found)/;
+
 // Better Auth's own messages, through the API's logger. An error it recovers from on its own
 // (resources it seeds again on first use when D1 is shedding load) is a warning, so Workers Issues
 // doesn't report it.
-function logAuth(level: "debug" | "info" | "warn" | "error", message: string, ...args: unknown[]) {
+export function logAuth(
+  level: "debug" | "info" | "warn" | "error",
+  message: string,
+  ...args: unknown[]
+) {
   const error = args.find((arg) => arg instanceof Error);
-  const write = level === "error" && isOverloaded(error) ? log.warn : log[level];
+  const write =
+    level !== "error"
+      ? log[level]
+      : isOverloaded(error)
+        ? log.warn
+        : FEATURE_OFF.test(message)
+          ? log.info
+          : log.error;
   write("auth.log", message, error ? { error } : {});
 }

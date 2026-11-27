@@ -25,7 +25,7 @@ const TRACE = [
   { name: "Run tests", time: "1m 58s", from: 29, to: 95, depth: 2 },
 ];
 // What's new: the latest platform updates from the changelog, each with its type's icon (Lucide).
-const updates = await latestUpdates(6);
+const updates = latestUpdates(6);
 const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const UPDATE_ICONS: Record<UpdateType, string> = {
   Feature:
@@ -416,6 +416,10 @@ const structuredData = {
               ><code>0 min billed</code>
             </li>
             <li>
+              <i class="dot go-dot"></i><b>PR description</b><span>Has a description</span
+              ><code>0 min billed</code>
+            </li>
+            <li>
               <i class="dot go-dot"></i><b>oxlint</b><span>0 new findings</span
               ><code>0 min billed</code>
             </li>
@@ -428,13 +432,12 @@ const structuredData = {
         <div class="feature-copy">
           <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
           <p class="body">
-            PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a
-            hosted runner bills each one as a full minute. Run them as optimized checks
-            instead: they need no runner, post results to your pull request and use no minutes.
+            PR title, PR description and lint checks (oxlint, ruff, actionlint and more) finish in
+            seconds, but a hosted runner bills each one as a full minute. Run them as optimized
+            checks instead: they need no runner, post results to your pull request and use no
+            minutes. Lint is in limited preview.
           </p>
-          <a class="feature-link" href="/docs/concepts/optimized-checks"
-            >Optimized checks →</a
-          ><span class="link-note">Preview</span>
+          <a class="feature-link" href="/docs/concepts/optimized-checks">Optimized checks →</a>
         </div>
       </section>
 

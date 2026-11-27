@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type ChartSeries, WorkflowRunsChart } from "@/components/workflow-runs-chart";
+import { interpolate } from "@/lib/chart-trend";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   clock,
@@ -584,16 +585,14 @@ type RunnerSpread = {
   jobWaits: Map<string, number>;
 };
 
-function quantile(sorted: number[], q: number) {
-  const at = (sorted.length - 1) * q;
-  const below = Math.floor(at);
-  return sorted[below]! + (sorted[Math.ceil(at)]! - sorted[below]!) * (at - below);
-}
-
 function rangeOf(values: number[]): Range | null {
   if (values.length === 0) return null;
   const sorted = values.toSorted((a, b) => a - b);
-  return { lo: quantile(sorted, 0.1), mid: quantile(sorted, 0.5), hi: quantile(sorted, 0.9) };
+  return {
+    lo: interpolate(sorted, 0.1),
+    mid: interpolate(sorted, 0.5),
+    hi: interpolate(sorted, 0.9),
+  };
 }
 
 /**

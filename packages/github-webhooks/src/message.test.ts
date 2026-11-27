@@ -208,19 +208,30 @@ describe("toWebhookMessage", () => {
         receivedAt: "t",
         event: "pull_request",
         repository: { id: 1, fullName: "acme/app" },
-        pullRequest: { number: 3, title: "feat: x", headSha: "abc" },
+        pullRequest: { number: 3, title: "feat: x", body: "long", headSha: "abc", changed: null },
       });
     });
 
-    test("drops actions that don't change the title or head commit", () => {
+    test("reads a missing description as empty", () => {
+      const message = toWebhookMessage("pull_request", "d", {
+        ...payload("opened"),
+        pull_request: { number: 3, title: "feat: x", head: { sha: "abc" }, body: null },
+      });
+      expect(message).toMatchObject({ pullRequest: { body: "" } });
+    });
+
+    test("drops actions that don't change the title, description or head commit", () => {
       expect(toWebhookMessage("pull_request", "d", payload("closed"))).toBeNull();
       expect(toWebhookMessage("pull_request", "d", payload("labeled"))).toBeNull();
       expect(
-        toWebhookMessage("pull_request", "d", payload("edited", { changes: { body: {} } })),
+        toWebhookMessage("pull_request", "d", payload("edited", { changes: { base: {} } })),
       ).toBeNull();
       expect(
         toWebhookMessage("pull_request", "d", payload("edited", { changes: { title: {} } })),
-      ).not.toBeNull();
+      ).toMatchObject({ pullRequest: { changed: ["title"] } });
+      expect(
+        toWebhookMessage("pull_request", "d", payload("edited", { changes: { body: {} } })),
+      ).toMatchObject({ pullRequest: { changed: ["body"] } });
     });
   });
 

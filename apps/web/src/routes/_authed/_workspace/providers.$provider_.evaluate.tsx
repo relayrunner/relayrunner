@@ -57,7 +57,7 @@ import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import { getProviderApps } from "@/lib/provider-apps";
 import { canManage } from "@/lib/roles";
 import { routePrompt } from "@/lib/route-repo";
-import { useCopy } from "@/components/add-runner";
+import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { EVALUATE_STEP, EvaluateStepper } from "@/components/evaluate-stepper";
 

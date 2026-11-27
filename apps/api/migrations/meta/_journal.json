@@ -624,6 +624,13 @@
       "when": 1795627655498,
       "tag": "20261125172735_mac_app_first_use",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "6",
+      "when": 1795649818176,
+      "tag": "20261125233658_actions_usage_day",
+      "breakpoints": true
     }
   ]
 }

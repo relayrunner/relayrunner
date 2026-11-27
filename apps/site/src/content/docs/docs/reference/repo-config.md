@@ -10,6 +10,7 @@ Checks read it from the default branch, so a pull request can't change the check
 ```yaml
 checks:
   pr-title: true
+  pr-description: true
   lint: [oxlint, typos]
 ```
 
@@ -24,6 +25,18 @@ checks:
 ```
 
 By default, all the usual Conventional Commit types are allowed.
+
+## `checks.pr-description`
+
+`true` posts a **PR description** check on each pull request that fails when the description is empty. HTML comments don't count, so a PR template left as is still fails. To ask for more than a line:
+
+```yaml
+checks:
+  pr-description:
+    min-length: 50 # characters
+```
+
+The PR title and description checks are open to every repo, public ones included. They run from the pull request alone and never read your code.
 
 ## `checks.lint`
 

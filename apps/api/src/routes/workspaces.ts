@@ -36,6 +36,7 @@ import { routeOutcomes } from "../reports/route-outcomes.ts";
 import { chartBuckets, requireWindow } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { runnerGroupCheck } from "../github/runner-group-check.ts";
+import { repoChecks } from "../checks/repo-checks.ts";
 import { changeActor, changeSetting } from "../auth/changes.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
 import { setWorkspaceAi } from "../ai/settings.ts";
@@ -49,6 +50,7 @@ import {
   setAutoJob,
 } from "../routing/auto-jobs.ts";
 import { log } from "../log.ts";
+import { workspaceEnterprises } from "../github/enterprise.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted, and changes one only
@@ -93,6 +95,11 @@ export const workspaceRoutes = new Hono<AppEnv>()
       installations: installations.map(present),
     });
   })
+  // The enterprise each of the user's workspaces is in (null when none RelayRunner reads), for
+  // grouping them in the workspace switcher.
+  .get("/enterprises", requireUser, async (c) =>
+    c.json({ workspaces: await workspaceEnterprises(c.var.db, c.var.user!.id) }),
+  )
   // How many live machines each member owns, keyed by user id, for the Members page (#136).
   // Same filter as GET /api/machines: claimed and not revoked.
   .get("/current/machine-counts", requireUser, requireWorkspace, async (c) => {
@@ -288,6 +295,27 @@ export const workspaceRoutes = new Hono<AppEnv>()
   // Which repos the org's Default runner group leaves out, for the "Route a repo" sheet
   // (src/github/runner-group-check.ts). Null for a personal account, and when GitHub can't be read: the
   // sheet works without it.
+  // Which pull request checks each repo turns on in its relayrunner.yml, read from GitHub
+  // (src/checks/repo-checks.ts). Read-only: the file is the only switch.
+  .get("/:id/repo-checks", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const [installation] = await c.var.db
+      .select({ id: schema.githubInstallation.id, login: schema.githubInstallation.accountLogin })
+      .from(schema.githubInstallation)
+      .where(installedIn(id, schema.githubInstallation.id))
+      .limit(1);
+    if (!installation) throw new AppError("NOT_FOUND");
+    try {
+      return c.json(await repoChecks(c.env, c.var.db, id, installation));
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      log.error("github.repo_checks_failed", "repo checks read failed", {
+        installationId: installation.id,
+        error,
+      });
+      throw new AppError("GITHUB_UNAVAILABLE");
+    }
+  })
   .get("/:id/runner-group-check", requireUser, requireMember, async (c) => {
     const installation = schema.githubInstallation;
     const [row] = await c.var.db

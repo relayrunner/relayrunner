@@ -13,7 +13,7 @@
  * workspaces where everyone is a test account or an operator.
  */
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { type Db, createDb, schema } from "../db/index.ts";
+import { type Db, createDb, isMissingTable, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { SETTLE_MS, workspaceStickiness } from "../routing/stickiness.ts";
@@ -36,6 +36,11 @@ const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
 /** Escapes text for Slack's mrkdwn, so a name can't add formatting or links. */
 export function esc(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** A Slack mrkdwn link on GitHub, for a path such as `owner/repo/actions/runs/1`. */
+export function githubLink(path: string, text: string) {
+  return `<https://github.com/${encodeURI(path).replace(/[|>]/g, encodeURIComponent)}|${esc(text)}>`;
 }
 
 /** Posts `text` to a Slack (`text`) or Discord (`content`) incoming webhook. Throws on a non-2xx. */
@@ -166,7 +171,7 @@ export async function collectOperatorPings(
     const repos = install.selection === "all" ? "all repos" : "selected repos";
     pings.push({
       at: install.createdAt.getTime(),
-      text: `:electric_plug: App installed on the ${kind} *${esc(install.login)}* (${repos})`,
+      text: `:electric_plug: App installed on the ${kind} *${githubLink(install.login, install.login)}* (${repos})`,
     });
   }
 
@@ -240,8 +245,7 @@ export async function collectOperatorPings(
       ),
     )
     .catch((error: unknown) => {
-      // Migrations and the deploy both run on merge, so the code can land first.
-      if (String(error).includes("no such table")) return [];
+      if (isMissingTable(error)) return [];
       throw error;
     });
   const macMachineIds = macAppFirsts.flatMap((first) => first.machineId ?? []);
@@ -284,6 +288,7 @@ export async function collectOperatorPings(
       workspaceId: decisions.workspaceId,
       workspace: schema.workspace.name,
       repository: schema.githubRepository.fullName,
+      runId: decisions.runId,
       startedBy: decisions.startedByLogin,
       createdAt: decisions.createdAt,
     })
@@ -314,7 +319,9 @@ export async function collectOperatorPings(
       )
       .limit(1);
     if (before) continue;
-    const where = run.repository ? ` in ${esc(run.repository)}` : "";
+    const where = run.repository
+      ? ` in ${githubLink(`${run.repository}/actions/runs/${run.runId}`, run.repository)}`
+      : "";
     const who = run.startedBy ? `, started by ${esc(run.startedBy)}` : "";
     pings.push({
       at: run.createdAt.getTime(),
@@ -342,8 +349,12 @@ export async function collectOperatorPings(
     const latest = rows[0]!;
     const repository = typeof latest.data.repository === "string" ? latest.data.repository : null;
     const reason = typeof latest.data.reason === "string" ? latest.data.reason : null;
+    const runId = typeof latest.data.runId === "number" ? latest.data.runId : null;
     const runs = rows.length === 1 ? "1 run" : `${rows.length} runs`;
-    const detail = [repository && `in ${esc(repository)}`, reason && `"${esc(reason)}"`]
+    const where =
+      repository &&
+      (runId ? githubLink(`${repository}/actions/runs/${runId}`, repository) : esc(repository));
+    const detail = [where && `in ${where}`, reason && `"${esc(reason)}"`]
       .filter(Boolean)
       .join(": ");
     pings.push({
@@ -402,7 +413,7 @@ export async function collectOperatorPings(
       const lastRelay = new Date(state.lastRelayAt).toUTCString();
       pings.push({
         at: Date.parse(state.since),
-        text: `:leftwards_arrow_with_hook: *${esc(workspace?.name ?? workspaceId)}* took the relay out: ${state.runsWithout} runs without it in ${esc(state.repository)} since its last relay (${esc(state.workflow)}, ${lastRelay})`,
+        text: `:leftwards_arrow_with_hook: *${esc(workspace?.name ?? workspaceId)}* took the relay out: ${state.runsWithout} runs without it in ${githubLink(state.repository, state.repository)} since its last relay (${state.workflowPath ? githubLink(`${state.repository}/blob/HEAD/${state.workflowPath}`, state.workflow) : esc(state.workflow)}, ${lastRelay})`,
       });
     }
   }
@@ -450,7 +461,7 @@ export async function pingUninstall(
       days === 0 ? "on the day it was installed" : `after ${days === 1 ? "1 day" : `${days} days`}`;
     await postToWebhook(
       url,
-      `:wastebasket: App uninstalled from the ${kind} *${esc(install.login)}* ${when}`,
+      `:wastebasket: App uninstalled from the ${kind} *${githubLink(install.login, install.login)}* ${when}`,
       fetcher,
     );
     return true;

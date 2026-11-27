@@ -23,6 +23,20 @@ GitHub bills each job by the minute, rounded up, so a job that finishes in 5 sec
 
 Estimates use GitHub's list prices for private repos. Standard runners in public repos and self-hosted runners are free.
 
+## Pull requests
+
+The **Pull requests** tab shows how many CI minutes each pull request used, across every push and re-run in the range, with its estimated spend. Above the list:
+
+- **Typical pull request**: the median pull request's minutes, with the p90 and the average.
+- **Spend per pull request**: the median estimated spend, kept separate from minutes.
+- **Pull requests**: how many ran, their share of all CI minutes, and how much of it was re-runs.
+
+Pick a repo to narrow everything to it. Pushes to a branch before its pull request opened count toward that pull request. Runs from forks count only when another run on the same branch names the pull request. The tab covers up to the last 62 days.
+
+## Export a table
+
+Tables here and on Providers, Performance and Jobs have an **Export** menu. It saves the rows as CSV for a spreadsheet or JSON for a script, or copies them as Markdown to paste into a chat with a teammate or an agent. The export follows the page's range, repo filter and sort.
+
 ## Saved by optimized checks
 
 Each [optimized check](/docs/concepts/optimized-checks) counts as a job on `ubuntu-latest` that would have billed at least a minute.

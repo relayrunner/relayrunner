@@ -7,7 +7,7 @@ import { AppError } from "@relayrunner/errors";
 import { log } from "../log.ts";
 
 // Every /api/admin/* route sits behind Cloudflare Access (docs/cloudflare-access.md); app.ts mounts
-// this once for the whole prefix. This Worker's own workers.dev URL is public, so it checks the
+// this once for the whole prefix. This Worker's custom domains (api.relayrunner.dev) are public, so it checks the
 // Access JWT itself and never trusts the dashboard Worker to have done it. Sets
 // c.var.accessIdentity.
 export const requireAccess = createMiddleware<AppEnv>(async (c, next) => {

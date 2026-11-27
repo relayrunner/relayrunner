@@ -10,6 +10,7 @@ import { TipRow } from "@/components/chart-parts";
 import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { type ExportColumn, seconds } from "@/lib/table-export";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { DAY_MS, medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
@@ -139,6 +140,7 @@ function ProvidersPage() {
                   data={overview.providers}
                   getRowId={(row) => row.provider}
                   initialSorting={[{ id: "jobs", desc: true }]}
+                  exportAs={{ name: "providers", columns: EXPORT_COLUMNS }}
                   rowHeight={53}
                 />
               </SectionBoundary>
@@ -232,6 +234,17 @@ function MinutesChart({
     </section>
   );
 }
+
+// A provider's export: its jobs, billed minutes, typical job in seconds and cost in USD.
+const EXPORT_COLUMNS: ExportColumn<ProviderSummary>[] = [
+  { header: "Provider", value: (row) => providerInfo(row.provider).name },
+  { header: "Jobs", value: (row) => row.jobs },
+  { header: "Failed", value: (row) => row.failures },
+  { header: "Billed minutes", value: (row) => row.billedMinutes },
+  { header: "Billed minutes before", value: (row) => row.priorBilledMinutes },
+  { header: "Typical job (s)", value: (row) => seconds(row.stat.medianMs) },
+  { header: "Est. cost (USD)", value: (row) => row.cost },
+];
 
 const column = dataTableColumns<ProviderSummary>();
 const inUseColumns = column.columns([

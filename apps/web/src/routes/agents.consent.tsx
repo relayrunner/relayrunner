@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { BrandedPage, SignedOut } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { agentRedirect, type AgentRedirect } from "@/lib/agent-redirect";
 import { pendingAgentWorkspaces } from "@/lib/agents";
 import { authClient } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
@@ -10,10 +12,14 @@ import { usePageTitle } from "@/lib/page-title";
 
 // Agent sign-in, step 2 (apps/api/src/auth/agent-auth.ts): Better Auth sends the browser here, with the
 // signed authorization request in the query, once the person has picked the workspaces (step 1). Allowing returns the browser to the client with a code; denying returns an error.
+// The client named itself when it registered, so the page also says where the code goes (the
+// query's redirect_uri, which Better Auth checked against the client's registered ones and signed)
+// and warns about a website it doesn't know (src/lib/agent-redirect.ts).
 export const Route = createFileRoute("/agents/consent")({
   loader: async ({ location }) => {
     if (!(await agreedSession(location.href))) return { signedIn: false as const };
-    const clientId = new URLSearchParams(window.location.search).get("client_id") ?? "";
+    const query = new URLSearchParams(window.location.search);
+    const clientId = query.get("client_id") ?? "";
     const [client, picked] = await Promise.all([
       authClient.oauth2.publicClient({ query: { client_id: clientId } }),
       pendingAgentWorkspaces(),
@@ -22,6 +28,7 @@ export const Route = createFileRoute("/agents/consent")({
       signedIn: true as const,
       clientName: client.data?.client_name || "An MCP client",
       clientUri: client.data?.client_uri ?? null,
+      redirect: agentRedirect(query.get("redirect_uri")),
       workspaceNames: picked.workspaces.map((workspace) => workspace.name),
     };
   },
@@ -37,10 +44,12 @@ function AgentConsentPage() {
 function Consent({
   clientName,
   clientUri,
+  redirect,
   workspaceNames,
 }: {
   clientName: string;
   clientUri: string | null;
+  redirect: AgentRedirect | null;
   workspaceNames: string[];
 }) {
   const [pending, setPending] = useState<"allow" | "deny" | null>(null);
@@ -77,6 +86,7 @@ function Consent({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {redirect && <ReturnsTo redirect={redirect} />}
         <div className="grid gap-2 text-sm">
           <p>It will be able to see:</p>
           <ul className="grid list-disc gap-1 pl-5 text-muted-foreground">
@@ -110,5 +120,39 @@ function Consent({
         {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+// Where Allow sends the browser, and a warning when that's a website we don't know.
+function ReturnsTo({ redirect }: { redirect: AgentRedirect }) {
+  if (redirect.kind === "web" && !redirect.known) {
+    return (
+      <div
+        role="alert"
+        className="flex gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+      >
+        <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <div className="grid gap-1">
+          <p>
+            Allowing sends you to{" "}
+            <span className="font-medium text-foreground">{redirect.host}</span>, a website we don't
+            recognize.
+          </p>
+          <p className="text-muted-foreground">
+            Anyone can give their app any name. Allow it only if you started connecting this agent
+            yourself and you trust {redirect.host}.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      Allowing sends you to{" "}
+      <span className="font-medium text-foreground">
+        {redirect.kind === "app" ? `the ${redirect.scheme} app` : redirect.host}
+      </span>
+      {redirect.kind === "app" || redirect.kind === "local" ? " on this computer" : ""}.
+    </p>
   );
 }

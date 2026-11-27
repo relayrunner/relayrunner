@@ -14,6 +14,7 @@ import { TimeRangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
+import { type ExportColumn, seconds } from "@/lib/table-export";
 import {
   Dialog,
   DialogContent,
@@ -257,6 +258,19 @@ type EnvironmentRow = EnvironmentSummary & {
   subRows?: EnvironmentRow[];
 };
 
+// A runner's export: its jobs and times in seconds, and how it compares with the baseline.
+const ENVIRONMENT_EXPORT_COLUMNS: ExportColumn<EnvironmentRow>[] = [
+  { header: "Runner", value: (env) => env.label },
+  { header: "Detail", value: (env) => env.detail },
+  { header: "Jobs", value: (env) => env.stat.runs },
+  { header: "Passed", value: (env) => env.stat.successes },
+  { header: "Missed", value: (env) => env.missed },
+  { header: "Median wait (s)", value: (env) => seconds(env.stat.waitMs) },
+  { header: "Median run (s)", value: (env) => seconds(env.stat.medianMs) },
+  { header: "p90 run (s)", value: (env) => seconds(env.stat.p90Ms) },
+  { header: "Time vs baseline", value: (env) => env.versus?.ratio },
+];
+
 const environmentColumn = dataTableColumns<EnvironmentRow>();
 const environmentColumns = environmentColumn.columns([
   environmentColumn.accessor("label", {
@@ -459,6 +473,7 @@ function Environments({ report, grouped }: { report: JobTimesReport; grouped: bo
         getSubRows={(env) => env.subRows}
         expanded={grouped ? expanded : undefined}
         rowClassName={(row) => (row.original.group ? "bg-muted/40 hover:bg-muted/40" : undefined)}
+        exportAs={{ name: "runners", columns: ENVIRONMENT_EXPORT_COLUMNS }}
       />
     </Baseline>
   );

@@ -32,6 +32,7 @@ import { sampleSignalRuns, sampleSignals } from "./signals";
 import { sampleLogBucket, sampleTelemetry } from "./telemetry";
 import { sampleActivityOptions, sampleActivityPage } from "./activity";
 import { sampleJobRuns } from "./job-runs";
+import { samplePullRequests } from "./pull-requests";
 import { sampleCheckSavings, sampleUsageReport } from "./usage";
 import {
   sampleProviderSpend,
@@ -41,6 +42,7 @@ import {
 } from "./router";
 import { sampleAutoJobs, sampleRouterSetup, sampleRunnerGroupCheck } from "./router-setup";
 import { sampleParam } from "./param";
+import { sampleRepoChecks } from "./repo-checks";
 import { sampleWorkflowReport } from "./workflow";
 
 type Answer = (match: RegExpMatchArray, query: URLSearchParams) => unknown;
@@ -60,9 +62,16 @@ const daysOf = (query: URLSearchParams) => {
 // The jobs of the last run the sample listed, so a job's steps can follow its times.
 const listedJobs = new Map<number, RunJob>();
 
+// The dev switcher's enterprise. The id has no enterprise, so GitHub serves a generated avatar.
+const ACME_ENTERPRISE = {
+  slug: "acme",
+  avatar: "https://avatars.githubusercontent.com/b/999999999?v=4",
+};
+
 const ANSWERS: [RegExp, Answer][] = [
   [/^\/usage$/, (_, q) => sampleUsageReport(daysOf(q))],
   [/^\/usage\/checks$/, (_, q) => sampleCheckSavings(daysOf(q))],
+  [/^\/usage\/pull-requests$/, (_, q) => samplePullRequests(windowOf(q))],
   [
     /^\/activity$/,
     (_, q) =>
@@ -76,6 +85,17 @@ const ANSWERS: [RegExp, Answer][] = [
   ],
   [/^\/activity\/options$/, () => sampleActivityOptions()],
   [/^\/usage\/actions$/, () => sampleActionsUsage()],
+  // The dev switcher's orgs (components/workspace-menu.tsx), two of them in one enterprise.
+  [
+    /^\/workspaces\/enterprises$/,
+    () => ({
+      workspaces: [
+        { id: "dev", enterprise: null },
+        { id: "dev-org", enterprise: ACME_ENTERPRISE },
+        { id: "dev-org-2", enterprise: ACME_ENTERPRISE },
+      ],
+    }),
+  ],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   // `?sample=history`: a new installation whose run history is still being read.
   [
@@ -197,6 +217,7 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/workspaces\/[^/]+\/route-outcomes$/, () => sampleRouteOutcomes()],
   [/^\/workspaces\/[^/]+\/router-setup$/, () => sampleRouterSetup()],
   [/^\/workspaces\/[^/]+\/public-repos$/, () => ({ repositories: ["acme/docs"] })],
+  [/^\/workspaces\/[^/]+\/repo-checks$/, () => sampleRepoChecks()],
   [/^\/workspaces\/[^/]+\/runner-group-check$/, () => ({ check: sampleRunnerGroupCheck() })],
   [/^\/workspaces\/[^/]+\/auto-jobs$/, () => sampleAutoJobs()],
   [/^\/workspaces\/[^/]+\/retry-settings$/, () => DEFAULT_RETRY_SETTINGS],

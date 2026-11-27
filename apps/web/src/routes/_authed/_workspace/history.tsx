@@ -7,6 +7,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
 import { PublicRepoMark } from "@/components/public-repo";
+import { RepoSelect, repositoriesOf } from "@/components/repo-select";
 import { HISTORY_TABS as TABS, PageTabs, viewOf } from "@/components/page-tabs";
 import {
   providerStyle,
@@ -192,10 +193,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const setRouted = (next: RoutedFilter) => setSearch({ routed: unlessDefault(next, "all") });
   const setSort = (next: RunSort) => setSearch({ sort: unlessDefault(next, "newest") });
 
-  const repositories = useMemo(
-    () => [...new Set(report.runs.map((run) => run.repository))].sort(),
-    [report],
-  );
+  const repositories = useMemo(() => repositoriesOf(report.runs), [report]);
   // The report holds the whole range, so the filters are applied here.
   const runs = useMemo(() => {
     const shown = report.runs.filter(
@@ -226,21 +224,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <TimeRangePicker {...JOB_RANGES} value={range} onChange={setRange} />
-        {repositories.length > 1 && (
-          <Select value={repository} onValueChange={setRepository}>
-            <SelectTrigger size="sm" aria-label="Repo">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All repos</SelectItem>
-              {repositories.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <RepoSelect value={repository} repositories={repositories} onChange={setRepository} />
         <Select value={result} onValueChange={(value) => setResult(value as ResultFilter)}>
           <SelectTrigger size="sm" aria-label="Result">
             <SelectValue />

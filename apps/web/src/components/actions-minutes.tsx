@@ -1,4 +1,4 @@
-import { RefreshCwIcon, TriangleAlert } from "lucide-react";
+import { Building2Icon, RefreshCwIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authDisabled } from "@/lib/auth-client";
 import { githubInstallHref } from "@/lib/github";
@@ -14,7 +14,7 @@ import {
 } from "@/lib/actions-usage";
 import { QuotaMeter } from "@/components/quota-meter";
 import { timeAgo } from "@/lib/machines";
-import { cn } from "@/lib/utils";
+import { cn, count as compactCount, percent } from "@/lib/utils";
 
 // One GitHub account's Actions minutes this month (#116, #117), and the alarm when GitHub has
 // billed overage. Used on Settings > GitHub and the GitHub provider page.
@@ -74,7 +74,10 @@ export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
   );
 }
 
-/** Used vs included minutes, the burn rate, and why it can't be judged when it can't. */
+/**
+ * Used vs included minutes, the burn rate, where the cycle is headed, and why it can't be judged
+ * when it can't.
+ */
 export function ActionsMinutes({
   usage,
   onRefresh,
@@ -90,6 +93,7 @@ export function ActionsMinutes({
   const quota = usage.quotaMinutes;
   const share = quota ? usage.usedMinutes / quota : 0;
   const over = usage.netAmount > 0 || share >= 1;
+  const pace = paceText(usage);
   return (
     <div className="grid gap-1.5 rounded-lg border bg-well px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
@@ -109,11 +113,16 @@ export function ActionsMinutes({
         <span className="flex items-center gap-1.5 text-muted-foreground">
           <span>
             {usage.burnRatePerHour !== null && `${count(usage.burnRatePerHour)} min/hour · `}
-            {usage.enterprise
-              ? `Shared with ${usage.enterprise}`
-              : usage.plan
-                ? `${planName(usage.plan)} plan`
-                : "Plan unknown"}
+            {usage.enterprise ? (
+              <>
+                <Building2Icon aria-hidden className="mr-1 inline size-3.5 align-[-2px]" />
+                Shared with {usage.enterprise}
+              </>
+            ) : usage.plan ? (
+              `${planName(usage.plan)} plan`
+            ) : (
+              "Plan unknown"
+            )}
           </span>
           {onRefresh && (
             <button
@@ -137,8 +146,19 @@ export function ActionsMinutes({
           used={usage.usedMinutes}
           quota={quota}
           over={over}
+          projected={usage.projection?.projectedMinutes}
         />
       )}
+      {usage.orgUsedMinutes !== undefined && usage.usedMinutes > 0 && (
+        <p
+          className="text-xs text-muted-foreground"
+          title={`${count(usage.orgUsedMinutes)} minutes`}
+        >
+          {usage.accountLogin} used {compactCount(usage.orgUsedMinutes)} min of these (
+          {percent(usage.orgUsedMinutes / usage.usedMinutes)}).
+        </p>
+      )}
+      {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
       {unavailable && (
         <p className="text-xs text-muted-foreground">
           {unavailable}
@@ -189,20 +209,16 @@ export function IncludedMinutes() {
       <h2 className="font-semibold">Included minutes</h2>
       <OverageBanner accounts={usage.accounts} />
       <ul className="grid gap-3">
-        {usage.accounts.map((account) => {
-          const pace = paceText(account);
-          return (
-            <li key={account.installationId} className="grid gap-1.5">
-              {several && <span className="text-sm font-medium">{account.accountLogin}</span>}
-              <ActionsMinutes
-                usage={account}
-                onRefresh={authDisabled ? undefined : refresh}
-                refreshing={refreshing}
-              />
-              {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
-            </li>
-          );
-        })}
+        {usage.accounts.map((account) => (
+          <li key={account.installationId} className="grid gap-1.5">
+            {several && <span className="text-sm font-medium">{account.accountLogin}</span>}
+            <ActionsMinutes
+              usage={account}
+              onRefresh={authDisabled ? undefined : refresh}
+              refreshing={refreshing}
+            />
+          </li>
+        ))}
       </ul>
     </div>
   );

@@ -2,11 +2,12 @@
 // default branch so a pull request can't change the checks it gets. The App can read only these
 // two files (single-file Contents permission). No file means no checks.
 //
-// Both GitHub Apps read this one file: the main App runs `pr-title`, the opt-in Checks App runs
-// `lint`. The schema stays strict and knows every key, so a typo is reported instead of ignored.
+// Both GitHub Apps read this one file: the main App runs `pr-title` and `pr-description`, the
+// opt-in Checks App runs `lint`. The schema stays strict and knows every key, so a typo is reported instead of ignored.
 //
 //   checks:
 //     pr-title: true            # or { types: [feat, fix, docs] } to narrow the allowed types
+//     pr-description: true      # or { min-length: 50 } to ask for more than a line
 //     lint: [oxlint, oxfmt]     # or { tools: [oxlint], paths: ["apps/**"] } to scope it
 //   retry: true                 # or { runner: other, max: 2 }, or false to turn it off here
 
@@ -36,6 +37,12 @@ const schema = z
         "pr-title": z
           .union([z.boolean(), z.object({ types: typeList.optional() }).strict()])
           .optional(),
+        "pr-description": z
+          .union([
+            z.boolean(),
+            z.object({ "min-length": z.number().int().positive().optional() }).strict(),
+          ])
+          .optional(),
         lint: z
           .union([
             lintTools,
@@ -58,7 +65,7 @@ export interface LintConfig {
   paths: string[];
 }
 
-// `prTitle` and `lint` are null when that check is off. `retry` is null when the file leaves it to
+// `prTitle`, `prDescription` and `lint` are null when that check is off. `retry` is null when the file leaves it to
 // the workspace, false when it turns retries off for the repo, and the settings it sets otherwise.
 export type ConfigResult =
   | { kind: "none" }
@@ -66,6 +73,8 @@ export type ConfigResult =
       kind: "config";
       path: string;
       prTitle: { types: string[] } | null;
+      // The fewest characters the description needs, not counting comments and spaces.
+      prDescription: { minLength: number } | null;
       lint: LintConfig | null;
       retry: Partial<RetrySettings> | false | null;
     }
@@ -89,12 +98,16 @@ export function parseRepoConfig(path: string, text: string): ConfigResult {
         .join("; "),
     };
   const prTitle = result.data?.checks?.["pr-title"];
+  const prDescription = result.data?.checks?.["pr-description"];
   const lint = result.data?.checks?.lint;
   const retry = result.data?.retry;
   return {
     kind: "config",
     path,
     prTitle: !prTitle ? null : { types: prTitle === true ? [] : (prTitle.types ?? []) },
+    prDescription: !prDescription
+      ? null
+      : { minLength: (prDescription !== true && prDescription["min-length"]) || 1 },
     lint: !lint
       ? null
       : Array.isArray(lint)
@@ -110,9 +123,10 @@ function dedupe<T>(values: T[]) {
 
 /** The repo's config from its default branch. */
 export async function loadRepoConfig(token: string, repo: string): Promise<ConfigResult> {
-  for (const path of CONFIG_PATHS) {
-    const text = await repoFile(token, repo, path);
-    if (text !== null) return parseRepoConfig(path, text);
-  }
-  return { kind: "none" };
+  // Both at once: most repos have neither file, and every pull request event reads them.
+  const texts = await Promise.all(CONFIG_PATHS.map((path) => repoFile(token, repo, path)));
+  const found = texts.findIndex((text) => text !== null);
+  return found === -1
+    ? { kind: "none" }
+    : parseRepoConfig(CONFIG_PATHS[found], texts[found] as string);
 }

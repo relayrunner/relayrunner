@@ -36,7 +36,9 @@ import {
   type JobsReport,
   isLongWait,
   jobsQuery,
+  jobUrl,
 } from "@/lib/runs";
+import { type ExportColumn, isoTime, seconds } from "@/lib/table-export";
 import { JOB_RANGES } from "@/lib/job-times";
 import { rangeSearch, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { rangePhrase } from "@/lib/time-range";
@@ -103,6 +105,25 @@ const daySection = (row: Row) => dayHeading(row.completedAt);
 const rowId = (row: Row) => (row.group ? `group:${row.group.key}` : String(row.id));
 
 const [ListContext, useListContext] = createCellContext<{ showRepository: boolean }>("Jobs");
+
+// A job's export: what ran where, how long it waited and ran in seconds, and where it came from.
+const EXPORT_COLUMNS: ExportColumn<Row>[] = [
+  { header: "Repo", value: (job) => job.repository },
+  { header: "Workflow", value: (job) => job.workflow },
+  { header: "Job", value: (job) => job.name },
+  { header: "Ran on", value: (job) => job.runner },
+  { header: "Result", value: (job) => job.conclusion },
+  { header: "Wait (s)", value: (job) => seconds(job.waitMs) },
+  { header: "Run (s)", value: (job) => seconds(job.runMs) },
+  { header: "Finished", value: (job) => isoTime(job.completedAt) },
+  { header: "Branch", value: (job) => job.branch },
+  { header: "Pull request", value: (job) => job.pullRequest },
+  { header: "Commit", value: (job) => job.sha },
+  { header: "Started by", value: (job) => job.actor },
+  { header: "CPU p95", value: (job) => job.usage?.cpuP95 },
+  { header: "Memory p95 (MB)", value: (job) => job.usage?.memoryP95Mb },
+  { header: "URL", value: jobUrl },
+];
 
 const column = dataTableColumns<Row>();
 const columns = column.columns([
@@ -406,6 +427,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
                 data={tableRows}
                 getRowId={rowId}
                 getSubRows={(row) => row.subRows}
+                exportAs={{ name: "jobs", columns: EXPORT_COLUMNS }}
                 expanded={grouped ? expanded : undefined}
                 rowClassName={groupedRowClass}
                 fullRow={(row) => {

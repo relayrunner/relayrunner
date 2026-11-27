@@ -27,7 +27,7 @@ On the dashboard's Router page, **Route a repo** takes you through one repo at a
 
 1. Pick a repo. Repos your org's Default runner group leaves out are marked, with the fix.
 2. Pick its jobs from recent runs, and a size for each if you want one other than the default.
-3. Copy a prompt for your coding agent, which runs `init` and opens a PR, or copy the `init` command.
+3. Copy a prompt for your coding agent, which runs `init`, offers to add [pull request checks](/docs/concepts/optimized-checks) if the repo has no `relayrunner.yml`, and opens a PR. Or copy the `init` command.
 
 After you copy, the sheet waits for the repo's first routed run and says when it's routed. **Next repo** moves on, and from the second repo one prompt can cover the rest.
 

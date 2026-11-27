@@ -160,6 +160,11 @@ function routeSteps(named: boolean, auto: boolean): string[] {
   ];
 }
 
+// Offers the pull request checks in the same PR, where the repo has no relayrunner.yml yet. With
+// several repos, the question comes once, with the first.
+const checksStep = (several: boolean) =>
+  `If the repo has no relayrunner.yml in .github/ or the root, offer to add .github/relayrunner.yml with \`checks: { pr-title: true, pr-description: true }\` in the same PR. Suggest pr-title only if recent commits already follow Conventional Commits. ${several ? "Ask once for all repos, with the first one." : "Add it only if I say yes."}`;
+
 const numbered = (steps: string[]) => steps.map((step, i) => `${i + 1}. ${step}`).join("\n");
 const jobLine = (job: PickedJob) => `${job.workflow} / ${job.job}`;
 
@@ -174,6 +179,7 @@ export function routePrompt(repo: string, jobs: PickedJob[] | null, auto: boolea
     numbered([
       `Work in a checkout of ${repo} (clone it with gh if needed), on a new branch named ${BRANCH}.`,
       ...routeSteps(named, auto),
+      checksStep(false),
       `Show me \`git diff\`. When I approve, commit, push, and open a PR titled "${PR_TITLE}".`,
     ]),
     DETAILS,
@@ -193,6 +199,7 @@ export function routeAllPrompt(
     `For each repo:\n${numbered([
       `Clone it with gh into a temp folder, on a new branch named ${BRANCH}.`,
       ...routeSteps(true, auto),
+      checksStep(true),
       `Commit, push, and open a PR titled "${PR_TITLE}". Don't merge anything.`,
     ])}`,
     "Show me the first repo's diff and wait for my OK before doing the rest. Finish with a table: repo, PR URL, jobs routed, and jobs skipped with why.",

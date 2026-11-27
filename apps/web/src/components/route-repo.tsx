@@ -7,7 +7,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { useCopy } from "@/components/add-runner";
+import { useCopy } from "@/lib/use-copy";
 import { AUTO_DOCS, SizeSelect } from "@/components/router-workflows";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";

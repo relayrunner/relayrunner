@@ -7,7 +7,7 @@ import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 
 export const GET: APIRoute = async ({ site }) => {
   const abs = (path: string) => new URL(path, site).href;
-  const updates = (await latestUpdates(6))
+  const updates = latestUpdates(6)
     .map(
       (update) =>
         `- ${update.date.toISOString().slice(0, 10)}: [${update.title}](${abs(update.href)}) (${update.type})`,

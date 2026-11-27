@@ -1114,6 +1114,23 @@ export const actionsUsage = sqliteTable(
   ],
 );
 
+// Each UTC day's private-repo Actions minutes this cycle (Linux 2-core quota minutes), so the
+// dashboard can project when an account's included minutes run out at its recent pace
+// (src/providers/minutes-projection.ts). Every poll replaces the installation's rows, so only the
+// current cycle is kept.
+export const actionsUsageDay = sqliteTable(
+  "actions_usage_day",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // YYYY-MM-DD, UTC.
+    day: text("day").notNull(),
+    usedMinutes: real("used_minutes").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.installationId, table.day] })],
+);
+
 // Which GitHub accounts installed the opt-in RelayRunner Spend App, which reads org billing
 // (src/github/spend-app.ts). Keyed by GitHub account, since it's installed apart from the main App and
 // can come before it. Written by the Spend App's installation webhooks and reconciled hourly.

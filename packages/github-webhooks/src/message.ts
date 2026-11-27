@@ -74,7 +74,12 @@ export interface WorkflowRun {
 export interface PullRequest {
   number: number;
   title: string;
+  // The description, "" when it has none.
+  body: string;
   headSha: string;
+  // For an `edited` action, the fields that changed, as GitHub names them ("title", "body").
+  // Null for other actions.
+  changed: string[] | null;
 }
 
 export interface InstallationRepo {
@@ -158,8 +163,8 @@ export type WebhookMessage =
   // has no installation. The only action is `revoked`.
   | (Base & { event: "github_app_authorization"; senderId: number });
 
-// The pull_request actions that give a PR a new title or head commit. `edited` counts only when
-// the title changed (a body edit doesn't need a new check).
+// The pull_request actions that give a PR a new title, description or head commit. `edited` counts
+// only when the title or description changed (not the base branch).
 const PULL_REQUEST_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited"]);
 
 // The check_suite actions that ask the App to run its checks. `completed` is only a report.
@@ -308,7 +313,6 @@ export function toWebhookMessage(
       if (
         !base.action ||
         !PULL_REQUEST_ACTIONS.has(base.action) ||
-        (base.action === "edited" && !(isRecord(payload.changes) && "title" in payload.changes)) ||
         !isRecord(pr) ||
         !isRecord(repo) ||
         typeof pr.number !== "number" ||
@@ -318,11 +322,23 @@ export function toWebhookMessage(
         typeof repo.full_name !== "string"
       )
         return null;
+      const changed =
+        base.action === "edited"
+          ? Object.keys(isRecord(payload.changes) ? payload.changes : {})
+          : null;
+      // The checks read only the title and description, so other edits (the base branch) are dropped.
+      if (changed && !changed.includes("title") && !changed.includes("body")) return null;
       return {
         ...base,
         event,
         repository: { id: Number(repo.id), fullName: repo.full_name },
-        pullRequest: { number: pr.number, title: pr.title, headSha: pr.head.sha },
+        pullRequest: {
+          number: pr.number,
+          title: pr.title,
+          body: typeof pr.body === "string" ? pr.body : "",
+          headSha: pr.head.sha,
+          changed,
+        },
       };
     }
     case "check_suite": {
