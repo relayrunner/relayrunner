@@ -1,3 +1,4 @@
+import { SectionBoundary } from "@/components/error-boundary";
 import { createFileRoute } from "@tanstack/react-router";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -85,7 +86,9 @@ function GitHubSettingsPage() {
         </Card>
 
         {installation && !installation.suspendedAt && (
-          <PullRequestChecks workspaceId={workspace.id} />
+          <SectionBoundary>
+            <PullRequestChecks workspaceId={workspace.id} />
+          </SectionBoundary>
         )}
       </div>
     </section>
@@ -169,7 +172,9 @@ function ConnectedOrg({
           refreshing={refreshing}
         />
       )}
-      {!suspendedAt && <ApiUsage installationId={installation.id} />}
+      <SectionBoundary>
+        {!suspendedAt && <ApiUsage installationId={installation.id} />}
+      </SectionBoundary>
     </li>
   );
 }

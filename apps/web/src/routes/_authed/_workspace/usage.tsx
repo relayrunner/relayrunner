@@ -177,48 +177,54 @@ function Overview({ loaded }: { loaded: UsageData }) {
             />
           </div>
 
-          <JobLengths report={report} />
+          <SectionBoundary>
+            <JobLengths report={report} />
+          </SectionBoundary>
 
-          <Table
-            caption="By runner"
-            exportAs={{
-              name: "usage-by-runner",
-              rows: report.byRunner,
-              columns: RUNNER_EXPORT_COLUMNS,
-            }}
-            head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
-            hideOnPhone={[1, 3, 5]}
-            rows={report.byRunner.map((row) => [
-              <span key="runner">
-                {row.label}
-                <span className="ml-1.5 text-muted-foreground">
-                  {row.perMinute ? `${money(row.perMinute)}/min` : "free"}
-                </span>
-              </span>,
-              <Count key="jobs" value={row.jobs} />,
-              <Count key="shortJobs" value={row.shortJobs} />,
-              minutes(row.billedMinutes),
-              money(row.shortCost),
-              money(row.cost),
-            ])}
-          />
+          <SectionBoundary>
+            <Table
+              caption="By runner"
+              exportAs={{
+                name: "usage-by-runner",
+                rows: report.byRunner,
+                columns: RUNNER_EXPORT_COLUMNS,
+              }}
+              head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
+              hideOnPhone={[1, 3, 5]}
+              rows={report.byRunner.map((row) => [
+                <span key="runner">
+                  {row.label}
+                  <span className="ml-1.5 text-muted-foreground">
+                    {row.perMinute ? `${money(row.perMinute)}/min` : "free"}
+                  </span>
+                </span>,
+                <Count key="jobs" value={row.jobs} />,
+                <Count key="shortJobs" value={row.shortJobs} />,
+                minutes(row.billedMinutes),
+                money(row.shortCost),
+                money(row.cost),
+              ])}
+            />
+          </SectionBoundary>
 
-          <Table
-            caption="Repositories with the most short-job cost"
-            exportAs={{
-              name: "usage-by-repo",
-              rows: report.byRepository,
-              columns: REPOSITORY_EXPORT_COLUMNS,
-            }}
-            head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
-            hideOnPhone={[1]}
-            rows={report.byRepository.map((repo) => [
-              <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
-              <Count key="jobs" value={repo.jobs} />,
-              <Count key="shortJobs" value={repo.shortJobs} />,
-              money(repo.shortCost),
-            ])}
-          />
+          <SectionBoundary>
+            <Table
+              caption="Repositories with the most short-job cost"
+              exportAs={{
+                name: "usage-by-repo",
+                rows: report.byRepository,
+                columns: REPOSITORY_EXPORT_COLUMNS,
+              }}
+              head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
+              hideOnPhone={[1]}
+              rows={report.byRepository.map((repo) => [
+                <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
+                <Count key="jobs" value={repo.jobs} />,
+                <Count key="shortJobs" value={repo.shortJobs} />,
+                money(repo.shortCost),
+              ])}
+            />
+          </SectionBoundary>
 
           <p className="max-w-[62ch] text-sm text-muted-foreground">
             Estimates use GitHub's per-minute prices for private repos: ubuntu-slim $0.002,

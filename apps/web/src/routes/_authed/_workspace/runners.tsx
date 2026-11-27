@@ -349,28 +349,32 @@ function RunnersPage() {
       </PageHeader>
       <TooltipProvider>
         <div className="grid max-w-5xl gap-8">
-          {!othersDismissed && machinesLoaded && (
-            <OtherMachinesBanner
-              workspace={current.workspace.name}
-              others={others}
-              onChoose={() => setOthersOpen(true)}
-              onDismiss={dismissOthers}
-            />
-          )}
-          {machinesLoaded && !empty && (
-            <RunnersNow
-              machines={allMachines}
-              live={live}
-              updatedAt={updatedAt}
-              attention={
-                <NeedsAttention
-                  items={attention}
-                  onAddRunner={editable ? () => setGithubOpen(true) : undefined}
-                  onChanged={refreshMachines}
-                />
-              }
-            />
-          )}
+          <SectionBoundary>
+            {!othersDismissed && machinesLoaded && (
+              <OtherMachinesBanner
+                workspace={current.workspace.name}
+                others={others}
+                onChoose={() => setOthersOpen(true)}
+                onDismiss={dismissOthers}
+              />
+            )}
+          </SectionBoundary>
+          <SectionBoundary>
+            {machinesLoaded && !empty && (
+              <RunnersNow
+                machines={allMachines}
+                live={live}
+                updatedAt={updatedAt}
+                attention={
+                  <NeedsAttention
+                    items={attention}
+                    onAddRunner={editable ? () => setGithubOpen(true) : undefined}
+                    onChanged={refreshMachines}
+                  />
+                }
+              />
+            )}
+          </SectionBoundary>
           {/* Where the counts of running, idle, offline and queued go once the machines are back. */}
           {!machinesLoaded && (
             <div
@@ -385,12 +389,14 @@ function RunnersPage() {
             </RunnerGroup>
           ) : empty ? (
             <RunnerGroup title="Self-hosted" bare>
-              <ConnectLanding
-                fallback={order ? fallbackAfterMachine(order.order.steps) : null}
-                found={editable ? addable : []}
-                onAddFound={addFound}
-                onAddExisting={editable ? () => setGithubOpen(true) : undefined}
-              />
+              <SectionBoundary>
+                <ConnectLanding
+                  fallback={order ? fallbackAfterMachine(order.order.steps) : null}
+                  found={editable ? addable : []}
+                  onAddFound={addFound}
+                  onAddExisting={editable ? () => setGithubOpen(true) : undefined}
+                />
+              </SectionBoundary>
             </RunnerGroup>
           ) : (
             <RunnerGroup
@@ -446,11 +452,13 @@ function RunnersPage() {
             >
               {list ? (
                 <div className="grid gap-3">
-                  <RunnerList
-                    rows={shown}
-                    jobTimes={jobTimes ?? NO_JOB_TIMES}
-                    onRemovedFromWorkspace={dismissOthers}
-                  />
+                  <SectionBoundary>
+                    <RunnerList
+                      rows={shown}
+                      jobTimes={jobTimes ?? NO_JOB_TIMES}
+                      onRemovedFromWorkspace={dismissOthers}
+                    />
+                  </SectionBoundary>
                   {showConnect && (
                     <div className="max-w-md">
                       <ConnectCard onDismiss={dismissConnect} />
@@ -474,13 +482,15 @@ function RunnersPage() {
                 <>
                   {shown.map(({ machine, view }) => (
                     <li key={machine.id} className="grid min-w-0">
-                      <MachineCard
-                        machine={machine}
-                        view={view}
-                        jobTime={jobTimes?.[machine.id]}
-                        specs={showSpecs}
-                        onRemovedFromWorkspace={dismissOthers}
-                      />
+                      <SectionBoundary>
+                        <MachineCard
+                          machine={machine}
+                          view={view}
+                          jobTime={jobTimes?.[machine.id]}
+                          specs={showSpecs}
+                          onRemovedFromWorkspace={dismissOthers}
+                        />
+                      </SectionBoundary>
                     </li>
                   ))}
                   {showConnect && (
@@ -490,12 +500,14 @@ function RunnersPage() {
                   )}
                   {showFound && (
                     <li className="grid min-w-0">
-                      <FoundCard
-                        runners={addable}
-                        onAdd={addFound}
-                        onReview={() => setGithubOpen(true)}
-                        onDismiss={dismissFound}
-                      />
+                      <SectionBoundary>
+                        <FoundCard
+                          runners={addable}
+                          onAdd={addFound}
+                          onReview={() => setGithubOpen(true)}
+                          onDismiss={dismissFound}
+                        />
+                      </SectionBoundary>
                     </li>
                   )}
                 </>
@@ -538,11 +550,15 @@ function RunnersPage() {
               }
             >
               {cloud.length > 0 && cloudList ? (
-                <CloudRunnersTable providers={cloud} range={search.cloud} />
+                <SectionBoundary>
+                  <CloudRunnersTable providers={cloud} range={search.cloud} />
+                </SectionBoundary>
               ) : cloud.length > 0 ? (
                 cloud.map((summary) => (
                   <li key={summary.provider} className="grid min-w-0">
-                    <CloudProviderCard summary={summary} range={search.cloud} />
+                    <SectionBoundary>
+                      <CloudProviderCard summary={summary} range={search.cloud} />
+                    </SectionBoundary>
                   </li>
                 ))
               ) : (

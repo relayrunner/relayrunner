@@ -22,6 +22,7 @@ import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerLink } from "@/components/runner-link";
 import { StatTile } from "@/components/stat-tile";
 import { RecentEvaluations, useRecentEvaluations } from "@/components/recent-evaluations";
+import { PageNotFound, SectionBoundary } from "@/components/error-boundary";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { type ExportColumn, seconds } from "@/lib/table-export";
@@ -97,6 +98,8 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider")(
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: ProviderPage,
+  // An unknown provider says so here, inside the app, rather than in place of the whole app.
+  notFoundComponent: () => <PageNotFound />,
 });
 
 // Keyed by provider, so moving to another provider's page starts from its own loaded report.
@@ -164,7 +167,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
         </div>
       </header>
 
-      {evaluable && <ProviderEvaluations provider={provider} />}
+      <SectionBoundary>{evaluable && <ProviderEvaluations provider={provider} />}</SectionBoundary>
 
       {notSetUp ? (
         <SetUp provider={provider} />
@@ -181,17 +184,25 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
             </p>
           ) : (
             <>
-              <Totals report={report} />
-              <ProviderTrendsCard
-                provider={provider}
-                range={range}
-                metric={search.chart ?? "wait"}
-                percentile={search.p ?? 50}
-                onMetric={(chart) => setSearch({ chart: unlessDefault(chart, "wait") })}
-                onPercentile={(p) => setSearch({ p: unlessDefault(p, 50) })}
-              />
-              <Runners report={report} />
-              <Workflows report={report} />
+              <SectionBoundary>
+                <Totals report={report} />
+              </SectionBoundary>
+              <SectionBoundary>
+                <ProviderTrendsCard
+                  provider={provider}
+                  range={range}
+                  metric={search.chart ?? "wait"}
+                  percentile={search.p ?? 50}
+                  onMetric={(chart) => setSearch({ chart: unlessDefault(chart, "wait") })}
+                  onPercentile={(p) => setSearch({ p: unlessDefault(p, 50) })}
+                />
+              </SectionBoundary>
+              <SectionBoundary>
+                <Runners report={report} />
+              </SectionBoundary>
+              <SectionBoundary>
+                <Workflows report={report} />
+              </SectionBoundary>
               <p className="text-xs text-muted-foreground">
                 {costNote(report)} RelayRunner reads job timings from GitHub and never sees your
                 bill, so costs are estimates at list prices (checked {report.pricesChecked}), before
@@ -202,23 +213,29 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
         </div>
       )}
 
-      {provider === "github" && <IncludedMinutes />}
-      {isFreeMinutesProvider(provider) && <ProviderFreeMinutes provider={provider} />}
+      <SectionBoundary>{provider === "github" && <IncludedMinutes />}</SectionBoundary>
+      <SectionBoundary>
+        {isFreeMinutesProvider(provider) && <ProviderFreeMinutes provider={provider} />}
+      </SectionBoundary>
 
-      <ProviderPlans provider={provider} />
+      <SectionBoundary>
+        <ProviderPlans provider={provider} />
+      </SectionBoundary>
 
-      {catalog.length ? (
-        <MachinePrices
-          provider={provider}
-          catalog={catalog}
-          runners={report.runners}
-          view={search.prices ?? "grid"}
-          onView={(view) => setSearch({ prices: unlessDefault(view, "grid") })}
-        />
-      ) : (
-        // Providers operators added have one price and no catalog.
-        <Prices prices={report.prices} />
-      )}
+      <SectionBoundary>
+        {catalog.length ? (
+          <MachinePrices
+            provider={provider}
+            catalog={catalog}
+            runners={report.runners}
+            view={search.prices ?? "grid"}
+            onView={(view) => setSearch({ prices: unlessDefault(view, "grid") })}
+          />
+        ) : (
+          // Providers operators added have one price and no catalog.
+          <Prices prices={report.prices} />
+        )}
+      </SectionBoundary>
 
       {!notSetUp && info.example && (
         <div className="grid max-w-3xl gap-3">
@@ -233,7 +250,9 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
         </div>
       )}
 
-      <PriceChanges prices={report.prices} />
+      <SectionBoundary>
+        <PriceChanges prices={report.prices} />
+      </SectionBoundary>
     </section>
   );
 }

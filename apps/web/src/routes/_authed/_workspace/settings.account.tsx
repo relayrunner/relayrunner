@@ -1,3 +1,4 @@
+import { SectionBoundary } from "@/components/error-boundary";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
@@ -76,9 +77,11 @@ function AccountSettingsPage() {
           )}
         </Card>
 
-        {(user || authDisabled) && <TimeZoneCard />}
+        <SectionBoundary>{(user || authDisabled) && <TimeZoneCard />}</SectionBoundary>
 
-        <ThemeCard />
+        <SectionBoundary>
+          <ThemeCard />
+        </SectionBoundary>
 
         {user && (
           <Card className="py-4">

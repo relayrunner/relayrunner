@@ -1,3 +1,4 @@
+import { SectionBoundary } from "@/components/error-boundary";
 import { AppError, ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
 import { heldText } from "@relayrunner/activity";
@@ -69,17 +70,18 @@ function ProviderSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {connections.map((connection) => (
-          <ProviderCard
-            key={connection.provider}
-            first={connection}
-            manager={manager}
-            organization={organization}
-            freeMinutes={
-              isFreeMinutesProvider(connection.provider)
-                ? (freeMinutes[connection.provider] ?? null)
-                : undefined
-            }
-          />
+          <SectionBoundary key={connection.provider}>
+            <ProviderCard
+              first={connection}
+              manager={manager}
+              organization={organization}
+              freeMinutes={
+                isFreeMinutesProvider(connection.provider)
+                  ? (freeMinutes[connection.provider] ?? null)
+                  : undefined
+              }
+            />
+          </SectionBoundary>
         ))}
       </div>
     </section>

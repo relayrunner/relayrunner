@@ -1,3 +1,4 @@
+import { SectionBoundary } from "@/components/error-boundary";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpRightIcon,
@@ -172,7 +173,9 @@ function SignalsPage() {
             value={range}
             onChange={chooseRange}
           />
-          {filtered && <FilterBar filter={filter} report={report} range={range} />}
+          <SectionBoundary>
+            {filtered && <FilterBar filter={filter} report={report} range={range} />}
+          </SectionBoundary>
         </div>
         {report.totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
@@ -185,9 +188,13 @@ function SignalsPage() {
             {/* Every area shows, with the signals that didn't show up named under it, so the page
                 says what it looks for and not only what it found. */}
             {(Object.keys(AREAS) as SignalArea[]).map((area) => (
-              <AreaSection key={area} area={area} report={report} manyRepos={manyRepos} />
+              <SectionBoundary key={area}>
+                <AreaSection area={area} report={report} manyRepos={manyRepos} />
+              </SectionBoundary>
             ))}
-            <BreakdownSection report={report} manyRepos={manyRepos} />
+            <SectionBoundary>
+              <BreakdownSection report={report} manyRepos={manyRepos} />
+            </SectionBoundary>
           </>
         )}
       </div>

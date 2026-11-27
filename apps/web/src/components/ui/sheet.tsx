@@ -1,6 +1,7 @@
 import * as React from "react";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
+import { SectionBoundary } from "@/components/error-boundary";
 import { DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import { readNumber, saveNumber } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
@@ -70,7 +71,8 @@ function SheetContent({
               <span className="sr-only">Close</span>
             </SheetPrimitive.Close>
           </div>
-          {children}
+          {/* A crash in the panel's content stays in the panel, which keeps its close button. */}
+          <SectionBoundary className="m-4 mt-14">{children}</SectionBoundary>
         </div>
         {/* Last, so opening the panel focuses the content or the close button first. */}
         {widthKey && (

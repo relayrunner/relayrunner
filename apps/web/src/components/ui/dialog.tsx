@@ -2,6 +2,7 @@ import * as React from "react";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
+import { SectionBoundary } from "@/components/error-boundary";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -52,7 +53,8 @@ function DialogContent({
         )}
         {...props}
       >
-        {children}
+        {/* A crash in the dialog's content stays in the dialog, which can still be closed. */}
+        <SectionBoundary className="mr-6">{children}</SectionBoundary>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"

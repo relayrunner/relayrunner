@@ -1,3 +1,4 @@
+import { PageNotFound, SectionBoundary } from "@/components/error-boundary";
 // Evaluate a provider: run one workflow on it five times and compare with how it runs today
 // (apps/api/src/reports/evaluations.ts). Without `?id` it walks through connecting the provider and
 // picking a workflow; with one it shows that evaluation's runs, then the comparison.
@@ -74,6 +75,8 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider_/e
       throw notFound();
   },
   component: EvaluatePage,
+  // An unknown provider says so here, inside the app, rather than in place of the whole app.
+  notFoundComponent: () => <PageNotFound />,
 });
 
 // How often a running evaluation, and the setup's checks, look again.
@@ -589,7 +592,9 @@ function EvaluationView({
   return (
     <>
       <EvaluateHeader provider={provider} report={report} actions={<NextSteps report={report} />} />
-      <Results report={report} editable={editable} onChange={again} />
+      <SectionBoundary>
+        <Results report={report} editable={editable} onChange={again} />
+      </SectionBoundary>
     </>
   );
 }
@@ -850,7 +855,9 @@ export function Results({
         </div>
       )}
 
-      {report.state === "failed" && <FailedJobs report={report} preview={preview} />}
+      <SectionBoundary>
+        {report.state === "failed" && <FailedJobs report={report} preview={preview} />}
+      </SectionBoundary>
 
       {!empty && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -899,9 +906,11 @@ export function Results({
         </div>
       )}
 
-      {!empty && <RunsChart report={report} current={current?.attempt ?? null} />}
+      <SectionBoundary>
+        {!empty && <RunsChart report={report} current={current?.attempt ?? null} />}
+      </SectionBoundary>
 
-      {current && <LiveRun report={report} attempt={current} />}
+      <SectionBoundary>{current && <LiveRun report={report} attempt={current} />}</SectionBoundary>
 
       {finished > 0 && (
         <div className="overflow-x-auto rounded-xl border bg-card">

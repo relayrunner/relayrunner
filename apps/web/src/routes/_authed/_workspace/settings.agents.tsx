@@ -1,3 +1,4 @@
+import { SectionBoundary } from "@/components/error-boundary";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -41,13 +42,19 @@ function AgentSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <ConnectGuide mcpUrl={mcpUrl} />
-        <SkillsCard />
+        <SectionBoundary>
+          <SkillsCard />
+        </SectionBoundary>
         {agents.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             You haven't connected an agent to this workspace.
           </p>
         ) : (
-          agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)
+          agents.map((agent) => (
+            <SectionBoundary key={agent.id}>
+              <AgentCard agent={agent} />
+            </SectionBoundary>
+          ))
         )}
       </div>
     </section>

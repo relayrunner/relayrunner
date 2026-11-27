@@ -1,7 +1,14 @@
-import { CatchBoundary, Link, useRouter, type ErrorComponentProps } from "@tanstack/react-router";
+import {
+  CatchBoundary,
+  Link,
+  useLocation,
+  useRouter,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
 import { RotateCwIcon, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AppError } from "@relayrunner/errors";
 
 // After a deploy, an open tab can ask for a page's code by a file name that no longer exists.
@@ -68,27 +75,67 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
 }
 
 /**
- * Keeps a crash in one part of a page to that part. The rest of the page stays usable and the
- * part can be retried in place.
+ * A page that doesn't exist. A workspace page that throws `notFound()`, such as an unknown
+ * provider, sets this as its own `notFoundComponent` so it shows inside the app, with the sidebar.
  */
-export function SectionBoundary({ children }: { children: ReactNode }) {
+export function PageNotFound({ className }: { className?: string }) {
   return (
-    <CatchBoundary getResetKey={() => 0} errorComponent={SectionError}>
+    <div className={cn("grid min-h-[60vh] place-content-center p-4 text-center", className)}>
+      <div className="grid max-w-md justify-items-center gap-3">
+        <h1 className="text-lg font-semibold">Not found</h1>
+        <p className="text-muted-foreground">That page doesn't exist.</p>
+        <Button asChild variant="outline" className="mt-1">
+          <Link to="/runners">Go to Runners</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Keeps a crash in one part of a page to that part. The rest of the page stays usable and the
+ * part can be retried in place. Going to another page, or changing this one's range or filters,
+ * tries it again too.
+ */
+export function SectionBoundary({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  /** For the note that shows in the part's place, such as room for a panel's close button. */
+  className?: string;
+}) {
+  const href = useLocation({ select: (location) => location.href });
+  return (
+    <CatchBoundary
+      getResetKey={() => href}
+      errorComponent={(props) => <SectionError {...props} className={className} />}
+    >
       {children}
     </CatchBoundary>
   );
 }
 
-function SectionError({ reset }: ErrorComponentProps) {
+function SectionError({ error, reset, className }: ErrorComponentProps & { className?: string }) {
+  // A part whose code is gone after a deploy fails the same way on every retry, so it reloads.
+  const stale = isStaleBuild(error);
   return (
     <div
       role="alert"
-      className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground"
+      className={cn(
+        "flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground",
+        className,
+      )}
     >
       <TriangleAlert aria-hidden className="size-4 shrink-0" />
-      <span>Couldn't load this part.</span>
-      <Button variant="ghost" size="xs" className="ml-auto" onClick={reset}>
-        Try again
+      <span>{stale ? describe(error) : "Couldn't show this part."}</span>
+      <Button
+        variant="ghost"
+        size="xs"
+        className="ml-auto"
+        onClick={stale ? () => window.location.reload() : reset}
+      >
+        {stale ? "Reload" : "Try again"}
       </Button>
     </div>
   );
