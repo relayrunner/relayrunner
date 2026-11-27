@@ -416,7 +416,7 @@ export function evaluateCard({ id, name, url, runs }) {
             "div",
             { alignItems: "center", gap: 7 },
             h("div", { width: 16, height: 3, background: today }),
-            "ubuntu-latest",
+            "GitHub",
           ),
           h(
             "div",
@@ -443,7 +443,7 @@ export function evaluateCard({ id, name, url, runs }) {
         }),
         rangeRow(c, fixed, {
           logo: provider("github"),
-          label: "ubuntu-latest",
+          label: "GitHub",
           tag: "today",
           time: clock(runs.today.ms),
           timeChange: null,
