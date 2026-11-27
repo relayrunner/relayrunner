@@ -173,9 +173,8 @@ describe("Connect Boat", () => {
   });
 
   test("isn't offered without an OAuth app", async () => {
-    // wrangler.jsonc sets the real app's client id, which the test env reads, so clear it.
     const bare = await testing.createTestEnv({
-      env: { PROVIDER_TOKEN_KEY: { get: async () => KEY }, BOAT_OAUTH_CLIENT_ID: undefined },
+      env: { PROVIDER_TOKEN_KEY: { get: async () => KEY }, BOAT_OAUTH_CLIENT_ID: "" },
     });
     const { cookie } = await testing.signIn(bare);
     const { cookie: active } = await testing.createWorkspace(bare, cookie, "Acme", "acme-bare");
