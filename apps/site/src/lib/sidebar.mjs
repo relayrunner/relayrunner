@@ -37,10 +37,11 @@ export const SIDEBAR = [
       "docs/runners/github",
       "docs/runners/hosted",
       "docs/reference/labels",
-      "docs/contribute/for-providers",
-      "docs/contribute/add-provider",
-      "docs/contribute/publish-prices",
     ],
+  },
+  {
+    label: "For providers",
+    items: ["docs/providers/get-listed", "docs/providers/publish-prices"],
   },
   // Collapsed groups start closed, but the one holding the current page always opens.
   {

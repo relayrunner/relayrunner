@@ -11,4 +11,4 @@ We read everything. Pick whichever is easiest.
 - **From an agent**: an agent connected to the [MCP server](/docs/reference/mcp) can call `send_feedback` to report a bug, a confusing result or a missing tool.
 - **Security issues**: [security@relayrunner.app](mailto:security@relayrunner.app), not a public issue.
 
-Pull requests are welcome too. See [Add a provider](/docs/contribute/add-provider) for a good first one.
+Pull requests are welcome too. Adding a provider is a good first one: see [Get listed](/docs/providers/get-listed).

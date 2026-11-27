@@ -40,4 +40,4 @@ The [JSON Schema](https://relayrunner.dev/schemas/runner-prices.json) describes 
 
 A change applies on its own when it starts today or later and is less than double, and more than half, the current price. A bigger jump, or a price for a day that has already passed, waits for a maintainer to approve it, so a typo can't reprice everyone's jobs.
 
-A rate that isn't in `RATES` yet is skipped. To add a new size, see [Add a provider](/docs/contribute/add-provider).
+A rate that isn't in `RATES` yet is skipped. To add a new size, see [Get listed](/docs/providers/get-listed).

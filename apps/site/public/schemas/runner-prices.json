@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://relayrunner.dev/schemas/runner-prices.json",
   "title": "Runner price file",
-  "description": "List prices a CI runner service publishes on its own site, usually at /.well-known/runner-prices.json, for tools that estimate what jobs cost. See https://relayrunner.dev/docs/contribute/publish-prices",
+  "description": "List prices a CI runner service publishes on its own site, usually at /.well-known/runner-prices.json, for tools that estimate what jobs cost. See https://relayrunner.dev/docs/providers/publish-prices",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "prices"],

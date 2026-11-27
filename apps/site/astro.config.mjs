@@ -23,6 +23,9 @@ export default defineConfig({
     "/docs": "/docs/get-started/overview",
     "/changelog": "/docs/changelog",
     "/docs/runners/blacksmith": "/docs/runners/hosted",
+    "/docs/contribute/for-providers": "/docs/providers/get-listed",
+    "/docs/contribute/add-provider": "/docs/providers/get-listed",
+    "/docs/contribute/publish-prices": "/docs/providers/publish-prices",
   },
   // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
   prefetch: { prefetchAll: true },
