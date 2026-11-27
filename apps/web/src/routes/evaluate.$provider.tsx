@@ -23,7 +23,7 @@ import { githubInstallHref, githubOutcomes } from "@/lib/github";
 import { usePageTitle } from "@/lib/page-title";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
-import { Results } from "./_authed/_workspace/providers.$provider_.evaluate";
+import { Results } from "@/features/evaluations/results";
 
 const SITE_RUNNERS = "https://relayrunner.dev/integrations";
 
