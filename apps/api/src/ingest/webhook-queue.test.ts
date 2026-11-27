@@ -162,6 +162,8 @@ describe("webhook queue consumer", () => {
       jobId: 42,
       installationId: 7,
       repo: "relayrunner/relayrunner",
+      // When GitHub queued it, for the pick's queued-age fields.
+      queuedAt: expect.any(Number),
     });
     await consumer.processWebhook(env, workflowJob(["relayrunner"], "in_progress"));
     expect(start).toHaveBeenCalledOnce();

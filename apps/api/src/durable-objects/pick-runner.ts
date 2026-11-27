@@ -72,7 +72,29 @@ export interface PickWork {
   // owner/repo. An org install's runner registers in the owner org; a personal install's
   // registers on this repo (see runnerScope).
   repo: string;
+  // When GitHub queued the job (epoch ms), so each pick can say how long the relay has waited.
+  // Missing on work stored before this field existed.
+  queuedAt?: number;
 }
+
+/**
+ * The step a pick runner was on when it failed, for grouping failures in Grafana without matching
+ * on error text: an installation token, the replacement's status check, registering the JIT
+ * runner, the runner version lookup, opening the session, waiting for a job, claiming it, or
+ * answering it (route or native check).
+ */
+export type PickStage =
+  | "token"
+  | "status"
+  | "register"
+  | "runner_version"
+  | "session"
+  | "wait"
+  | "claim"
+  | "answer";
+
+/** What the sweep's rescue found: a runner started, one already active, or no attempts left. */
+export type RescueResult = "rescued" | "active" | "exhausted";
 
 // One per queued `pick` job, addressed by job id. Acts as a one-job runner: registers a JIT runner
 // on the `relayrunner` label, claims a job, and reports the route as its `runner` output without
@@ -108,14 +130,14 @@ export class PickRunner extends DurableObject<Env> {
    * Starts another runner for a relay the sweep found still queued, unless one is already active or
    * the job has used its attempts. The runner checks the job is still queued before registering.
    */
-  async rescue(work: PickWork): Promise<boolean> {
-    if (await this.active()) return false;
+  async rescue(work: PickWork): Promise<RescueResult> {
+    if (await this.active()) return "active";
     const attempt = ((await this.ctx.storage.get<number>("attempt")) ?? 1) + 1;
-    if (attempt > MAX_ATTEMPTS) return false;
+    if (attempt > MAX_ATTEMPTS) return "exhausted";
     await this.ctx.storage.put({ started: true, work, attempt });
     await this.ctx.storage.delete("runningSince");
     await this.ctx.storage.setAlarm(Date.now());
-    return true;
+    return "rescued";
   }
 
   async alarm() {
@@ -158,16 +180,19 @@ export class PickRunner extends DurableObject<Env> {
     let scope: RunnerScope | undefined;
     let runnerId: number | undefined;
     let client: RunnerClient | undefined;
+    let stage: PickStage = "token";
     try {
       [token, scope] = await Promise.all([
         appInstallationToken(this.env, work.installationId),
         installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo),
       ]);
+      stage = "status";
       // A replacement runner first makes sure its job still needs one.
       if (attempt + retries > 1 && (await this.jobStatus(token, work)) !== "queued") {
         log.info("pick.finished", "pick finished", {
           result: "not_needed",
           durationMs: Date.now() - startedAt,
+          ...queuedFor(work),
         });
         return;
       }
@@ -176,6 +201,7 @@ export class PickRunner extends DurableObject<Env> {
       // back to the org's Default group. A runner GitHub will never hand this job to would wait 4
       // minutes for nothing, so before that fallback the first runner checks the group allows the
       // repo, and says why when it doesn't.
+      stage = "register";
       const minted = await mintRepoFirst(
         token,
         work.repo,
@@ -218,11 +244,17 @@ export class PickRunner extends DurableObject<Env> {
       scope = minted.scope;
       runnerId = jit.runnerId;
 
-      client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), await latestRunnerVersion());
+      stage = "runner_version";
+      const version = await latestRunnerVersion();
+      stage = "session";
+      client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), version);
       await client.openSession();
+      stage = "wait";
       const request = await waitForJob(client, WAIT_FOR_JOB_MS);
+      stage = "claim";
       const job = request ? await client.claim(request) : null;
       if (job) {
+        stage = "answer";
         const startedAt = new Date();
         let lintLog: Record<string, unknown> | undefined;
         // What each step logged, for the job's step logs.
@@ -351,6 +383,7 @@ export class PickRunner extends DurableObject<Env> {
     } catch (error) {
       outcome = {
         result: "error",
+        stage,
         error: error instanceof Error ? error.message : String(error),
         // D1 shedding load for a few seconds; the sweep picks up a job left waiting.
         ...(isOverloaded(error) ? { d1Overloaded: true } : {}),
@@ -395,6 +428,7 @@ export class PickRunner extends DurableObject<Env> {
       ...outcome,
       next,
       durationMs: Date.now() - startedAt,
+      ...queuedFor(work),
     });
   }
 
@@ -443,6 +477,7 @@ export class PickRunner extends DurableObject<Env> {
         jobId: work.jobId,
         repo: work.repo,
         attempt,
+        ...queuedFor(work),
       });
       return next;
     }
@@ -450,6 +485,11 @@ export class PickRunner extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(Date.now() + RECHECK_AFTER_MS);
     return next;
   }
+}
+
+// How long the relay has been queued on GitHub, for time-to-claim and stuck-relay panels.
+function queuedFor(work: PickWork) {
+  return work.queuedAt ? { queuedForMs: Math.max(0, Date.now() - work.queuedAt) } : {};
 }
 
 function logCleanupError(step: string, work: PickWork, error: unknown) {

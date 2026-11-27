@@ -108,6 +108,7 @@ const API_EVENTS = [
   "sweep.pick_rescued",
   "sweep.pick_runner_removed",
   "sweep.pick_sweep_failed",
+  "sweep.relays_waiting",
   "takeover.checked",
   "takeover.cleanup_failed",
   "takeover.failed",

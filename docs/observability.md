@@ -69,17 +69,31 @@ Each entry point sets the ids its lines share with `withLogContext`: a request (
 
 A wide event is one line per unit of work, written when its outcome is known, with every field a chart groups or filters by. Dashboards count these. Other lines are warnings, errors and detail for debugging.
 
-| Event               | Written when                                                                                        | Group by                                                                                                  | Measures                          |
-| ------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `routing.decision`  | The Router decides where a run's job goes (`Router.route`, and `Router.reroute` with `rerun: true`) | `result` (`routed`, `waiting`, `no_runner`), `step`, `runnerKind`, `reason`                               | `decideMs`                        |
-| `pick.finished`     | A pick runner ends (`PickRunner` alarm)                                                             | `result` (`routed`, `no_runner`, `not_needed`, `error`...), `runner`, `next` (`rearm`, `done`, `give_up`) | `durationMs`                      |
-| `webhook.processed` | The queue consumer finishes or retries a GitHub delivery                                            | `app`, `githubEvent`, `action`, `status` (`processed`, `retrying`), `handler`, `result`                   | `lagMs`, `durationMs`, `attempts` |
-| `machine.dispatch`  | A job is handed to a machine, from its webhook or the waiting line                                  | `source`, `result` (`sent`, `offline`, `wrong_place`, `error`)                                            | `sendMs`, `waitMs`                |
+| Event                  | Written when                                                                                        | Group by                                                                                                                              | Measures                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `routing.decision`     | The Router decides where a run's job goes (`Router.route`, and `Router.reroute` with `rerun: true`) | `result` (`routed`, `waiting`, `no_runner`), `step`, `runnerKind`, `reason`                                                           | `decideMs`                                                                   |
+| `pick.finished`        | A pick runner ends (`PickRunner` alarm)                                                             | `result` (`routed`, `no_runner`, `not_needed`, `error`...), `stage` on errors, `runner`, `next` (`retry`, `rearm`, `done`, `give_up`) | `durationMs`, `queuedForMs`                                                  |
+| `webhook.processed`    | The queue consumer finishes or retries a GitHub delivery                                            | `app`, `githubEvent`, `action`, `status` (`processed`, `retrying`), `handler`, `result`                                               | `lagMs`, `durationMs`, `attempts`                                            |
+| `machine.dispatch`     | A job is handed to a machine, from its webhook or the waiting line                                  | `source`, `result` (`sent`, `offline`, `wrong_place`, `error`)                                                                        | `sendMs`, `waitMs`                                                           |
+| `sweep.relays_waiting` | Every 15-minute sweep, even with none waiting                                                       |                                                                                                                                       | `waiting`, `rescued`, `active`, `exhausted`, `installations`, `oldestWaitMs` |
 
 Never sample wide events, so their counts stay exact. In Grafana, count them with LogQL, for example routing decisions by hour:
 
 ```logql
 sum by (result) (count_over_time({service_name="relayrunner-api"} | json | event="routing.decision" [1h]))
+```
+
+### Relay claims
+
+A relay job is claimed when a pick runner (`apps/api/src/durable-objects/pick-runner.ts`) registers a JIT runner, opens a session, and GitHub hands it the job. When any step fails, `pick.finished` has `result: "error"` and `stage`, the step it was on: `token`, `status`, `register`, `runner_version`, `session`, `wait`, `claim` or `answer`. `queuedForMs` is how long the job had been queued on GitHub by then. A transient failure (`transient: true`) retries with backoff (`next: "retry"`) without using up an attempt.
+
+The 15-minute sweep logs `sweep.relays_waiting`: relays queued over 5 minutes that are still being tried (`active`) or that it started again (`rescued`), and the ones that used up their attempts (`exhausted`), which don't count as waiting. Two sweeps in a row with any waiting raise the `relays:unclaimed` health issue, which posts to the operator Slack webhook and email.
+
+```logql
+# Claim failures by stage, per 10 minutes
+sum by (stage) (count_over_time({service_name="relayrunner-api"} |= "pick.finished" | json | result="error" [10m]))
+# Time to claim, p95
+quantile_over_time(0.95, {service_name="relayrunner-api"} |= "pick.finished" | json | result=~"routed|no_runner|check_passed|check_failed" | unwrap queuedForMs [15m])
 ```
 
 Only `service_name` (and the level) are stream labels. Ids stay in the line, so filter on them after `| json` rather than grouping by them.

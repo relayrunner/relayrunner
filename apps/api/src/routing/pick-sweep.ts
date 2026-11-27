@@ -7,6 +7,8 @@ import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 import { sweepOrphanedJobs } from "./orphaned-jobs.ts";
 import { log } from "../log.ts";
+import { recordOutcomes } from "../operator/health-issues.ts";
+import type { RescueResult } from "../durable-objects/pick-runner.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
@@ -43,6 +45,7 @@ async function rescueStuckRelays(env: Env, now: number) {
       id: schema.workflowJob.id,
       installationId: schema.workflowJob.installationId,
       repo: schema.workflowJob.repositoryFullName,
+      queuedAt: schema.workflowJob.githubCreatedAt,
     })
     .from(schema.workflowJob)
     .where(
@@ -56,19 +59,66 @@ async function rescueStuckRelays(env: Env, now: number) {
     // Newest first: the likeliest to still be waiting on a runner.
     .orderBy(desc(schema.workflowJob.githubCreatedAt))
     .limit(MAX_RESCUES);
+  const results: { job: (typeof stuck)[number]; result: RescueResult }[] = [];
   for (let i = 0; i < stuck.length; i += RESCUE_BATCH)
     await Promise.all(
       stuck.slice(i, i + RESCUE_BATCH).map(async (job) => {
-        const rescued = await env.PICK_RUNNER.getByName(String(job.id)).rescue({
+        const result = await env.PICK_RUNNER.getByName(String(job.id)).rescue({
           jobId: job.id,
           installationId: job.installationId,
           repo: job.repo,
+          queuedAt: job.queuedAt.getTime(),
         });
-        if (rescued)
+        results.push({ job, result });
+        if (result === "rescued")
           log.info("sweep.pick_rescued", "pick rescued", { jobId: job.id, repo: job.repo });
       }),
     );
+  await reportWaitingRelays(db, results, now);
 }
+
+/**
+ * How many relays have waited past STUCK_AFTER_MS with nobody claiming them: one line every sweep,
+ * even when there are none, so Grafana can chart it. Relays that used up their attempts (a runner
+ * group that leaves the repo out, or given up on) are counted apart: nothing more will be tried for
+ * them, and the workspace was already told. Relays still being tried, or rescued now, are a health
+ * issue: two sweeps in a row with any reach operators (src/operator/health-issues.ts).
+ */
+export async function reportWaitingRelays(
+  db: Db,
+  results: { job: { installationId: number; queuedAt: Date }; result: RescueResult }[],
+  now: number,
+) {
+  const waiting = results.filter(({ result }) => result !== "exhausted");
+  const oldestWaitMs = waiting.length
+    ? now - Math.min(...waiting.map(({ job }) => job.queuedAt.getTime()))
+    : 0;
+  const installations = new Set(waiting.map(({ job }) => job.installationId)).size;
+  const count = (kind: RescueResult) => results.filter(({ result }) => result === kind).length;
+  log.info("sweep.relays_waiting", "relays waiting", {
+    waiting: waiting.length,
+    rescued: count("rescued"),
+    active: count("active"),
+    exhausted: count("exhausted"),
+    installations,
+    oldestWaitMs,
+  });
+  await recordOutcomes(
+    db,
+    [
+      {
+        key: UNCLAIMED_RELAYS_KEY,
+        kind: "relays",
+        ...(waiting.length && {
+          error: `${waiting.length} relay ${waiting.length === 1 ? "job" : "jobs"} in ${installations} ${installations === 1 ? "installation" : "installations"} unclaimed for over ${STUCK_AFTER_MS / 60_000} minutes (oldest ${Math.round(oldestWaitMs / 60_000)} minutes)`,
+        }),
+      },
+    ],
+    new Date(now),
+  );
+}
+
+export const UNCLAIMED_RELAYS_KEY = "relays:unclaimed";
 
 /**
  * Where pick runners can be left: each repo that had a relay in the last day, since pick runners

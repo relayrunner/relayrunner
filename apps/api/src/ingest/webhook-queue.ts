@@ -273,6 +273,7 @@ export async function processWebhook(
           jobId: message.job.id,
           installationId: message.installationId,
           repo: message.repository.fullName,
+          ...queuedAtOf(message.job.createdAt),
         });
       }
       return { ...job, handler: "pick", labels: message.job.labels };
@@ -546,4 +547,10 @@ async function startContainerRunner(
     repo: message.repository.fullName,
   });
   return handled;
+}
+
+// When GitHub queued a job, for the pick's queued-age fields. Nothing when GitHub sent no date.
+function queuedAtOf(createdAt: string | null | undefined) {
+  const at = createdAt ? Date.parse(createdAt) : NaN;
+  return Number.isFinite(at) ? { queuedAt: at } : {};
 }

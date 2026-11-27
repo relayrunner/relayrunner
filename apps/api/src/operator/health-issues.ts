@@ -19,13 +19,16 @@ import { log } from "../log.ts";
 
 /**
  * Failures in a row before anyone hears: three runs of a cron task; both tries of a queued task in
- * two cron runs in a row, so a few minutes of D1 refusing queries stay quiet; and a workspace
- * integration at once.
+ * two cron runs in a row, so a few minutes of D1 refusing queries stay quiet; relays left unclaimed
+ * in two sweeps in a row; and a workspace integration at once.
  */
 export const HEALTH_ISSUE_KINDS = {
   cron: { threshold: 3 },
   task: { threshold: 4 },
   integration: { threshold: 1 },
+  // Relay jobs nobody claimed for over 5 minutes, in two 15-minute sweeps in a row
+  // (src/routing/pick-sweep.ts), so relays a deploy cut off and the next sweep rescued stay quiet.
+  relays: { threshold: 2 },
 } as const;
 
 /**
@@ -190,6 +193,8 @@ async function inOneBatch(db: Db, statements: Parameters<Db["batch"]>[0][number]
 export function alertLine(alert: HealthAlert) {
   if (alert.state === "cleared") return `${alert.key} is working again.`;
   const reminder = alert.reminder ? "Still broken: " : "";
+  if (alert.kind === "relays")
+    return `${reminder}Relay jobs aren't being claimed (since ${alert.since.toISOString()}): ${alert.error}`;
   if (alert.kind === "integration")
     return `${reminder}${alert.key}: ${alert.error}. The workspace's owners and admins were emailed.`;
   const failures = alert.failures === 1 ? "1 time" : `${alert.failures} times in a row`;

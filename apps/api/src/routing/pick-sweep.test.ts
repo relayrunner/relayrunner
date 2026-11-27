@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { sweepTargets } from "./pick-sweep.ts";
+import { reportWaitingRelays, sweepTargets, UNCLAIMED_RELAYS_KEY } from "./pick-sweep.ts";
+import { alertLine, takeHealthAlerts } from "../operator/health-issues.ts";
 import * as testing from "../testing.ts";
 
 let env: Env;
@@ -67,5 +68,41 @@ describe("sweepTargets", () => {
         { installationId: 9301, scope: { kind: "repo", repo: "acme/web" } },
       ]),
     );
+  });
+});
+
+describe("reportWaitingRelays", () => {
+  test("alerts once two sweeps in a row find relays still unclaimed, and clears when none are", async () => {
+    const db = createDb(env.DB);
+    const now = Date.UTC(2026, 10, 27, 18, 30);
+    const MIN = 60_000;
+    const relay = (installationId: number, waitedMin: number) => ({
+      installationId,
+      queuedAt: new Date(now - waitedMin * MIN),
+    });
+    // Used-up relays (a runner group that leaves the repo out) never count.
+    const sweep = (at: number) =>
+      reportWaitingRelays(
+        db,
+        [
+          { job: relay(1, 7), result: "active" },
+          { job: relay(2, 22), result: "rescued" },
+          { job: relay(3, 600), result: "exhausted" },
+        ],
+        at,
+      );
+    await sweep(now);
+    expect(await takeHealthAlerts(db, new Date(now))).toEqual([]);
+    await sweep(now + 15 * MIN);
+    const [alert] = await takeHealthAlerts(db, new Date(now + 15 * MIN));
+    expect(alert).toMatchObject({ key: UNCLAIMED_RELAYS_KEY, kind: "relays", state: "failing" });
+    expect(alertLine(alert!)).toBe(
+      `Relay jobs aren't being claimed (since ${new Date(now).toISOString()}): 2 relay jobs in 2 installations unclaimed for over 5 minutes (oldest 37 minutes)`,
+    );
+    // Only used-up relays left: nothing waiting, so it clears.
+    await reportWaitingRelays(db, [{ job: relay(3, 630), result: "exhausted" }], now + 30 * MIN);
+    expect(await takeHealthAlerts(db, new Date(now + 30 * MIN))).toMatchObject([
+      { key: UNCLAIMED_RELAYS_KEY, state: "cleared" },
+    ]);
   });
 });
