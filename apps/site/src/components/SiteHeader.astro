@@ -290,6 +290,12 @@ const CHEVRON = "M6 9l6 6 6-6";
     const place = () => {
       const bottom = Math.max(0, header.getBoundingClientRect().bottom);
       document.documentElement.style.setProperty("--header-bottom", `${bottom}px`);
+      // The desktop panels hang just under the nav items rather than the header's edge.
+      const trigger = header.querySelector(".nav-trigger");
+      if (trigger) {
+        const navBottom = Math.max(0, trigger.getBoundingClientRect().bottom);
+        document.documentElement.style.setProperty("--nav-bottom", `${navBottom}px`);
+      }
     };
     for (const popover of header.querySelectorAll<HTMLElement>("[popover]")) {
       popover.addEventListener("beforetoggle", place);
