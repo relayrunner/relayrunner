@@ -770,11 +770,18 @@ function costChange(from: number | null, to: number | null) {
 /** A job's cost against today's, as "41% cheaper", or null when either has no price. */
 function priceChange(from: number | null, to: number | null) {
   if (from === null || to === null || from === 0) return null;
-  const pct = Math.round(((to - from) / from) * 100);
-  return {
-    pct,
-    text: pct === 0 ? "Same cost" : pct < 0 ? `${-pct}% cheaper` : `${pct}% more`,
-  };
+  return { pct: Math.round(((to - from) / from) * 100) };
+}
+
+/** A change as its number, in color when it's an improvement, then a quieter word for what changed. */
+function Delta({ pct, better, worse }: { pct: number; better: string; worse: string }) {
+  if (pct === 0) return <span className="block text-muted-foreground">Same</span>;
+  return (
+    <span className="block">
+      <span className={pct < 0 ? "text-go" : "text-foreground"}>{Math.abs(pct)}%</span>{" "}
+      <span className="text-muted-foreground">{pct < 0 ? better : worse}</span>
+    </span>
+  );
 }
 
 function costDetail(name: string, runUsd: number | null, todayUsd: number | null) {
@@ -1028,26 +1035,12 @@ export function Results({
                       </td>
                     )}
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
-                      <span
-                        className={cn(
-                          "block",
-                          job.onProvider && delta && delta.pct < 0
-                            ? "text-go"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {(job.onProvider && delta?.text) || "—"}
-                      </span>
-                      {costDelta && (
-                        <span
-                          className={cn(
-                            "block text-xs",
-                            costDelta.pct < 0 ? "text-go" : "text-muted-foreground",
-                          )}
-                        >
-                          {costDelta.text}
-                        </span>
+                      {job.onProvider && delta ? (
+                        <Delta pct={delta.pct} better="faster" worse="slower" />
+                      ) : (
+                        <span className="block text-muted-foreground">—</span>
                       )}
+                      {costDelta && <Delta pct={costDelta.pct} better="cheaper" worse="more" />}
                     </td>
                   </tr>
                 );
