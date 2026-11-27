@@ -773,13 +773,13 @@ function priceChange(from: number | null, to: number | null) {
   return { pct: Math.round(((to - from) / from) * 100) };
 }
 
-/** A change as its number, in color when it's an improvement, then a quieter word for what changed. */
-function Delta({ pct, better, worse }: { pct: number; better: string; worse: string }) {
-  if (pct === 0) return <span className="block text-muted-foreground">Same</span>;
+/** A change on one line, green when it's an improvement. */
+function Delta({ pct, better, worse }: { pct: number | null; better: string; worse: string }) {
+  if (pct === null) return <span className="text-muted-foreground">—</span>;
+  if (pct === 0) return <span className="text-muted-foreground">Same</span>;
   return (
-    <span className="block">
-      <span className={pct < 0 ? "text-go" : "text-foreground"}>{Math.abs(pct)}%</span>{" "}
-      <span className="text-muted-foreground">{pct < 0 ? better : worse}</span>
+    <span className={pct < 0 ? "text-go" : "text-muted-foreground"}>
+      {Math.abs(pct)}% {pct < 0 ? better : worse}
     </span>
   );
 }
@@ -975,8 +975,11 @@ export function Results({
                     {name}, {active ? `runs 2–${report.runs}` : warmRuns} (warm)
                   </th>
                 )}
-                <th className="px-4 py-2 text-right font-medium">
-                  {hasWarm ? "Warm" : "Cold"} vs today
+                <th className="px-4 py-2 text-right font-medium whitespace-nowrap">
+                  Time vs today
+                </th>
+                <th className="px-4 py-2 text-right font-medium whitespace-nowrap">
+                  Cost vs today
                 </th>
               </tr>
             </thead>
@@ -1035,12 +1038,14 @@ export function Results({
                       </td>
                     )}
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
-                      {job.onProvider && delta ? (
-                        <Delta pct={delta.pct} better="faster" worse="slower" />
-                      ) : (
-                        <span className="block text-muted-foreground">—</span>
-                      )}
-                      {costDelta && <Delta pct={costDelta.pct} better="cheaper" worse="more" />}
+                      <Delta
+                        pct={job.onProvider ? (delta?.pct ?? null) : null}
+                        better="faster"
+                        worse="slower"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
+                      <Delta pct={costDelta?.pct ?? null} better="cheaper" worse="more" />
                     </td>
                   </tr>
                 );
@@ -1344,7 +1349,7 @@ function SplitCell({
 }) {
   if (!split) return <span className="text-muted-foreground">{pending ?? "—"}</span>;
   return (
-    <div className="grid min-w-44 gap-1.5">
+    <div className="grid min-w-40 gap-1.5">
       <span className="flex items-baseline justify-between gap-2 tabular-nums">
         <span className="whitespace-nowrap">
           {clock(total(split))}
