@@ -9,6 +9,7 @@ If you run a runner service, you can publish your list prices in a small JSON fi
 
 ```json
 {
+  "$schema": "https://relayrunner.dev/schemas/prices-v1.json",
   "version": 1,
   "prices": [
     { "rate": "linux", "per": "vcpu", "usd_per_minute": "0.002" },
@@ -28,7 +29,7 @@ If you run a runner service, you can publish your list prices in a small JSON fi
 
 List the prices anyone pays without a plan or discount. You can announce a change ahead of time by listing the new price with its `from` day next to the current one.
 
-The format is strict. Any field not in the table, a price written as a number, or a `per` that doesn't match makes the check ignore the whole file until it's fixed, and your current prices stay as they are.
+The [JSON Schema](https://relayrunner.dev/schemas/prices-v1.json) describes the same format, so your editor or CI can check the file before you publish it. The format is strict. Any field not in the table, a price written as a number, or a `per` that doesn't match makes the check ignore the whole file until it's fixed, and your current prices stay as they are.
 
 ## Set it up
 

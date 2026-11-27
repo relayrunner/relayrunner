@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { parsePriceFile, PRICE_SOURCES, type PriceSource } from "@relayrunner/providers";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Env } from "../env.ts";
@@ -175,6 +176,25 @@ describe("price files", () => {
       { rate: "groundbox-4vcpu", usd: 0.007, from: "2026-12-01" },
       { rate: "macos", usd: 0.05 },
     ]);
+  });
+
+  test("match the published JSON Schema field for field", () => {
+    const schema = JSON.parse(
+      readFileSync(new URL("../../../site/public/schemas/prices-v1.json", import.meta.url), "utf8"),
+    );
+    const price = schema.properties.prices.items;
+    // Every field the schema allows parses, and both refuse anything else.
+    const entry = Object.fromEntries(
+      Object.keys(price.properties).map((key) => [
+        key,
+        { rate: "linux", per: "vcpu", usd_per_minute: "0.002", from: "2026-12-01" }[key],
+      ]),
+    );
+    const root = { $schema: schema.$id, version: 1, prices: [entry] };
+    expect(Object.keys(root).sort()).toEqual(Object.keys(schema.properties).sort());
+    expect(parsePriceFile("blacksmith", JSON.stringify(root))).toHaveLength(1);
+    expect(schema.additionalProperties).toBe(false);
+    expect(price.additionalProperties).toBe(false);
   });
 
   test("reject the whole file on anything out of place", () => {
