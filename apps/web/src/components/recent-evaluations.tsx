@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowRightIcon,
   CheckIcon,
+  ChevronDownIcon,
   CircleSlashIcon,
   LoaderCircleIcon,
   TriangleAlertIcon,
@@ -91,14 +92,18 @@ export function RecentEvaluations({
   className?: string;
 }) {
   const { name } = providerInfo(provider);
+  // Only the latest shows until asked: older ones are usually earlier tries of the same thing.
+  const [open, setOpen] = useState(false);
   if (evaluations.length === 0) return null;
+  const more = evaluations.length - 1;
+  const shown = open ? evaluations : evaluations.slice(0, 1);
   return (
     <div className={cn("grid gap-3", className)}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="font-semibold">Recent evaluations</h2>
       </div>
       <ul className="overflow-hidden rounded-xl border bg-card">
-        {evaluations.map((e) => {
+        {shown.map((e) => {
           const title = e.workflow ?? e.workflowPath.split("/").pop();
           return (
             <li key={e.id} className="relative border-b last:border-0 hover:bg-raised">
@@ -142,6 +147,19 @@ export function RecentEvaluations({
             </li>
           );
         })}
+        {more > 0 && (
+          <li className="bg-raised-2">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+              className="flex w-full items-center gap-1 px-4 py-2 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
+            >
+              {open ? "Show only the latest" : `Show ${more} more`}
+              <ChevronDownIcon aria-hidden className={cn("size-3.5", open && "rotate-180")} />
+            </button>
+          </li>
+        )}
       </ul>
       <p className="text-xs text-muted-foreground">
         After {RECENT_DAYS} days an evaluation drops off this list. By then{" "}
