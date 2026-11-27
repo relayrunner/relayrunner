@@ -479,11 +479,7 @@ pub async fn command(args: &[String]) -> i32 {
         }
     }
     // Whether jobs here would run in VMs only matters inside a checkout.
-    let in_checkout = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| repo::find_root(&cwd))
-        .is_some();
-    let vm = in_checkout && crate::isolated::state().await == crate::isolated::State::Ready;
+    let vm = in_checkout() && crate::isolated::state().await == crate::isolated::State::Ready;
     let run = move || -> Result<(), String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
         let plan = Plan {
@@ -522,6 +518,14 @@ pub async fn command(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// Whether the working directory is inside a git checkout.
+pub fn in_checkout() -> bool {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| repo::find_root(&cwd))
+        .is_some()
 }
 
 /// A comma-separated list of job names.
@@ -628,6 +632,150 @@ pub fn offer_setup(vm: bool) {
             }
         }
     }
+}
+
+/// A workflow file in the checkout, as `eval` lists it.
+pub struct LocalWorkflow {
+    /// Such as `.github/workflows/ci.yml`.
+    pub path: String,
+    pub name: Option<String>,
+    /// Whether any of its jobs already goes through a relay.
+    pub routed: bool,
+}
+
+/// The checkout `eval` runs in, when it's a clone of the repo being evaluated.
+pub struct Checkout {
+    pub root: PathBuf,
+    pub workflows: Vec<LocalWorkflow>,
+    plan: Plan,
+}
+
+/// This checkout, when `origin` is `repo`. Reads only local files.
+pub fn checkout_of(repo: &str, vm: bool) -> Option<Checkout> {
+    let cwd = std::env::current_dir().ok()?;
+    let plan = local_plan(&cwd, vm, &[]).ok()?;
+    if !plan
+        .repo
+        .as_deref()
+        .is_some_and(|r| r.eq_ignore_ascii_case(repo))
+    {
+        return None;
+    }
+    let workflows = plan
+        .files
+        .iter()
+        .map(|f| LocalWorkflow {
+            path: f.file.clone(),
+            name: workflows::workflow_name(&f.source),
+            routed: plan
+                .jobs
+                .iter()
+                .any(|j| j.file == f.file && j.verdict == Verdict::Routed),
+        })
+        .collect();
+    Some(Checkout {
+        root: plan.root.clone(),
+        workflows,
+        plan,
+    })
+}
+
+/// The change `route_for_eval` wrote.
+pub struct Edit {
+    pub before: String,
+    pub after: String,
+    /// Whether the workflow could already be started on demand, before the edit.
+    pub dispatchable: bool,
+}
+
+/// Run by `eval` for a workflow whose jobs don't go through a relay yet: init's picker for that
+/// one file. The same edit adds workflow_dispatch to its triggers when it's missing, so the
+/// evaluation can start it. Shows one diff and writes it after a yes. None when nothing changed.
+pub fn route_for_eval(checkout: &Checkout, file: &str) -> Result<Option<Edit>, String> {
+    let plan = &checkout.plan;
+    let before = plan
+        .files
+        .iter()
+        .find(|f| f.file == file)
+        .map(|f| f.source.clone())
+        .ok_or_else(|| format!("{file} isn't in this checkout."))?;
+    let jobs: Vec<&WorkflowJob> = plan.jobs.iter().filter(|j| j.file == file).collect();
+    let ready: Vec<&WorkflowJob> = jobs
+        .iter()
+        .copied()
+        .filter(|j| j.verdict == Verdict::Ready)
+        .collect();
+    let skipped: Vec<String> = jobs
+        .iter()
+        .filter(|j| j.verdict == Verdict::Skipped)
+        .map(|j| job_line(j, plan.exact))
+        .collect();
+    if ready.is_empty() {
+        let mut message = format!(
+            "None of {}'s jobs can go through a relay.",
+            short_file(file)
+        );
+        if !skipped.is_empty() {
+            message.push('\n');
+            message.push_str(&skipped.join("\n"));
+        }
+        return Err(message);
+    }
+    if !skipped.is_empty() {
+        ui::note(&skipped.join("\n"), "Skipped");
+    }
+    let choices: Vec<ui::Choice> = ready
+        .iter()
+        .map(|j| {
+            let mut hint = vec![runs_where(j, plan.exact)];
+            hint.extend(j.warnings.iter().cloned());
+            ui::Choice {
+                label: format!("{} › {}", short_file(&j.file), j.job),
+                hint: Some(hint.join("; ")),
+            }
+        })
+        .collect();
+    let picked: Vec<WorkflowJob> =
+        match ui::multiselect("Route these jobs through RelayRunner?", &choices) {
+            Some(picks) if !picks.is_empty() => {
+                picks.into_iter().map(|i| ready[i].clone()).collect()
+            }
+            _ => return Ok(None),
+        };
+    let routed = workflows::route_jobs(&before, &picked, plan.exact).map_err(|reason| {
+        format!(
+            "Couldn't edit {file}: {reason}. Route its jobs by hand: https://relayrunner.dev/docs/get-started/github-actions"
+        )
+    })?;
+    // A trigger it can't add is left to the evaluation, which shows the line to add.
+    let dispatchable = workflows::has_dispatch(&before);
+    let after = if dispatchable {
+        routed
+    } else {
+        workflows::add_dispatch(&routed).unwrap_or(routed)
+    };
+    println!(
+        "{}\n",
+        ui::colored_diff(&diff::unified(&before, &after, file))
+    );
+    if ui::confirm("Write this change?", true) != Some(true) {
+        return Ok(None);
+    }
+    std::fs::write(checkout.root.join(file), &after)
+        .map_err(|e| format!("Couldn't write {file}: {e}."))?;
+    let warned: Vec<String> = picked
+        .iter()
+        .filter(|j| !j.warnings.is_empty())
+        .map(|j| format!("{}: {}", j.job, j.warnings.join("; ")))
+        .collect();
+    if !warned.is_empty() {
+        ui::note(&warned.join("\n"), "Check before it runs on your machine");
+    }
+    Ok(Some(Edit {
+        before,
+        after,
+        dispatchable,
+    }))
 }
 
 #[cfg(test)]
@@ -740,6 +888,27 @@ mod tests {
         );
         std::fs::remove_dir_all(&root).unwrap();
         std::fs::remove_dir_all(&deploy).unwrap();
+    }
+
+    #[test]
+    fn routes_and_adds_workflow_dispatch_in_one_edit() {
+        let root = checkout(&[("ci.yml", CI)]);
+        let plan = plan(&root, false, &[]).unwrap();
+        let routed =
+            workflows::route_jobs(CI, &select_jobs(&plan.jobs, &["test"]).unwrap(), false).unwrap();
+        let after = workflows::add_dispatch(&routed).unwrap();
+        assert!(after.starts_with("on: [push, workflow_dispatch]\n"));
+        assert!(workflows::has_dispatch(&after) && !workflows::has_dispatch(CI));
+        let (jobs, errors) = workflows::analyze(
+            &[WorkflowFile {
+                file: ".github/workflows/ci.yml".into(),
+                source: after,
+            }],
+            &workflows::Options::default(),
+        );
+        assert!(errors.is_empty());
+        assert!(workflows::is_set_up(&jobs));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

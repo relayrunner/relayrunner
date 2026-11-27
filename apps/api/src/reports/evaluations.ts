@@ -16,7 +16,8 @@
 //    runner and running.
 //
 // Workflows change only by hand: a workflow needs `workflow_dispatch` and relay jobs before it can
-// be evaluated, and the dashboard shows what to add. An evaluation whose workflow lacks
+// be evaluated, and the dashboard shows what to add. `relayrunner eval` can make that edit in a
+// clone, and push it, after the person says yes. An evaluation whose workflow lacks
 // workflow_dispatch waits, and the next push that runs the workflow dispatches it again
 // (resumeWaitingEvaluations).
 
@@ -140,6 +141,30 @@ export async function evaluationWorkflows(
       dispatched: Boolean(row.dispatched),
     }))
     .sort((a, b) => b.runs - a.runs || a.path.localeCompare(b.path));
+}
+
+/** A repo in the installation by its owner/name, for `relayrunner eval` in a clone with no runs yet. */
+export async function evaluationRepo(db: Db, installationId: number, fullName: string) {
+  const repo = await db
+    .select({ id: schema.githubRepository.id, fullName: schema.githubRepository.fullName })
+    .from(schema.githubRepository)
+    .where(
+      and(
+        eq(schema.githubRepository.installationId, installationId),
+        sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
+        isNull(schema.githubRepository.removedAt),
+      ),
+    )
+    .get();
+  if (!repo) return null;
+  // The default branch as its latest run saw it; null before any run reached RelayRunner.
+  const latest = await db
+    .select({ defaultBranch: runs.defaultBranch })
+    .from(runs)
+    .where(and(eq(runs.repositoryId, repo.id), sql`${runs.defaultBranch} is not null`))
+    .orderBy(desc(runs.githubUpdatedAt))
+    .get();
+  return { ...repo, defaultBranch: latest?.defaultBranch ?? null };
 }
 
 // ---- Starting and stopping -----------------------------------------------------------------------

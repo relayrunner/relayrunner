@@ -21,6 +21,9 @@ use std::time::{Duration, Instant};
 
 /// How often a running evaluation is read again, and the provider app looked for.
 const POLL: Duration = Duration::from_secs(5);
+/// How often a waiting evaluation's dispatch is tried again while it's watched, since the push
+/// that adds workflow_dispatch may not run the workflow.
+const RETRY: Duration = Duration::from_secs(30);
 const APP_POLL: Duration = Duration::from_secs(10);
 /// How often the live view's clock moves.
 const TICK: Duration = Duration::from_secs(1);
@@ -279,7 +282,8 @@ pub fn dashboard_url(server: &str, provider: &str, id: &str, workspace: &str) ->
 // ---- The command ---------------------------------------------------------------------------------
 
 /// Runs `eval` and answers its exit code.
-pub fn command(credentials: &Credentials, rest: &[String]) -> Result<i32, Error> {
+/// `vm`: this machine runs Linux jobs in VMs, for the picker's warnings when a workflow is routed.
+pub fn command(credentials: &Credentials, rest: &[String], vm: bool) -> Result<i32, Error> {
     let args = Args::parse(rest)?;
     if args.json {
         ui::use_stderr();
@@ -327,9 +331,9 @@ pub fn command(credentials: &Credentials, rest: &[String]) -> Result<i32, Error>
                     &workspace
                 )
             ));
-            Ok(watch(credentials, &args, &mut scope, &id, &workspace))
+            Ok(watch(credentials, &args, &mut scope, &id, &workspace, None))
         }
-        Action::Start => start(credentials, &args, &mut scope),
+        Action::Start => start(credentials, &args, &mut scope, vm),
     }
 }
 
@@ -463,7 +467,12 @@ fn list(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i32
     Ok(0)
 }
 
-fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i32, Error> {
+fn start(
+    credentials: &Credentials,
+    args: &Args,
+    scope: &mut Scope,
+    vm: bool,
+) -> Result<i32, Error> {
     let can_ask = ui::can_ask() && !args.json;
     let repo = args.repo.clone().or_else(current_repo);
     scope.owner = repo
@@ -634,18 +643,25 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         }
     }
 
-    // Step 2: the workflow.
-    let workflows = get(credentials, "/workflows", scope)?["workflows"]
+    // Step 2: the workflow. In a clone of the repo, its workflow files are listed too, so a
+    // workflow can be picked before any of its runs reached RelayRunner.
+    let mut workflows = get(credentials, "/workflows", scope)?["workflows"]
         .as_array()
         .cloned()
         .unwrap_or_default();
+    let checkout = repo
+        .as_deref()
+        .and_then(|repo| crate::init::checkout_of(repo, vm));
+    if let (Some(repo), Some(checkout)) = (&repo, &checkout) {
+        add_local(&mut workflows, repo, &checkout.workflows);
+    }
     if workflows.is_empty() && repo.is_none() {
         // A new account: RelayRunner only sees runs from after its GitHub App was installed.
         ui::error(
             "No workflow runs have reached RelayRunner yet. It sees runs from after its GitHub App was installed.",
         );
         ui::info(
-            "Route a workflow with `relayrunner init`, push, and run this again once that run finishes.",
+            "Run this in a clone of the repo to pick one of its workflows, or name it with --repo.",
         );
         return Ok(NEEDS_YOU);
     }
@@ -662,7 +678,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
             "No workflows in {repo} ran in the last 14 days that this workspace can see."
         ));
         ui::info(
-            "Check --repo and --workspace. In a new account, route a workflow with `relayrunner init`, push, and run this again once that run finishes.",
+            "Check --repo and --workspace, or run this in a clone of the repo to pick one of its workflows.",
         );
         return Ok(NEEDS_YOU);
     }
@@ -704,16 +720,125 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
             ));
         }
     };
-    let title = workflow_title(workflow);
+    let mut workflow = workflow.clone();
+    let title = workflow_title(&workflow);
+    let path = str_of(&workflow["path"]).to_string();
+    let file = file_of(&path).to_string();
+
+    // A workflow with no runs yet: its repo's id, from the repos the GitHub App can see.
+    let mut seen_default: Option<String> = None;
+    if workflow["repositoryId"].is_null() {
+        match call(
+            credentials,
+            "GET",
+            &format!("/repos?name={}", encode(&repo)),
+            scope,
+            None,
+        )? {
+            Got::Ok(found) => {
+                workflow["repositoryId"] = found["id"].clone();
+                seen_default = found["defaultBranch"].as_str().map(str::to_string);
+            }
+            Got::Refused(404, _, _) => {
+                ui::error(&format!(
+                    "RelayRunner's GitHub App can't see {repo}. Give it access to the repo on GitHub, then run this again."
+                ));
+                return Ok(NEEDS_YOU);
+            }
+            Got::Refused(_, _, reason) => return Err(failed(reason)),
+            Got::Unclear(_) => return Err(failed("the workspace couldn't be told".into())),
+        }
+    }
+
+    // Jobs that don't go through a relay yet: route them here, with init's picker.
+    let mut waiting_for: Option<String> = None;
     if workflow["relayed"] == json!(false) {
+        let again = format!("relayrunner eval {id} --workflow {file}");
+        let local = checkout
+            .as_ref()
+            .filter(|c| c.workflows.iter().any(|w| w.path == path));
+        let Some(local) = local.filter(|_| can_ask && !args.yes) else {
+            ui::warn(&format!(
+                "{title}'s jobs don't go through RelayRunner yet, so an evaluation can't steer them.\nRun `relayrunner init` in this repo to route them. Where they run today doesn't change."
+            ));
+            ui::outro(&format!("Then run `{again}` again."));
+            return Ok(NEEDS_YOU);
+        };
         ui::warn(&format!(
-            "{title}'s jobs don't go through RelayRunner yet, so an evaluation can't steer them.\nRun `relayrunner init` in this repo to route them. Where they run today doesn't change."
+            "{title}'s jobs don't go through RelayRunner yet, so an evaluation can't steer them. Where they run today doesn't change."
         ));
-        ui::outro(&format!(
-            "Then run `relayrunner eval {id} --workflow {}` again.",
-            file_of(str_of(&workflow["path"]))
-        ));
-        return Ok(NEEDS_YOU);
+        if ui::confirm(&format!("Route {file}'s jobs now?"), true) != Some(true) {
+            ui::outro(&format!(
+                "Route them with `relayrunner init`, then run `{again}` again."
+            ));
+            return Ok(NEEDS_YOU);
+        }
+        let before = crate::push::before_edit(&local.root);
+        let edit = match crate::init::route_for_eval(local, &path) {
+            Ok(Some(edit)) => edit,
+            Ok(None) => {
+                ui::outro("Nothing changed.");
+                return Ok(NEEDS_YOU);
+            }
+            Err(message) => {
+                ui::error(&message);
+                return Ok(NEEDS_YOU);
+            }
+        };
+        let default = crate::push::default_branch(&local.root, seen_default.as_deref())
+            .unwrap_or_else(|| "main".to_string());
+        let pushed = if ui::confirm("Commit and push it?", true) == Some(true) {
+            match crate::push::push(
+                &local.root,
+                &repo,
+                &default,
+                &path,
+                &edit.before,
+                &edit.after,
+                &format!("ci: route {file} through RelayRunner"),
+                &before,
+            ) {
+                Ok(pushed) => Some(pushed),
+                Err(message) => {
+                    ui::warn(&message);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let on_default = matches!(pushed, Some(crate::push::Pushed::Default));
+        match pushed {
+            Some(crate::push::Pushed::Default) => {
+                ui::success(&format!("Pushed the change to {default}"));
+                waiting_for = Some(format!(
+                    "The evaluation starts once GitHub sees {file}'s new version on {default}."
+                ));
+            }
+            Some(crate::push::Pushed::Branch { branch, compare }) => {
+                ui::success(&format!("Pushed the change to {branch}"));
+                ui::info(&format!(
+                    "Open a pull request and merge it into {default}:\n{compare}"
+                ));
+                waiting_for = Some(format!(
+                    "The evaluation starts once the pull request is merged into {default}."
+                ));
+            }
+            None => {
+                ui::info(&format!("Commit {path} and push it to {default}."));
+                waiting_for = Some(format!(
+                    "The evaluation starts once the change is on {default}."
+                ));
+            }
+        }
+        // A workflow that can already be started on demand would start today's version, whose
+        // jobs aren't routed, so it's started once the change is in.
+        if !on_default && edit.dispatchable {
+            ui::outro(&format!(
+                "Once the change is on {default}, run `{again}` again."
+            ));
+            return Ok(NEEDS_YOU);
+        }
     }
 
     // Step 3: the size, then what happens.
@@ -751,7 +876,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         .map(|ms| format!(", about {} in all", about(ms * 5)))
         .unwrap_or_default();
     ui::message(&format!(
-        "{title} runs 5 times on {name} from the default branch{total}.\nSame commit each time: cold cache first, then warm. Nothing in the repo changes.\nThe runs bill to your {name} account."
+        "{title} runs 5 times on {name} from the default branch{total}.\nSame commit each time: cold cache first, then warm. The evaluation doesn't change the repo.\nThe runs bill to your {name} account."
     ));
     if !args.yes {
         if !can_ask {
@@ -828,6 +953,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         scope,
         &evaluation,
         &workspace_slug,
+        waiting_for.as_deref(),
     ))
 }
 
@@ -876,10 +1002,43 @@ pub fn matches_workflow(workflow: &Value, wanted: &str) -> bool {
             .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
 }
 
+/// Adds the checkout's workflow files to the workflows that ran, by path. Whether each is routed
+/// comes from the file, which may be ahead of its runs. Files with no runs go last, with no
+/// `repositoryId` when no other workflow of the repo ran either.
+pub fn add_local(workflows: &mut Vec<Value>, repo: &str, local: &[crate::init::LocalWorkflow]) {
+    let in_repo = |w: &Value| str_of(&w["repository"]).eq_ignore_ascii_case(repo);
+    let repository_id = workflows
+        .iter()
+        .find(|w| in_repo(w))
+        .map(|w| w["repositoryId"].clone())
+        .unwrap_or(Value::Null);
+    for file in local {
+        match workflows
+            .iter_mut()
+            .find(|w| in_repo(w) && str_of(&w["path"]) == file.path)
+        {
+            Some(known) => known["relayed"] = json!(file.routed),
+            None => workflows.push(json!({
+                "repositoryId": repository_id,
+                "repository": repo,
+                "workflow": file.name,
+                "path": file.path,
+                "runs": 0,
+                "baselineRuns": 0,
+                "medianMs": null,
+                "relayed": file.routed,
+                "dispatched": false,
+            })),
+        }
+    }
+}
+
 fn workflow_choice(w: &Value) -> ui::Choice {
     let file = file_of(str_of(&w["path"]));
     let hint = if w["relayed"] == json!(false) {
         format!("{file} · not routed through a relay yet")
+    } else if w["runs"].as_u64() == Some(0) {
+        format!("{file} · no runs in 14 days")
     } else {
         let runs = w["runs"].as_u64().unwrap_or(0);
         let typical = w["medianMs"]
@@ -1020,13 +1179,15 @@ impl LiveArea {
     }
 }
 
-/// Follows an evaluation until it ends, and answers the exit code.
+/// Follows an evaluation until it ends, and answers the exit code. `waiting_for` says what a
+/// waiting one waits for, when this run of `eval` made the change itself.
 fn watch(
     credentials: &Credentials,
     args: &Args,
     scope: &mut Scope,
     id: &str,
     workspace: &str,
+    waiting_for: Option<&str>,
 ) -> i32 {
     let keys = Keys::start();
     let mut area = LiveArea::new();
@@ -1034,6 +1195,7 @@ fn watch(
     let mut waiting_shown = false;
     // The running attempt, when it was first seen here, and how long its jobs had taken by then.
     let mut clock: Option<(u64, Instant, u64)> = None;
+    let mut retried = Instant::now();
     let path = format!("/{}", encode(id));
     ui::write(&format!("{}\n", paint(Style::Gray, "│")));
     loop {
@@ -1064,7 +1226,19 @@ fn watch(
             finished_shown = done.len();
         }
 
+        if state == "waiting" && retried.elapsed() >= RETRY {
+            retried = Instant::now();
+            let _ = call(credentials, "POST", &format!("{path}/retry"), scope, None);
+        }
         match state.as_str() {
+            "waiting" if !waiting_shown && waiting_for.is_some() => {
+                area.clear();
+                waiting_shown = true;
+                ui::info(&format!(
+                    "{} It's tried again every 30s.",
+                    waiting_for.unwrap_or_default()
+                ));
+            }
             "waiting" if !waiting_shown => {
                 area.clear();
                 waiting_shown = true;
@@ -1243,7 +1417,9 @@ fn live_lines(report: &Value, elapsed: Option<u64>) -> Vec<String> {
     let Some(current) = attempts.iter().find(|a| str_of(&a["status"]) != "done") else {
         let what = match state {
             "dispatching" => "Asking GitHub to start the run…",
-            "waiting" => "Waiting for workflow_dispatch on the default branch…",
+            "waiting" => {
+                "Waiting for workflow_dispatch on the default branch… tries again every 30s"
+            }
             _ => "Waiting for GitHub to queue the run…",
         };
         return vec![format!("{}  {what}", paint(Style::Cyan, "◐"))];
@@ -1788,6 +1964,52 @@ mod tests {
         assert_eq!(change(None, Some(1.0), "faster", "slower"), "");
         assert_eq!(money(0.054), "$0.05");
         assert_eq!(about(35 * 60_000), "35 minutes");
+    }
+
+    #[test]
+    fn lists_the_checkouts_workflows_with_the_ones_that_ran() {
+        use crate::init::LocalWorkflow;
+        let local = |path: &str, routed| LocalWorkflow {
+            path: path.into(),
+            name: Some(format!("{path} name")),
+            routed,
+        };
+        let mut workflows = vec![json!({
+            "repositoryId": 5, "repository": "acme/web", "workflow": "CI",
+            "path": ".github/workflows/ci.yml", "runs": 12, "relayed": false,
+        })];
+        add_local(
+            &mut workflows,
+            "Acme/Web",
+            &[
+                local(".github/workflows/ci.yml", true),
+                local(".github/workflows/e2e.yml", false),
+            ],
+        );
+        assert_eq!(workflows.len(), 2);
+        // The file says it's routed now, ahead of its runs; its stats stay.
+        assert_eq!(workflows[0]["relayed"], json!(true));
+        assert_eq!(workflows[0]["runs"], json!(12));
+        assert_eq!(workflows[1]["repositoryId"], json!(5));
+        assert_eq!(workflows[1]["relayed"], json!(false));
+        assert_eq!(workflows[1]["runs"], json!(0));
+        assert_eq!(
+            workflow_title(&workflows[1]),
+            ".github/workflows/e2e.yml name"
+        );
+
+        // A new account: no runs at all, so no repository id until the gateway names it.
+        let mut fresh = Vec::new();
+        add_local(
+            &mut fresh,
+            "acme/web",
+            &[local(".github/workflows/ci.yml", false)],
+        );
+        assert!(fresh[0]["repositoryId"].is_null());
+        assert_eq!(
+            workflow_choice(&fresh[0]).hint.as_deref(),
+            Some("ci.yml · not routed through a relay yet")
+        );
     }
 
     #[test]

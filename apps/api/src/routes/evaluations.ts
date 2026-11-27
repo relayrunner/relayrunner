@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import {
   cancelEvaluation,
+  evaluationRepo,
   evaluationReport,
   evaluationWorkflows,
   isEvaluable,
@@ -31,6 +32,12 @@ const StartBody = z.object({
 
 const Id = z.coerce.number().int().positive();
 
+const RepoName = z
+  .string()
+  .trim()
+  .max(201)
+  .regex(/^[\w.-]+\/[\w.-]+$/);
+
 // Provider evaluations (src/reports/evaluations.ts): run a workflow on a provider five times and compare it
 // with its recent runs. Any member can look; owners and admins start and stop them, since the runs
 // cost money on the provider.
@@ -52,6 +59,16 @@ export const evaluationHandlers = new Hono<AppEnv>()
         workflows: await withGitHubWorkflows(c.env, c.var.db, workspace.installationId, workflows),
       });
     return c.json({ workflows });
+  })
+  // One of the installation's repos by owner/name, for `relayrunner eval` in a clone whose
+  // workflows haven't run since the GitHub App was installed. 404 when the App can't see it.
+  .get("/repos", async (c) => {
+    const name = RepoName.safeParse(c.req.query("name"));
+    if (!name.success) throw new AppError("INVALID_REQUEST");
+    const { installationId } = c.var.workspace;
+    const repo = installationId ? await evaluationRepo(c.var.db, installationId, name.data) : null;
+    if (!repo) throw new AppError("NOT_FOUND", { message: "RelayRunner can't see that repo." });
+    return c.json(repo);
   })
   // The new installation's run history import (src/ingest/run-history.ts), which the dashboard polls.
   // Null when the workspace never had one.

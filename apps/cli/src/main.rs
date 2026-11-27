@@ -24,6 +24,7 @@ mod live;
 mod login;
 mod pause;
 mod protocol;
+mod push;
 mod share;
 mod sys;
 mod ui;
@@ -332,7 +333,14 @@ async fn eval_command(rest: Vec<String>) -> i32 {
             return code;
         }
     }
-    match sys::blocking(move || eval::command(&signed_in()?, &rest)).await {
+    // Starting one in a clone may route a workflow with init's picker, whose warnings depend on
+    // whether this machine runs Linux jobs in VMs.
+    let starting = !matches!(
+        rest.first().map(String::as_str),
+        Some("watch" | "list" | "stop")
+    );
+    let vm = starting && init::in_checkout() && isolated::state().await == isolated::State::Ready;
+    match sys::blocking(move || eval::command(&signed_in()?, &rest, vm)).await {
         Ok(code) => code,
         Err(e) => {
             eprintln!("{e}");
