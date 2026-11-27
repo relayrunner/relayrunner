@@ -313,7 +313,14 @@ const CHEVRON = "M6 9l6 6 6-6";
     let hoverOpened = false;
     const later = (fn: () => void, ms: number) => {
       clearTimeout(timer);
-      timer = window.setTimeout(fn, ms);
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        fn();
+      }, ms);
+    };
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = undefined;
     };
     item.addEventListener("pointerenter", (event) => {
       if (event.pointerType !== "mouse") return;
@@ -323,12 +330,35 @@ const CHEVRON = "M6 9l6 6 6-6";
         hoverOpened = true;
       }, OPEN_DELAY);
     });
-    item.addEventListener("pointerleave", (event) => {
-      if (event.pointerType !== "mouse") return;
+    // The strip between the item and the panel below it counts as the menu, so a slow move
+    // across that gap doesn't close it.
+    const inGap = (x: number, y: number) => {
+      if (!panel.matches(":popover-open")) return false;
+      const t = trigger.getBoundingClientRect();
+      const p = panel.getBoundingClientRect();
+      return (
+        y >= t.bottom - 2 &&
+        y <= p.top &&
+        x >= Math.min(t.left, p.left) &&
+        x <= Math.max(t.right, p.right)
+      );
+    };
+    const closeLater = () =>
       later(() => {
         if (hoverOpened && panel.matches(":popover-open")) panel.hidePopover();
         hoverOpened = false;
       }, CLOSE_DELAY);
+    item.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "mouse") return;
+      if (hoverOpened && inGap(event.clientX, event.clientY)) cancel();
+      else closeLater();
+    });
+    // While the mouse is in the gap, wait; once it leaves the gap for anywhere else, close.
+    document.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "mouse" || !hoverOpened) return;
+      if (item.contains(event.target as Node)) return;
+      if (inGap(event.clientX, event.clientY)) cancel();
+      else if (timer === undefined) closeLater();
     });
     // A click on a menu the mouse already opened keeps it open instead of closing it.
     trigger.addEventListener("click", (event) => {
