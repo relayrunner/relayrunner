@@ -38,7 +38,8 @@ export function useServiceStatus(): ServiceStatus {
     refetchInterval: REFRESH_MS,
     staleTime: REFRESH_MS / 2,
   });
-  if (!data?.state) return { state: "operational" };
+  // A state this build doesn't know reads as operational too, rather than a blank label.
+  if (!data?.state || !(data.state in LABELS)) return { state: "operational" };
   return { state: data.state, incident: data.incident ?? undefined };
 }
 

@@ -1,12 +1,6 @@
-import {
-  CatchBoundary,
-  Link,
-  useLocation,
-  useRouter,
-  type ErrorComponentProps,
-} from "@tanstack/react-router";
+import { CatchBoundary, Link, useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { RotateCwIcon, TriangleAlert } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AppError } from "@relayrunner/errors";
@@ -50,25 +44,54 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   }
 
   return (
-    <div role="alert" className="grid min-h-[60vh] place-content-center p-4 text-center">
+    <PageMessage
+      alert
+      icon={<TriangleAlert aria-hidden className="size-6 text-muted-foreground" />}
+      title="Something went wrong"
+      body={describe(error)}
+    >
+      {signedOut ? (
+        <Button asChild>
+          <Link to="/login" search={{ redirect: window.location.href }}>
+            Sign in
+          </Link>
+        </Button>
+      ) : (
+        <Button onClick={retry} disabled={retrying}>
+          <RotateCwIcon aria-hidden className={retrying ? "animate-spin" : undefined} />
+          {isStaleBuild(error) ? "Reload" : "Try again"}
+        </Button>
+      )}
+    </PageMessage>
+  );
+}
+
+/** A whole-page message in place of a page: a title, a line and what to do next. */
+function PageMessage({
+  alert = false,
+  icon,
+  title,
+  body,
+  className,
+  children,
+}: {
+  alert?: boolean;
+  icon?: ReactNode;
+  title: string;
+  body: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role={alert ? "alert" : undefined}
+      className={cn("grid min-h-[60vh] place-content-center p-4 text-center", className)}
+    >
       <div className="grid max-w-md justify-items-center gap-3">
-        <TriangleAlert aria-hidden className="size-6 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Something went wrong</h1>
-        <p className="text-muted-foreground">{describe(error)}</p>
-        <div className="mt-1 flex gap-2">
-          {signedOut ? (
-            <Button asChild>
-              <Link to="/login" search={{ redirect: window.location.href }}>
-                Sign in
-              </Link>
-            </Button>
-          ) : (
-            <Button onClick={retry} disabled={retrying}>
-              <RotateCwIcon aria-hidden className={retrying ? "animate-spin" : undefined} />
-              {isStaleBuild(error) ? "Reload" : "Try again"}
-            </Button>
-          )}
-        </div>
+        {icon}
+        <h1 className="text-lg font-semibold">{title}</h1>
+        <p className="text-muted-foreground">{body}</p>
+        <div className="mt-1 flex gap-2">{children}</div>
       </div>
     </div>
   );
@@ -80,15 +103,11 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
  */
 export function PageNotFound({ className }: { className?: string }) {
   return (
-    <div className={cn("grid min-h-[60vh] place-content-center p-4 text-center", className)}>
-      <div className="grid max-w-md justify-items-center gap-3">
-        <h1 className="text-lg font-semibold">Not found</h1>
-        <p className="text-muted-foreground">That page doesn't exist.</p>
-        <Button asChild variant="outline" className="mt-1">
-          <Link to="/runners">Go to Runners</Link>
-        </Button>
-      </div>
-    </div>
+    <PageMessage title="Not found" body="That page doesn't exist." className={className}>
+      <Button asChild variant="outline">
+        <Link to="/runners">Go to Runners</Link>
+      </Button>
+    </PageMessage>
   );
 }
 
@@ -105,12 +124,15 @@ export function SectionBoundary({
   /** For the note that shows in the part's place, such as room for a panel's close button. */
   className?: string;
 }) {
-  const href = useLocation({ select: (location) => location.href });
+  // Read when the part re-renders, which a change to the page's search does, rather than
+  // subscribing every boundary on the page to the router.
+  const router = useRouter();
+  const fallback = useCallback(
+    (props: ErrorComponentProps) => <SectionError {...props} className={className} />,
+    [className],
+  );
   return (
-    <CatchBoundary
-      getResetKey={() => href}
-      errorComponent={(props) => <SectionError {...props} className={className} />}
-    >
+    <CatchBoundary getResetKey={() => router.state.location.href} errorComponent={fallback}>
       {children}
     </CatchBoundary>
   );

@@ -128,15 +128,13 @@ function Panel({ runs, environments }: { runs?: Run[]; environments: Environment
   const ids = parseRunParam(run);
   if (!ids) return null;
   return (
-    <SectionBoundary>
-      <RunSheet
-        key={run}
-        ids={ids}
-        jobId={job}
-        run={runs?.find((each) => runParam(each) === run)}
-        environments={environments}
-      />
-    </SectionBoundary>
+    <RunSheet
+      key={run}
+      ids={ids}
+      jobId={job}
+      run={runs?.find((each) => runParam(each) === run)}
+      environments={environments}
+    />
   );
 }
 

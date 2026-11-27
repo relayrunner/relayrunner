@@ -302,9 +302,7 @@ function WorkspaceLayout() {
       {/* The footer follows the page: at the bottom of the window on short pages, after the content
           on long ones. */}
       <main className="flex min-w-0 flex-col">
-        <SectionBoundary>
-          <StatusBanner />
-        </SectionBoundary>
+        <StatusBanner />
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
           {/* From the click on another workspace until its page has loaded, so the old
@@ -313,6 +311,8 @@ function WorkspaceLayout() {
         </div>
         <SiteFooter />
       </main>
+      {/* The panels keep a crash in their content to themselves; these boundaries catch their code
+          failing to load, such as after a deploy, which happens before the panel exists. */}
       {runner && (
         <SectionBoundary>
           <Suspense>
@@ -564,11 +564,9 @@ function SidebarFoot({
           <span className="group-data-[collapsed]/sidebar:sr-only">Docs</span>
         </a>
       </CollapsedTooltip>
-      <SectionBoundary>
-        <CollapsedTooltip label="Status" collapsed={collapsed}>
-          <StatusLink className={cn(navLink, navItem)} />
-        </CollapsedTooltip>
-      </SectionBoundary>
+      <CollapsedTooltip label="Status" collapsed={collapsed}>
+        <StatusLink className={cn(navLink, navItem)} />
+      </CollapsedTooltip>
     </div>
   );
 }
