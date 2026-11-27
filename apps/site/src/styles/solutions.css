@@ -875,6 +875,22 @@ ol.sol-steps h3 {
   }
 }
 @media (max-width: 640px) {
+  /* Each control on its own full-width row, its buttons sharing the row instead of wrapping. */
+  .int-seg {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+  .int-seg button {
+    flex: 1;
+    padding-inline: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .int-sort {
+    width: 100%;
+    margin-left: 0;
+  }
   .int-facts {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;

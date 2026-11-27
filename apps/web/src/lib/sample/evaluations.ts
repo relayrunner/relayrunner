@@ -68,6 +68,13 @@ const SAMPLE_JOBS: [string, Split, Split, Split][] = [
   ["e2e smoke", split(41, 251), split(9, 262), split(6, 171)],
 ];
 
+// List prices per minute: GitHub's 4 vCPU runner today, and the provider's 4 vCPU size.
+const TODAY_RATE = 0.016;
+const SAMPLE_RATE = 0.012;
+/** A job's cost: its running minutes, rounded up, at `rate`. */
+const jobUsd = (split: Split | null, rate: number) =>
+  split ? Math.ceil(split.runMs / 60_000) * rate : null;
+
 const SAMPLE_RUN_MS = [475, 310, 298, 304, 301].map(s);
 
 // List-price cost of each run: 18 billed minutes cold, 11 warm, at 4 vCPU.
@@ -101,6 +108,10 @@ export function sampleEvaluation(
               status: status === "done" || j < 2 ? "done" : j === 2 ? "running" : "queued",
               conclusion: status === "done" || j < 2 ? "success" : null,
               split: status === "done" || j < 2 ? (attempt === 1 ? cold : warm) : null,
+              usd:
+                status === "done" || j < 2
+                  ? jobUsd(attempt === 1 ? cold : warm, SAMPLE_RATE)
+                  : null,
               onProvider: true,
             })),
     };
@@ -149,6 +160,11 @@ export function sampleEvaluation(
       baseline,
       cold: done >= 1 ? cold : null,
       warm: done >= 2 ? warm : null,
+      usd: {
+        baseline: jobUsd(baseline, TODAY_RATE),
+        cold: done >= 1 ? jobUsd(cold, SAMPLE_RATE) : null,
+        warm: done >= 2 ? jobUsd(warm, SAMPLE_RATE) : null,
+      },
       onProvider: true,
     })),
   } satisfies EvaluationReport;
@@ -238,13 +254,19 @@ export function sampleFailedEvaluation(provider: string, passed: number, refused
           usd: null,
           jobs: SAMPLE_JOBS.map(([name, , cold, warm], j) => {
             const bad = name === "unit tests";
+            const jobSplit = bad
+              ? split(refused ? 9 : 8, refused ? 6 : 142)
+              : failed === 1
+                ? cold
+                : warm;
             return {
               id: bad ? SAMPLE_FAILED_JOB + (refused ? 1 : 0) : 9100 + j,
               name,
               status: "done",
               conclusion: bad ? "failure" : "success",
               failedStep: bad ? (refused ? "2. Set up runner" : "6. Run pnpm check") : null,
-              split: bad ? split(refused ? 9 : 8, refused ? 6 : 142) : failed === 1 ? cold : warm,
+              split: jobSplit,
+              usd: jobUsd(jobSplit, SAMPLE_RATE),
               onProvider: true,
             };
           }),

@@ -408,25 +408,50 @@ button {
   color: var(--go-text);
   font-size: 13px;
 }
-.logo-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 16px 40px;
+/* An even grid of provider tiles with hairlines between them. Each tile's right and bottom border
+   is pulled under the container's edge, so only inner lines show however the last row fills. */
+.provider-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
   margin-top: 16px;
-  padding: 20px 24px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--bg-soft);
 }
-.logo-row li {
+.provider-tiles li {
+  margin: 0 -1px -1px 0;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+.provider-tiles a {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
+  height: 100%;
+  min-height: 64px;
+  padding: 12px;
   color: var(--ink-2);
   font-size: 15px;
   font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.provider-tiles a:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+.provider-tiles img {
+  flex: none;
+}
+.provider-tiles .provider-tiles-all {
+  color: var(--go-text);
+}
+@media (min-width: 1200px) {
+  .provider-tiles {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
 }
 
 /* ---------- Features ---------- */
@@ -1088,16 +1113,19 @@ button {
   .provider-cmd {
     display: none;
   }
-  .logo-row {
+  .provider-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .provider-tiles a {
     justify-content: flex-start;
-    gap: 12px 20px;
-    padding: 16px;
+    min-height: 56px;
+    padding-inline: 16px;
   }
   .safety-grid {
     grid-template-columns: 1fr;
   }
   .times-row {
-    grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) repeat(3, 6ch);
     column-gap: 8px;
     padding-inline: 12px;
   }
@@ -1107,21 +1135,35 @@ button {
   .times-head span:first-child {
     font-size: 12px;
   }
-  .times-row b,
-  .times-row code {
+  .times-row b {
+    overflow: hidden;
     font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .times-row code {
+    font-size: 12px;
   }
   .checks span,
   .mini-lane span:not(.go) {
     display: none;
   }
-  .times-row b {
-    white-space: nowrap;
+  /* One line per command: a tighter box and a smaller font, scrolling if a command is still too long. */
+  .close {
+    padding: 24px 20px;
   }
   .instruction {
-    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 8px 8px 14px;
   }
   .instruction code {
-    font-size: 15px;
+    overflow-x: auto;
+    font-size: 14px;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .copy-btn {
+    padding: 10px 12px;
+    font-size: 14px;
   }
 }

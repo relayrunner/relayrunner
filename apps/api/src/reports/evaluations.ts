@@ -478,6 +478,8 @@ export interface AttemptJob {
   /** The step that failed, such as "2. Set up runner", once a failed job finished. */
   failedStep: string | null;
   split: Split | null;
+  /** What it cost at its runner's list price once finished (see runUsd), or null without one. */
+  usd: number | null;
   /** Whether it ran on the evaluated provider: jobs without a relay keep their own runner. */
   onProvider: boolean;
 }
@@ -498,6 +500,8 @@ export interface JobComparison {
   baseline: Split | null;
   cold: Split | null;
   warm: Split | null;
+  /** Medians of what the job cost at list prices: today, run 1, and runs 2 on. */
+  usd: { baseline: number | null; cold: number | null; warm: number | null };
   onProvider: boolean;
 }
 
@@ -715,7 +719,7 @@ export async function evaluationReport(
     .get();
   if (!row) throw new AppError("NOT_FOUND");
 
-  const [ownJobs, baseline, book, repository, routedRuns] = await Promise.all([
+  const [ownJobs, baseline, book, routedRuns] = await Promise.all([
     row.runId
       ? db
           .select(jobColumns)
@@ -724,11 +728,6 @@ export async function evaluationReport(
       : Promise.resolve([] as JobRow[]),
     baselineSpans(db, workspaceId, row.repositoryId, row.workflowPath, row.createdAt.getTime()),
     loadPriceBook(db),
-    db
-      .select({ private: schema.githubRepository.private })
-      .from(schema.githubRepository)
-      .where(eq(schema.githubRepository.id, row.repositoryId))
-      .get(),
     routedRunsSince(db, workspaceId, {
       repositoryId: row.repositoryId,
       workflow: row.workflowName,
@@ -736,7 +735,9 @@ export async function evaluationReport(
       since: row.createdAt,
     }),
   ]);
-  const usdOf = (rows: JobRow[]) => runUsd(book, rows, repository?.private);
+  // Priced at each runner's charge rate even where it costs nothing today (GitHub's included
+  // minutes, or a public repo), so the comparison is like for like.
+  const usdOf = (rows: JobRow[]) => runUsd(book, rows, true);
   const real = (rows: JobRow[]) => rows.filter((job) => !isPick(job));
   const byAttempt = Map.groupBy(real(ownJobs), (job) => job.runAttempt);
   const providerJob = (job: JobRow) => job.labels.includes(row.label);
@@ -768,6 +769,7 @@ export async function evaluationReport(
           conclusion: job.conclusion,
           failedStep: job.failedStep,
           split: splitOf(job),
+          usd: job.completedAt ? usdOf([job]) : null,
           onProvider: providerJob(job),
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) as AttemptJob[],
@@ -780,6 +782,14 @@ export async function evaluationReport(
   );
   const cold = finished.filter((attempt) => attempt.attempt === 1);
   const warm = finished.filter((attempt) => attempt.attempt > 1);
+  const ownUsd = (list: Attempt[], name: string) =>
+    medianUsd(
+      list.flatMap((attempt) =>
+        attempt.jobs.flatMap((job) =>
+          job.name === name && job.split && job.conclusion === "success" ? [job.usd] : [],
+        ),
+      ),
+    );
   const ownSplits = (list: Attempt[], name: string) =>
     list.flatMap((attempt) =>
       attempt.jobs.flatMap((job) =>
@@ -830,6 +840,11 @@ export async function evaluationReport(
       baseline: medianSplit((baselineJobs.get(name) ?? []).flatMap((job) => splitOf(job) ?? [])),
       cold: medianSplit(ownSplits(cold, name)),
       warm: medianSplit(ownSplits(warm, name)),
+      usd: {
+        baseline: medianUsd((baselineJobs.get(name) ?? []).map((job) => usdOf([job]))),
+        cold: ownUsd(cold, name),
+        warm: ownUsd(warm, name),
+      },
       onProvider: attempts.some((attempt) =>
         attempt.jobs.some((job) => job.name === name && job.onProvider),
       ),

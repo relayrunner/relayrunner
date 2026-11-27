@@ -92,6 +92,23 @@ function costChange(from: number | null, to: number | null) {
   return pct === 0 ? "Same as" : pct < 0 ? `${-pct}% less than` : `${pct}% more than`;
 }
 
+/** A job's cost against today's, as "41% cheaper", or null when either has no price. */
+function priceChange(from: number | null, to: number | null) {
+  if (from === null || to === null || from === 0) return null;
+  return { pct: Math.round(((to - from) / from) * 100) };
+}
+
+/** A change on one line, green when it's an improvement. */
+function Delta({ pct, better, worse }: { pct: number | null; better: string; worse: string }) {
+  if (pct === null) return <span className="text-muted-foreground">—</span>;
+  if (pct === 0) return <span className="text-muted-foreground">Same</span>;
+  return (
+    <span className={pct < 0 ? "text-go" : "text-muted-foreground"}>
+      {Math.abs(pct)}% {pct < 0 ? better : worse}
+    </span>
+  );
+}
+
 function costDetail(name: string, runUsd: number | null, todayUsd: number | null) {
   if (runUsd === null) return `No list price for ${name}`;
   if (todayUsd === null) return "Today's runners have no list price";
@@ -283,8 +300,11 @@ export function Results({
                     {name}, {active ? `runs 2–${report.runs}` : warmRuns} (warm)
                   </th>
                 )}
-                <th className="px-4 py-2 text-right font-medium">
-                  {hasWarm ? "Warm" : "Cold"} vs today
+                <th className="px-4 py-2 text-right font-medium whitespace-nowrap">
+                  Time vs today
+                </th>
+                <th className="px-4 py-2 text-right font-medium whitespace-nowrap">
+                  Cost vs today
                 </th>
               </tr>
             </thead>
@@ -292,6 +312,8 @@ export function Results({
               {report.jobs.map((job) => {
                 const ours = hasWarm ? job.warm : job.cold;
                 const delta = change(job.baseline && total(job.baseline), ours && total(ours));
+                const oursUsd = hasWarm ? job.usd.warm : job.usd.cold;
+                const costDelta = job.onProvider ? priceChange(job.usd.baseline, oursUsd) : null;
                 return (
                   <tr key={job.name} className="border-b last:border-0">
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
@@ -303,17 +325,28 @@ export function Results({
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <SplitCell split={job.baseline} max={maxJob} barClass="bg-ink-2" />
+                      <SplitCell
+                        split={job.baseline}
+                        usd={job.usd.baseline}
+                        max={maxJob}
+                        barClass="bg-ink-2"
+                      />
                     </td>
                     {job.onProvider ? (
                       <>
                         <td className="px-4 py-3">
-                          <SplitCell split={job.cold} max={maxJob} barClass={bar} />
+                          <SplitCell
+                            split={job.cold}
+                            usd={job.usd.cold}
+                            max={maxJob}
+                            barClass={bar}
+                          />
                         </td>
                         {showWarm && (
                           <td className="px-4 py-3">
                             <SplitCell
                               split={job.warm}
+                              usd={job.usd.warm}
                               max={maxJob}
                               barClass={bar}
                               pending={active ? "After run 2" : undefined}
@@ -329,15 +362,15 @@ export function Results({
                         job to evaluate it on {name}.
                       </td>
                     )}
-                    <td
-                      className={cn(
-                        "px-4 py-3 text-right whitespace-nowrap tabular-nums",
-                        job.onProvider && delta && delta.pct < 0
-                          ? "text-go"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {(job.onProvider && delta?.text) || "—"}
+                    <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
+                      <Delta
+                        pct={job.onProvider ? (delta?.pct ?? null) : null}
+                        better="faster"
+                        worse="slower"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
+                      <Delta pct={costDelta?.pct ?? null} better="cheaper" worse="more" />
                     </td>
                   </tr>
                 );
@@ -353,8 +386,9 @@ export function Results({
           on {report.ref} over 14 days, on whatever runners they used and at whatever commit each
           ran. {name}'s runs ran back to back on one commit, so caches were warmer than on a typical
           day. {hasWarm && `Warm is the median of ${warmRuns}. `}Costs are list prices: each job's
-          minutes, rounded up, at its runner's price per minute, with your own machines free. Free
-          minutes, plan fees and discounts aren't counted.
+          minutes, rounded up, at its runner's price per minute, with your own machines free. Every
+          runner is priced at what it charges per minute, even where GitHub's included minutes or a
+          public repo make it free today; plan fees and discounts aren't counted.
         </p>
       )}
     </div>
@@ -626,11 +660,14 @@ function LiveRun({ report, attempt }: { report: EvaluationReport; attempt: Attem
 
 function SplitCell({
   split,
+  usd: cost,
   max,
   barClass,
   pending,
 }: {
   split: Split | null;
+  /** What the job cost, shown beside its time when known. */
+  usd?: number | null;
   max: number;
   barClass: string;
   /** Shown instead of a dash while the number is still to come. */
@@ -638,10 +675,17 @@ function SplitCell({
 }) {
   if (!split) return <span className="text-muted-foreground">{pending ?? "—"}</span>;
   return (
-    <div className="grid min-w-32 gap-1.5">
+    <div className="grid min-w-40 gap-1.5">
       <span className="flex items-baseline justify-between gap-2 tabular-nums">
-        <span>{clock(total(split))}</span>
-        <span className="text-xs text-muted-foreground">wait {clock(split.waitMs)}</span>
+        <span className="whitespace-nowrap">
+          {clock(total(split))}
+          {cost !== undefined && cost !== null && (
+            <span className="text-muted-foreground"> · {usd(cost)}</span>
+          )}
+        </span>
+        <span className="text-xs whitespace-nowrap text-muted-foreground">
+          wait {clock(split.waitMs)}
+        </span>
       </span>
       <span className="flex h-2 w-full overflow-hidden rounded-full bg-raised-2">
         <span className="h-full bg-run/60" style={{ width: `${(split.waitMs / max) * 100}%` }} />
