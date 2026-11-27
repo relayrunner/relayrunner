@@ -81,12 +81,20 @@ describe("ProviderTakeover", () => {
   let takeover: InstanceType<typeof ProviderTakeover>;
   const providerMissed = vi.fn();
   const providerPicked = vi.fn();
+  const providerSeen = vi.fn();
 
   beforeEach(async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    for (const fn of [...Object.values(github), runner.complete, providerMissed, providerPicked])
+    for (const fn of [
+      ...Object.values(github),
+      runner.complete,
+      providerMissed,
+      providerPicked,
+      providerSeen,
+    ])
       fn.mockReset();
     runner.request = {};
+    providerSeen.mockResolvedValue(false);
     const testEnv = await createTestEnv();
     const now = Date.now();
     for (const sql of [
@@ -99,7 +107,7 @@ describe("ProviderTakeover", () => {
       await testEnv.DB.prepare(sql).bind(now).run();
     env = {
       ...testEnv,
-      ROUTER: { getByName: () => ({ providerMissed, providerPicked }) },
+      ROUTER: { getByName: () => ({ providerMissed, providerPicked, providerSeen }) },
     } as unknown as Env;
     state = memoryState();
     takeover = new ProviderTakeover(state.ctx as never, env);
@@ -140,6 +148,36 @@ describe("ProviderTakeover", () => {
     expect(github.rerunJob).toHaveBeenCalledWith("ghs_test", "acme/app", 41);
     const retry = await env.DB.prepare("select kind, runner, status from job_retry").first();
     expect(retry).toEqual({ kind: "provider_missed", runner: "other", status: "requested" });
+  });
+
+  test("a provider that ran a job of the repo lately gets up to 10 minutes to start it", async () => {
+    providerSeen.mockResolvedValue(true);
+    const queuedAt = Date.now();
+    await takeover.start({ ...work, queuedAt });
+    github.workflowJobRunner.mockResolvedValue({ status: "queued", runnerName: null });
+    await takeover.alarm();
+    expect(runner.complete).not.toHaveBeenCalled();
+    expect(providerMissed).not.toHaveBeenCalled();
+    expect(state.data.get("phase")).toBe("takeover");
+    expect(state.alarm()).toBeGreaterThan(queuedAt);
+
+    // Picked up on a later check.
+    github.workflowJobRunner.mockResolvedValue({ status: "in_progress", runnerName: "gbx-1" });
+    await takeover.alarm();
+    expect(providerPicked).toHaveBeenCalledWith("groundbox", 1);
+    expect(runner.complete).not.toHaveBeenCalled();
+  });
+
+  test("a slow start past 10 minutes is ended and the provider skipped for the repo", async () => {
+    providerSeen.mockResolvedValue(true);
+    await takeover.start({ ...work, queuedAt: Date.now() - 10 * 60_000 });
+    github.workflowJobRunner.mockResolvedValue({ status: "queued", runnerName: null });
+    await takeover.alarm();
+    expect(runner.complete).toHaveBeenCalledWith(expect.anything(), "failed", {
+      error: expect.stringContaining("Groundbox didn't start this job within 10 minutes"),
+    });
+    expect(providerMissed).toHaveBeenCalledWith("groundbox", 1);
+    expect(state.data.get("phase")).toBe("rerun");
   });
 
   test("a later attempt that misses again is ended without another re-run", async () => {

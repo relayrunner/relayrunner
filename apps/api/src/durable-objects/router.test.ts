@@ -885,4 +885,13 @@ describe("Router: hosted providers that can't see the repo", () => {
     await router.providerPicked("groundbox", 1);
     expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
   });
+
+  test("a provider that picked up a job of the repo is seen there until it misses again", async () => {
+    expect(await router.providerSeen("groundbox", 1)).toBe(false);
+    await router.providerPicked("groundbox", 1);
+    expect(await router.providerSeen("groundbox", 1)).toBe(true);
+    expect(await router.providerSeen("groundbox", 2)).toBe(false);
+    await router.providerMissed("groundbox", 1);
+    expect(await router.providerSeen("groundbox", 1)).toBe(false);
+  });
 });

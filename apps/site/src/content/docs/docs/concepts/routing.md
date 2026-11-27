@@ -65,7 +65,7 @@ The Router page shows each runner type it's skipping, with a **Try again now** b
 
 A hosted provider only runs jobs from repos its GitHub App can access. If its app is installed on **Selected repositories** without this repo, a job sent there would wait with nothing to pick it up.
 
-If a job the Router sent to a hosted provider isn't picked up within a minute, the Router ends it with a message that names the provider, then re-runs the relay once the run finishes, so the job goes to the next step in your runner order. That provider is skipped for that repo until a later job tries it again, on the same schedule as above, and it's back in use as soon as a runner picks one up. The Activity page shows each of these retries.
+If a job the Router sent to a hosted provider isn't picked up within a minute, the Router ends it with a message that names the provider, then re-runs the relay once the run finishes, so the job goes to the next step in your runner order. That provider is skipped for that repo until a later job tries it again, on the same schedule as above, and it's back in use as soon as a runner picks one up. The Activity page shows each of these retries. If that provider has already run jobs in the repo, a slow start doesn't count as a miss: the Router gives it up to 10 minutes before moving the job. When every other step in your runner order is skipped, a provider that only missed the repo lately still takes the job rather than the run failing.
 
 The Router also skips Blacksmith and Groundbox for an organization that hasn't installed their GitHub App.
 

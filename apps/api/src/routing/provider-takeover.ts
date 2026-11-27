@@ -7,6 +7,10 @@
 // (Router.providerMissed), and once the run finishes its relay is re-run, so the pick goes to the
 // next provider in the order. Nobody has to notice or press anything.
 //
+// A provider that ran a job of the repo lately can see it, so a job still queued there after a
+// minute is a slow start (a burst of jobs, a cold pool), not a missing App: the takeover waits up
+// to SLOW_START_MS for it before ending it, and only then skips the provider for the repo.
+//
 // Before a job ever goes there, the Router also skips a provider whose GitHub App isn't installed
 // on the job's account at all (Router.checkAccess).
 
@@ -18,6 +22,11 @@ import { FIRST_BACKOFF_MS, MAX_BACKOFF_MS, TRIAL_TIMEOUT_MS } from "./provider-h
 // How long a routed job may wait on a provider's label before it's taken over. Flex runners that
 // wait for spare room may need longer (a follow-up).
 export const TAKEOVER_AFTER_MS = 60_000;
+// How long a job may wait on a provider that ran a job of the repo within SEEN_TTL_MS, checked
+// every SLOW_CHECK_MS, before it's taken over all the same.
+export const SLOW_START_MS = 10 * 60_000;
+export const SLOW_CHECK_MS = 60_000;
+export const SEEN_TTL_MS = 14 * 24 * 60 * 60_000;
 // How long the takeover's runner waits for GitHub to offer it the job.
 export const TAKEOVER_WAIT_MS = 2 * 60_000;
 // How often the takeover asks whether the run finished, so its relay can be re-run, and for how
@@ -34,9 +43,11 @@ export const APPS_TTL_MS = 5 * 60_000;
 // to the takeover.
 export const APP_CHECKED: readonly HostedProviderId[] = ["blacksmith", "groundbox"];
 
-/** The error the taken-over job shows on its run. */
-export function takeoverMessage(key: HostedProviderId): string {
+/** The error the taken-over job shows on its run. `slow`: the provider can see the repo. */
+export function takeoverMessage(key: HostedProviderId, slow = false): string {
   const name = RUNNER_LABELS[key];
+  if (slow)
+    return `${name} didn't start this job within ${SLOW_START_MS / 60_000} minutes, so RelayRunner ended it and is re-running the relay to pick another runner.`;
   return `${name} didn't pick up this job within a minute, so RelayRunner ended it and is re-running the relay to pick another runner. ${name}'s GitHub App may not have access to this repository: check the repositories it can access in your GitHub settings.`;
 }
 
@@ -48,6 +59,9 @@ export const takeoverRunnerName = (jobId: number) => `relayrunner-move-${jobId}`
 
 /** The Router's storage id for a provider's misses in one repo. */
 export const missId = (key: string, repositoryId: number) => `${key}:${repositoryId}`;
+
+/** The Router's storage id for when a provider last picked up a job of one repo. */
+export const seenId = (key: string, repositoryId: number) => `${key}:${repositoryId}`;
 
 /** A provider that missed a job of one repo: skipped there until `retryAt`, then one trial. */
 export interface RepoMiss {

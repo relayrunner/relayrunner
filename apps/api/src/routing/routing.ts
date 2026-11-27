@@ -933,8 +933,10 @@ export async function decideRoute(
         skipped.push({ key, reason: "not_provider_label" });
       else {
         // A provider that can't see the repo would leave the job queued until RelayRunner moves it.
+        // A provider that only missed the repo lately is checked against its limits too, so it
+        // can still take the job when nothing else can (below).
         const cannot = await access(key);
-        if (cannot) {
+        if (cannot && cannot.cause !== "missed") {
           skipped.push({ key, reason: "provider_no_access", access: cannot });
           continue;
         }
@@ -966,13 +968,23 @@ export async function decideRoute(
           skipped.push({ key, reason: "provider_held", held: hold });
           continue;
         }
+        if (cannot) {
+          skipped.push({ key, reason: "provider_no_access", access: cannot });
+          continue;
+        }
         const unhealthy = await health(key, labels[0]);
         if (!unhealthy) return { runner: labels[0], step: key, skipped, notInOrder };
         skipped.push({ key, reason: "provider_unhealthy", unhealthy });
       }
     }
   }
-  const fallback = skipped.findIndex((step) => step.reason === "provider_unhealthy");
+  // Nothing fits: a provider skipped only for how it's been going (slow pickups, a recent miss in
+  // this repo) still beats failing the relay. Its takeover moves the job on if it misses again.
+  let fallback = skipped.findIndex((step) => step.reason === "provider_unhealthy");
+  if (fallback < 0)
+    fallback = skipped.findIndex(
+      (step) => step.reason === "provider_no_access" && step.access?.cause === "missed",
+    );
   if (fallback >= 0) {
     const { key } = skipped[fallback];
     return { runner: job[key][0], step: key, skipped: skipped.slice(0, fallback), notInOrder };

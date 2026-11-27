@@ -53,6 +53,8 @@ import {
   APPS_TTL_MS,
   missed,
   missGate,
+  SEEN_TTL_MS,
+  seenId,
   missId,
   type RepoMiss,
 } from "../routing/provider-takeover.ts";
@@ -166,6 +168,7 @@ interface StoredRoute extends Route {
 const HEALTH_KEY = "health:";
 // Each hosted provider that missed a job of a repo (src/routing/provider-takeover.ts), by missId.
 const MISS_KEY = "miss:";
+const SEEN_KEY = "seen:";
 
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
 // rarely and take a few calls to read.
@@ -766,6 +769,8 @@ export class Router extends DurableObject<Env> {
     const id = MISS_KEY + missId(key, repositoryId);
     const state = missed(await this.ctx.storage.get<RepoMiss>(id), Date.now());
     await this.ctx.storage.put(id, state);
+    // Its next job there gets the minute again, not the slow-start wait.
+    await this.ctx.storage.delete(SEEN_KEY + seenId(key, repositoryId));
     this.log.info("provider.repo_missed", "provider missed a job of the repo", {
       provider: key,
       repositoryId,
@@ -775,12 +780,19 @@ export class Router extends DurableObject<Env> {
 
   /** A runner picked up a job of the repo on the provider: it can see the repo again. */
   async providerPicked(key: HostedProviderId, repositoryId: number): Promise<void> {
+    await this.ctx.storage.put(SEEN_KEY + seenId(key, repositoryId), Date.now());
     const id = MISS_KEY + missId(key, repositoryId);
     if (await this.ctx.storage.delete(id))
       this.log.info("provider.repo_recovered", "provider picked up a job of the repo again", {
         provider: key,
         repositoryId,
       });
+  }
+
+  /** Whether the provider picked up a job of the repo within SEEN_TTL_MS, so it can see it. */
+  async providerSeen(key: HostedProviderId, repositoryId: number): Promise<boolean> {
+    const at = await this.ctx.storage.get<number>(SEEN_KEY + seenId(key, repositoryId));
+    return at !== undefined && Date.now() - at < SEEN_TTL_MS;
   }
 
   /** The 15-minute sweep's recent jobs on hosted provider labels (sweepProviderHealth). */

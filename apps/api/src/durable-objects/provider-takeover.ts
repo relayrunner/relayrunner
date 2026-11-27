@@ -18,6 +18,8 @@ import {
   MAX_TAKEOVER_ATTEMPT,
   RERUN_GIVE_UP_MS,
   RERUN_POLL_MS,
+  SLOW_CHECK_MS,
+  SLOW_START_MS,
   TAKEOVER_AFTER_MS,
   TAKEOVER_WAIT_MS,
   takeoverMessage,
@@ -59,7 +61,8 @@ const RETRY_MS = 30_000;
 
 // One per routed job on a hosted provider's label (src/routing/provider-takeover.ts), addressed by
 // takeoverName. A minute after the job queued it asks GitHub whether a runner took it. If one did,
-// the provider can see the repo. If not, it acts as a one-job runner on the job's label, claims the
+// the provider can see the repo. If not, and the provider ran a job of the repo lately, it asks
+// again every minute up to SLOW_START_MS. Then, it acts as a one-job runner on the job's label, claims the
 // job and fails it with the reason, tells the Router the provider missed the repo, and once the
 // run finishes re-runs its relay so the pick goes elsewhere.
 export class ProviderTakeover extends DurableObject<Env> {
@@ -128,7 +131,16 @@ export class ProviderTakeover extends DurableObject<Env> {
         await router.providerPicked(work.key, work.repositoryId);
       return job ? "picked_up" : "gone";
     }
-    const ended = await endJob(this.env, token, work);
+    // A provider that ran a job of this repo lately can see it: give it longer to start.
+    const waited = Date.now() - work.queuedAt;
+    const slow = await router.providerSeen(work.key, work.repositoryId);
+    if (slow && waited < SLOW_START_MS) {
+      await this.ctx.storage.setAlarm(
+        Math.min(Date.now() + SLOW_CHECK_MS, work.queuedAt + SLOW_START_MS),
+      );
+      return "slow_start";
+    }
+    const ended = await endJob(this.env, token, work, slow);
     if (ended !== "ended") return ended;
     await router.providerMissed(work.key, work.repositoryId);
     if (work.runAttempt >= MAX_TAKEOVER_ATTEMPT) return "ended_no_rerun";
@@ -212,7 +224,7 @@ export class ProviderTakeover extends DurableObject<Env> {
 // Registers a one-job runner on the job's label for the repo, and fails the job GitHub offers it.
 // Another job of the repo queued on the same label may come instead: it hasn't been picked up
 // either, so it's ended the same way.
-async function endJob(env: Env, token: string, work: TakeoverWork) {
+async function endJob(env: Env, token: string, work: TakeoverWork, slow: boolean) {
   const db = createDb(env.DB);
   const [{ jit, scope }, version] = await Promise.all([
     mintRepoFirst(
@@ -235,7 +247,7 @@ async function endJob(env: Env, token: string, work: TakeoverWork) {
     if (!request) return "no_job";
     const job = await client.claim(request);
     registered = false;
-    await client.complete(job, "failed", { error: takeoverMessage(work.key) });
+    await client.complete(job, "failed", { error: takeoverMessage(work.key, slow) });
     return "ended";
   } finally {
     await client.closeSession().catch((error) => logCleanup("close session", work, error));

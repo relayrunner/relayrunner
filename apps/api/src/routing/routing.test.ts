@@ -1948,6 +1948,36 @@ describe("decideRoute with a Groundbox step", () => {
     );
   });
 
+  test("a provider that only missed the repo lately takes the job when nothing else fits", async () => {
+    const access = async () => ({ cause: "missed" as const, retryAt: 1 });
+    const args = [none, undefined, undefined, undefined, undefined, undefined, undefined] as const;
+    expect(
+      await decideRoute(
+        { steps: [{ key: "groundbox" }, { key: "blacksmith" }] },
+        job,
+        ...args,
+        access,
+      ),
+    ).toMatchObject({ runner: job.groundbox[0], step: "groundbox", skipped: [] });
+    // Its spend limit still holds.
+    const capped = await decideRoute(
+      { steps: [{ key: "groundbox", spendLimit: { usd: 1 } }] },
+      job,
+      none,
+      undefined,
+      undefined,
+      async () => ({ account: "acme", spentUsd: 5 }),
+      undefined,
+      undefined,
+      undefined,
+      access,
+    );
+    expect(capped).toMatchObject({
+      runner: null,
+      skipped: [{ key: "groundbox", reason: "spend_limit" }],
+    });
+  });
+
   test("the limit's skip names Groundbox's free minutes", async () => {
     const failed = await decideRoute(
       { steps: [{ key: "groundbox", limit: { percent: 80 } }] },
