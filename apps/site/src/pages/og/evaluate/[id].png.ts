@@ -2,7 +2,7 @@
 // (/og/evaluate/<id>.png). The dashboard's Worker points the public Evaluate page's og:image here
 // (apps/web/worker/evaluate-meta.ts), since that page is a single-page app crawlers can't run.
 import type { APIRoute, GetStaticPaths } from "astro";
-import { evaluable, evaluateHref } from "../../../lib/evaluate";
+import { evaluable, evaluateHref, sampleRuns } from "../../../lib/evaluate";
 import { INTEGRATIONS, type Integration } from "../../../lib/integrations";
 import { evaluateCard, renderPng } from "../../../lib/share-images.mjs";
 
@@ -15,6 +15,6 @@ export const getStaticPaths = (() =>
 export const GET: APIRoute = async ({ props }) => {
   const { id, name } = (props as { integration: Integration }).integration;
   const url = evaluateHref(id).replace(/^https:\/\//, "");
-  const png = await renderPng(evaluateCard({ id, name, url }));
+  const png = await renderPng(evaluateCard({ id, name, url, runs: sampleRuns(id) }));
   return new Response(png, { headers: { "Content-Type": "image/png" } });
 };

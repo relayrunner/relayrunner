@@ -347,9 +347,11 @@ export function integrationsCard({ url }) {
  * drawn at build time as /og/evaluate/<id>.png. "Benchmark your CI on <provider>", the provider in
  * a pill of its own brand colours, beside a card like the dashboard's Performance views: a
  * workflow's runs on GitHub over two weeks with the provider's evaluation runs under them, then
- * both runners' run time (range and median) and cost per run. The numbers are illustrative.
+ * both runners' run time (range and median) and cost per run. `runs` holds the two sample runs'
+ * times (illustrative) and costs at today's list prices (src/lib/evaluate.ts), the provider's null
+ * without a price list.
  */
-export function evaluateCard({ id, name, url }) {
+export function evaluateCard({ id, name, url, runs }) {
   const c = dark;
   const today = "#9aa3ad";
   const them = "#3987e5";
@@ -432,21 +434,23 @@ export function evaluateCard({ id, name, url }) {
           logo: logoOf(id),
           label: name,
           tag: "evaluation",
-          time: "2:04",
-          timeChange: "40%",
+          time: clock(runs.provider.ms),
+          timeChange: change(runs.today.ms, runs.provider.ms),
           range: [0.3, 0.4, 0.33],
           tone: them,
-          cost: "$0.048",
-          costChange: "20%",
+          cost: usd(runs.provider.usd),
+          costChange: change(runs.today.usd, runs.provider.usd),
         }),
         rangeRow(c, fixed, {
           logo: provider("github"),
           label: "ubuntu-latest",
           tag: "today",
-          time: "3:28",
+          time: clock(runs.today.ms),
+          timeChange: null,
           range: [0.6, 0.86, 0.69],
           tone: today,
-          cost: "$0.060",
+          cost: usd(runs.today.usd),
+          costChange: null,
         }),
       ),
     ),
@@ -573,17 +577,33 @@ function runsChart(c, { width, height, today, them }) {
   );
 }
 
-const down = (c) =>
-  `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><polygon points="0,1 10,1 5,9" fill="${c.go}"/></svg>`).toString("base64")}`;
+const clock = (ms) =>
+  `${Math.floor(ms / 60_000)}:${String(Math.round((ms % 60_000) / 1000)).padStart(2, "0")}`;
 
-/** A smaller-is-better change in green with a down arrow, as in Performance's tables. */
-const drop = (c, text, size) =>
-  h(
+/** Dollars to the cent, or a tenth of a cent under a dime, as the dashboard's evaluation shows them. */
+const usd = (value) =>
+  value === null ? "—" : `$${value.toFixed(value > 0 && value < 0.1 ? 3 : 2)}`;
+
+/** The percent change from today, or null when either side is unknown or they're the same. */
+function change(from, to) {
+  if (!from || to === null) return null;
+  const pct = Math.round(((to - from) / from) * 100);
+  return pct === 0 ? null : pct;
+}
+
+const arrow = (color, up) =>
+  `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><polygon points="${up ? "0,9 10,9 5,1" : "0,1 10,1 5,9"}" fill="${color}"/></svg>`).toString("base64")}`;
+
+/** A change against today, as Performance's tables show one: green and down, or red and up. */
+function drop(c, pct, size) {
+  const color = pct < 0 ? c.go : "#f0817a";
+  return h(
     "div",
-    { alignItems: "center", gap: 5, ...mono(size, c.go) },
-    img(down(c), Math.round(size * 0.7), { flexShrink: 0 }),
-    text,
+    { alignItems: "center", gap: 5, ...mono(size, color) },
+    img(arrow(color, pct > 0), Math.round(size * 0.7), { flexShrink: 0 }),
+    `${Math.abs(pct)}%`,
   );
+}
 
 /** One runner as a row of Performance's Runners table: run time with its range and median, and cost. */
 function rangeRow(c, fixed, { logo, label, tag, time, timeChange, range, tone, cost, costChange }) {
@@ -600,7 +620,7 @@ function rangeRow(c, fixed, { logo, label, tag, time, timeChange, range, tone, c
       h("div", mono(12, c.mute), tag),
     ),
     h("div", { width: 52, ...mono(18, c.ink, 500) }, time),
-    h("div", { width: 62 }, timeChange ? drop(c, timeChange, 14) : []),
+    h("div", { width: 62 }, timeChange === null ? [] : drop(c, timeChange, 14)),
     h(
       "div",
       { position: "relative", width: track, height: 10, borderRadius: 5, background: "#22272f" },
@@ -627,7 +647,7 @@ function rangeRow(c, fixed, { logo, label, tag, time, timeChange, range, tone, c
       "div",
       { marginLeft: "auto", flexDirection: "column", alignItems: "flex-end" },
       h("div", mono(17, c.ink), cost),
-      costChange ? drop(c, costChange, 13) : [],
+      costChange === null ? [] : drop(c, costChange, 13),
     ),
   );
 }
