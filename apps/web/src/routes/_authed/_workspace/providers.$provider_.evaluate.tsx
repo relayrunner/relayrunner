@@ -811,7 +811,11 @@ export function Results({
   const warmRuns = ran > 2 ? `runs 2–${ran}` : "run 2";
   const maxJob = Math.max(
     1,
-    ...report.jobs.flatMap((j) => [j.baseline, j.cold, j.warm].flatMap((s) => (s ? total(s) : []))),
+    ...report.jobs.flatMap((j) =>
+      (j.onProvider ? [j.baseline, j.cold, j.warm] : [j.baseline]).flatMap((s) =>
+        s ? total(s) : [],
+      ),
+    ),
   );
   return (
     <div className="grid gap-6">
@@ -965,26 +969,39 @@ export function Results({
                     <td className="px-4 py-3">
                       <SplitCell split={job.baseline} max={maxJob} barClass="bg-ink-2" />
                     </td>
-                    <td className="px-4 py-3">
-                      <SplitCell split={job.cold} max={maxJob} barClass={bar} />
-                    </td>
-                    {showWarm && (
-                      <td className="px-4 py-3">
-                        <SplitCell
-                          split={job.warm}
-                          max={maxJob}
-                          barClass={bar}
-                          pending={active ? "After run 2" : undefined}
-                        />
+                    {job.onProvider ? (
+                      <>
+                        <td className="px-4 py-3">
+                          <SplitCell split={job.cold} max={maxJob} barClass={bar} />
+                        </td>
+                        {showWarm && (
+                          <td className="px-4 py-3">
+                            <SplitCell
+                              split={job.warm}
+                              max={maxJob}
+                              barClass={bar}
+                              pending={active ? "After run 2" : undefined}
+                            />
+                          </td>
+                        )}
+                      </>
+                    ) : (
+                      // It kept its own runner during the evaluation, so its times say nothing
+                      // about the provider and aren't compared.
+                      <td colSpan={showWarm ? 2 : 1} className="px-4 py-3 text-muted-foreground">
+                        Ran on its own runner, so there's nothing to compare. Add a relay to this
+                        job to evaluate it on {name}.
                       </td>
                     )}
                     <td
                       className={cn(
                         "px-4 py-3 text-right whitespace-nowrap tabular-nums",
-                        delta && delta.pct < 0 ? "text-go" : "text-muted-foreground",
+                        job.onProvider && delta && delta.pct < 0
+                          ? "text-go"
+                          : "text-muted-foreground",
                       )}
                     >
-                      {delta?.text ?? "—"}
+                      {(job.onProvider && delta?.text) || "—"}
                     </td>
                   </tr>
                 );

@@ -252,6 +252,19 @@ function sampleEvaluationById(id: string) {
       routedRuns: sampleParam() === "unused" ? 0 : 128,
     };
   if (state === "first") return sampleEvaluation(provider, 0);
+  // `:mixed` has a job without a relay, which keeps its own runner.
+  if (state === "mixed") {
+    const report = sampleEvaluation(provider, EVALUATION_RUNS);
+    const own = (job: { name: string }) => job.name === "e2e smoke";
+    return {
+      ...report,
+      attempts: report.attempts.map((a) => ({
+        ...a,
+        jobs: a.jobs.map((job) => (own(job) ? { ...job, onProvider: false } : job)),
+      })),
+      jobs: report.jobs.map((job) => (own(job) ? { ...job, onProvider: false } : job)),
+    };
+  }
   // `:failed-<n>` fails after n passing runs; `:refused-<n>` has the provider refuse the job.
   if (state?.startsWith("failed-") || state?.startsWith("refused-"))
     return sampleFailedEvaluation(
