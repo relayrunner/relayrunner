@@ -1,5 +1,15 @@
 # relayrunner
 
+## 0.22.0
+
+### Minor Changes
+
+- 3dd8581: Add `relayrunner eval`, which evaluates a hosted provider on one of your workflows from the terminal: five runs from the default branch, compared with the workflow's recent runs. It starts the same evaluation as the dashboard's Evaluate page, so you can follow it in either place. `eval watch`, `eval list` and `eval stop` follow, list and stop evaluations, including ones started in the dashboard.
+
+### Patch Changes
+
+- 6e1b92a: `relayrunner eval` shows the run that's going now, not the last one.
+
 ## 0.21.0
 
 ### Minor Changes
