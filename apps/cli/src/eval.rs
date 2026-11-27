@@ -17,11 +17,13 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How often a running evaluation is read again, and the provider app looked for.
 const POLL: Duration = Duration::from_secs(5);
 const APP_POLL: Duration = Duration::from_secs(10);
+/// How often the live view's clock moves.
+const TICK: Duration = Duration::from_secs(1);
 /// The size the dashboard starts on.
 const DEFAULT_VCPUS: u64 = 4;
 
@@ -1000,11 +1002,6 @@ impl LiveArea {
         }
     }
 
-    /// Leaves what's drawn as log, so the next output goes under it.
-    fn keep(&mut self) {
-        self.lines = 0;
-    }
-
     fn clear(&mut self) {
         if self.tty && self.lines > 0 {
             ui::write(&format!("\x1b[{}A\x1b[J", self.lines));
@@ -1025,7 +1022,10 @@ fn watch(
     let mut area = LiveArea::new();
     let mut finished_shown = 0usize;
     let mut waiting_shown = false;
+    // The running attempt, when it was first seen here, and how long its jobs had taken by then.
+    let mut clock: Option<(u64, Instant, u64)> = None;
     let path = format!("/{}", encode(id));
+    ui::write(&format!("{}\n", paint(Style::Gray, "│")));
     loop {
         let report = match get(credentials, &path, scope) {
             Ok(report) => report,
@@ -1085,7 +1085,24 @@ fn watch(
             _ => {}
         }
 
-        let mut lines = live_lines(&report);
+        // The run going now, timed from when it was first seen here, started at the longest
+        // its jobs had taken by then.
+        if let Some(current) = attempts.iter().find(|a| str_of(&a["status"]) != "done") {
+            let n = current["attempt"].as_u64().unwrap_or(0);
+            if clock.as_ref().is_none_or(|c| c.0 != n) {
+                let seed = current["jobs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|j| {
+                        Some(j["split"]["waitMs"].as_u64()? + j["split"]["runMs"].as_u64()?)
+                    })
+                    .max()
+                    .unwrap_or(0);
+                clock = Some((n, Instant::now(), seed));
+            }
+        }
+        let mut hint = None;
         if keys.on() {
             let finished = done
                 .iter()
@@ -1101,7 +1118,7 @@ fn watch(
             } else {
                 ""
             };
-            lines.push(format!(
+            hint = Some(format!(
                 "{}  {}",
                 paint(Style::Gray, "└"),
                 paint(
@@ -1110,11 +1127,27 @@ fn watch(
                 )
             ));
         }
-        area.draw(&report, &lines);
 
-        match keys.wait(POLL) {
+        // Redrawn every second for the clock, read again every POLL.
+        let polled = Instant::now();
+        let mut pressed = None;
+        while pressed.is_none() && polled.elapsed() < POLL {
+            let elapsed = clock
+                .as_ref()
+                .map(|(_, since, seed)| seed + since.elapsed().as_millis() as u64);
+            let mut lines = live_lines(&report, elapsed);
+            lines.extend(hint.clone());
+            area.draw(&report, &lines);
+            if !area.tty {
+                pressed = keys.wait(POLL);
+                break;
+            }
+            pressed = keys.wait(TICK);
+        }
+
+        match pressed {
             Some(Key::Quit) => {
-                area.keep();
+                area.clear();
                 drop(keys);
                 ui::outro(&format!(
                     "Left it running. Follow it again with `relayrunner eval watch {id}`.\n   {url}"
@@ -1139,15 +1172,24 @@ fn watch(
     }
 }
 
-/// "Run 2 of 5   3m 58s  passed  $0.05".
+/// The width of a finished run's label, "Run 1 of 5 · cold cache", so its numbers line up.
+const LABEL: usize = 23;
+
+/// "◇  Run 2 of 5               3m 58s  passed  $0.05".
 fn finished_line(attempt: &Value, report: &Value) -> String {
     let n = attempt["attempt"].as_u64().unwrap_or(0);
     let runs = report["runs"].as_u64().unwrap_or(5);
-    let label = if n == 1 {
-        format!("Run 1 of {runs} {}", paint(Style::Gray, "· cold cache"))
+    let plain = format!("Run {n} of {runs}");
+    let (label, width) = if n == 1 {
+        let cold = " · cold cache";
+        (
+            format!("{plain}{}", paint(Style::Gray, cold)),
+            plain.chars().count() + cold.chars().count(),
+        )
     } else {
-        format!("Run {n} of {runs}")
+        (plain.clone(), plain.chars().count())
     };
+    let pad = " ".repeat(LABEL.saturating_sub(width));
     let ok = str_of(&attempt["conclusion"]) == "success";
     let result = if ok {
         paint(Style::Green, "passed")
@@ -1162,7 +1204,10 @@ fn finished_line(attempt: &Value, report: &Value) -> String {
             },
         )
     };
-    let ms = attempt["ms"].as_u64().map(duration).unwrap_or_default();
+    let ms = format!(
+        "{:>7}",
+        attempt["ms"].as_u64().map(duration).unwrap_or_default()
+    );
     let usd = attempt["usd"].as_f64().map(money).unwrap_or_default();
     let mark = if ok {
         paint(Style::Green, "◇")
@@ -1170,14 +1215,16 @@ fn finished_line(attempt: &Value, report: &Value) -> String {
         paint(Style::Red, "■")
     };
     format!(
-        "{}\n{mark}  {label}   {ms}  {result}  {}",
-        paint(Style::Gray, "│"),
+        "{mark}  {label}{pad} {}  {result}  {}",
+        paint(Style::Bold, &ms),
         paint(Style::Gray, &usd)
     )
+    .trim_end()
+    .to_string()
 }
 
-/// The run going now and its jobs.
-fn live_lines(report: &Value) -> Vec<String> {
+/// The run going now and its jobs. `elapsed` is how long the run has been going, when known.
+fn live_lines(report: &Value, elapsed: Option<u64>) -> Vec<String> {
     let bar = paint(Style::Gray, "│");
     let runs = report["runs"].as_u64().unwrap_or(5);
     let attempts = report["attempts"].as_array().cloned().unwrap_or_default();
@@ -1192,7 +1239,7 @@ fn live_lines(report: &Value) -> Vec<String> {
             "waiting" => "Waiting for workflow_dispatch on the default branch…",
             _ => "Waiting for GitHub to queue the run…",
         };
-        return vec![bar.clone(), format!("{}  {what}", paint(Style::Cyan, "◐"))];
+        return vec![format!("{}  {what}", paint(Style::Cyan, "◐"))];
     };
     let n = current["attempt"].as_u64().unwrap_or(1);
     let jobs = current["jobs"].as_array().cloned().unwrap_or_default();
@@ -1222,45 +1269,57 @@ fn live_lines(report: &Value) -> Vec<String> {
         .as_u64()
         .or(report["cold"]["ms"].as_u64())
         .or(report["baseline"]["medianMs"].as_u64());
+    // What's left: the runs after this one, and the rest of this one.
     let left = per_run
         .map(|ms| {
-            format!(
-                " · about {} left",
-                about(ms * runs.saturating_sub(finished))
-            )
+            let after = ms * runs.saturating_sub(finished + 1);
+            let this = ms.saturating_sub(elapsed.unwrap_or(0));
+            format!(" · about {} left", about(after + this))
         })
         .unwrap_or_default();
-    let mut lines = vec![
-        bar.clone(),
-        format!(
-            "{}  Run {n} of {runs}  {meter} {}",
-            paint(Style::Cyan, "◐"),
-            paint(
-                Style::Gray,
-                &format!("{done} of {} jobs done{left}", jobs.len())
-            )
-        ),
-    ];
+    let status = match elapsed {
+        Some(ms) => format!("{}{left}", duration(ms)),
+        None => format!("{done} of {} jobs done{left}", jobs.len()),
+    };
+    let plain = format!("Run {n} of {runs}");
+    let mut lines = vec![format!(
+        "{}  {plain}  {meter} {}",
+        paint(Style::Cyan, "◐"),
+        paint(Style::Gray, &status)
+    )];
     for job in &jobs {
-        let (mark, detail) = match (str_of(&job["status"]), str_of(&job["conclusion"])) {
-            ("done", "success") => (paint(Style::Green, "✓"), split_text(&job["split"], false)),
-            ("done", "skipped") => (paint(Style::Gray, "–"), "skipped".to_string()),
+        let name = str_of(&job["name"]);
+        let named = format!("{name:<30}");
+        let (mark, name, detail) = match (str_of(&job["status"]), str_of(&job["conclusion"])) {
+            ("done", "success") => (
+                paint(Style::Green, "✓"),
+                named,
+                split_text(&job["split"], false),
+            ),
+            ("done", "skipped") => (
+                paint(Style::Gray, "–"),
+                paint(Style::Gray, &named),
+                "skipped".to_string(),
+            ),
             ("done", other) => (
                 paint(Style::Red, "✕"),
-                format!("{other}{}", split_suffix(&job["split"])),
+                named,
+                format!("{}{}", other.replace('_', " "), split_suffix(&job["split"])),
             ),
-            ("running", _) => (paint(Style::Yellow, "◐"), split_text(&job["split"], true)),
-            _ => (paint(Style::Gray, "○"), "queued".to_string()),
-        };
-        let where_ = if job["onProvider"] == json!(false) {
-            " · not on a relay"
-        } else {
-            ""
+            ("running", _) => (
+                paint(Style::Yellow, "◐"),
+                named,
+                split_text(&job["split"], true),
+            ),
+            _ => (
+                paint(Style::Gray, "○"),
+                paint(Style::Gray, &named),
+                "queued".to_string(),
+            ),
         };
         lines.push(format!(
-            "{bar}    {mark} {:<32} {}",
-            str_of(&job["name"]),
-            paint(Style::Gray, &format!("{detail}{where_}"))
+            "{bar}    {mark} {name} {}",
+            paint(Style::Gray, &detail)
         ));
     }
     lines.push(bar);

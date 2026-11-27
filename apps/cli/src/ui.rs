@@ -21,6 +21,7 @@ pub(crate) enum Style {
     Cyan,
     Dim,
     Strike,
+    Bold,
 }
 
 pub(crate) fn paint(style: Style, text: &str) -> String {
@@ -36,6 +37,7 @@ pub(crate) fn paint(style: Style, text: &str) -> String {
         Style::Cyan => "36",
         Style::Dim => "2",
         Style::Strike => "9",
+        Style::Bold => "1",
     };
     format!("\x1b[{code}m{text}\x1b[0m")
 }
