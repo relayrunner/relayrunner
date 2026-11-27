@@ -37,6 +37,7 @@ export const SIDEBAR = [
       "docs/runners/github",
       "docs/runners/hosted",
       "docs/reference/labels",
+      "docs/contribute/for-providers",
       "docs/contribute/add-provider",
       "docs/contribute/publish-prices",
     ],
