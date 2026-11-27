@@ -35,6 +35,7 @@ import { pauseResponse, SharingBody } from "./shared.ts";
 import { sanitizeMessage } from "../../operator/feedback.ts";
 import { feedbackBodyLimit, invalid, MachineFeedbackBody, saveFeedback } from "../feedback.ts";
 import { type MachineEnv, requireMachine } from "../../middleware/machine.ts";
+import { machineEvaluationRoutes } from "./machine-evaluations.ts";
 
 // Routes a machine calls as itself, with its token: `Authorization: Bearer rrm_…`. A missing,
 // unknown or revoked token gets a 401 (requireMachine), before /connect's WebSocket upgrade too.
@@ -246,6 +247,8 @@ export const machineTokenRoutes = new Hono<MachineEnv>()
       connection: result.connection,
     });
   })
+  // `relayrunner eval`, as the machine's owner (machine-evaluations.ts).
+  .route("/me/evaluations", machineEvaluationRoutes)
   // Pausing from the machine itself, for `relayrunner pause` and `resume`.
   .post("/me/:action{pause|resume}", async (c) => {
     const { machine, machineDb: db } = c.var;

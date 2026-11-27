@@ -224,6 +224,28 @@ export async function ensureActiveWorkspace(current: Session): Promise<string | 
   return first.id;
 }
 
+/**
+ * Makes the workspace a link names (`?workspace=`, an id or slug) the active one, as links from
+ * `relayrunner eval` do, so they open in the workspace they were made in. Returns its id, or null
+ * when the user isn't a member of one by that name (the active workspace then stays as it is).
+ */
+export async function activateNamedWorkspace(
+  current: Session,
+  wanted: string,
+): Promise<string | null> {
+  const { data: workspaces } = await organization.list();
+  const named = wanted.toLowerCase();
+  const match =
+    workspaces?.find((w) => w.id === wanted) ??
+    workspaces?.find((w) => w.slug.toLowerCase() === named);
+  if (!match) return null;
+  if (match.id === current.session.activeOrganizationId) return match.id;
+  await organization.setActive({ organizationId: match.id });
+  forgetSession();
+  clearWorkspaceCaches();
+  return match.id;
+}
+
 /** Checks both copies again when they're stale. */
 function revalidateStale() {
   if (session && stale(session)) void revalidateSession();

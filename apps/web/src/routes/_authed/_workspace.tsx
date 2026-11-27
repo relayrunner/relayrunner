@@ -69,6 +69,7 @@ import { cn } from "@/lib/utils";
 import {
   awaitingOwner,
   cachedWorkspace,
+  activateNamedWorkspace,
   ensureActiveWorkspace,
   watchForOwner,
 } from "@/lib/session";
@@ -107,10 +108,13 @@ export const Route = createFileRoute("/_authed/_workspace")({
     runnerRange?: TimeRange;
     wf?: string;
     wfRange?: TimeRange;
+    workspace?: string;
   } => {
     const runner = textParam(search.runner);
     const wf = textParam(search.wf);
     return {
+      // A link that names its workspace (an id or slug), such as one from `relayrunner eval`.
+      workspace: textParam(search.workspace),
       runner,
       runnerRange: runner
         ? rangeOrDaysParam(
@@ -130,7 +134,11 @@ export const Route = createFileRoute("/_authed/_workspace")({
     if (authDisabled || !context.session) {
       return { current: devWorkspace, flags: await loadFlags(devWorkspace.workspace.id) };
     }
-    const workspaceId = await ensureActiveWorkspace(context.session);
+    // A link naming a workspace switches to it first, so it opens where it was made.
+    const named = textParam((location.search as { workspace?: unknown }).workspace);
+    const workspaceId =
+      (named && (await activateNamedWorkspace(context.session, named))) ||
+      (await ensureActiveWorkspace(context.session));
     if (!workspaceId) {
       // Keep GitHub's word on the way, such as an install request waiting on an org owner.
       const { github } = location.search as { github?: unknown };

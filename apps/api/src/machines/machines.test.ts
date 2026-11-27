@@ -845,6 +845,21 @@ describe("choosing a machine's workspaces (#363)", () => {
         others: { id: string; workspaces: string[] }[];
       }
     ).others;
+  const startAsCli = (token: string, workspace: string) =>
+    app.request(
+      `/api/machines/me/evaluations?workspace=${workspace}`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          repositoryId: 5,
+          workflowPath: ".github/workflows/ci.yml",
+          provider: "depot",
+          vcpus: 4,
+        }),
+      },
+      env,
+    );
   const send = (method: string, path: string, init: { cookie?: string; token?: string }) =>
     app.request(
       `/api${path}`,
@@ -1063,6 +1078,85 @@ describe("choosing a machine's workspaces (#363)", () => {
     });
     expect(await picked.json()).toMatchObject({ workspace: { id: team.workspace.id } });
     expect((await put({ token: "1234|secret-part" }, "rrm_nope")).status).toBe(401);
+  });
+
+  test("`relayrunner eval` reads the same evaluations as the dashboard, as the machine's owner", async () => {
+    const { team, own, user } = await ownAndJoined("eval");
+    const { token } = await enrollAs(own.cookie, own.workspace.id, "studio");
+    await createDb(env.DB).insert(schema.evaluation).values({
+      id: "eval-cli-1",
+      workspaceId: own.workspace.id,
+      installationId: 8,
+      repositoryId: 5,
+      repositoryFullName: "eval-own/web",
+      workflowPath: ".github/workflows/ci.yml",
+      workflowName: "CI",
+      provider: "depot",
+      vcpus: 4,
+      label: "depot-ubuntu-24.04-4",
+      ref: "main",
+      runs: 5,
+      runId: 100,
+      state: "running",
+      startedById: user.user.id,
+    });
+    const ids = async (response: Response) =>
+      ((await response.json()) as { evaluations: { id: string }[] }).evaluations.map((e) => e.id);
+
+    // Two workspaces and nothing to pick one by: the CLI is told to name one.
+    const unclear = await send("GET", "/machines/me/evaluations", { token });
+    expect(unclear.status).toBe(409);
+    expect(await unclear.json()).toMatchObject({
+      error: { code: "EVALUATION_WORKSPACE_UNCLEAR" },
+    });
+
+    // Named, it lists what the dashboard lists in that workspace.
+    const fromCli = await send("GET", `/machines/me/evaluations?workspace=${own.workspace.slug}`, {
+      token,
+    });
+    expect(fromCli.status).toBe(200);
+    expect(await ids(fromCli)).toEqual(["eval-cli-1"]);
+    expect(await ids(await send("GET", "/evaluations", { cookie: own.cookie }))).toEqual([
+      "eval-cli-1",
+    ]);
+    expect(
+      await ids(
+        await send("GET", `/machines/me/evaluations?workspace=${team.workspace.id}`, { token }),
+      ),
+    ).toEqual([]);
+
+    // The provider step says who can start one: the owner can in their own workspace, a member
+    // can't in the team's, and starting there is refused as on the dashboard.
+    const providerApp = async (workspace: string) =>
+      (await (
+        await send(
+          "GET",
+          `/machines/me/evaluations/provider-app?provider=depot&workspace=${workspace}`,
+          {
+            token,
+          },
+        )
+      ).json()) as { canStart: boolean; workspace: { id: string } };
+    expect(await providerApp(own.workspace.slug)).toMatchObject({
+      canStart: true,
+      workspace: { id: own.workspace.id },
+    });
+    expect(await providerApp(team.workspace.slug)).toMatchObject({ canStart: false });
+    const start = await startAsCli(token, team.workspace.slug);
+    expect(start.status).toBe(403);
+
+    // Someone else's evaluation stays theirs, and so does an unknown workspace.
+    expect(
+      (
+        await send("GET", "/machines/me/evaluations/eval-cli-1?workspace=" + team.workspace.slug, {
+          token,
+        })
+      ).status,
+    ).toBe(404);
+    expect((await send("GET", "/machines/me/evaluations?workspace=nope", { token })).status).toBe(
+      404,
+    );
+    expect((await send("GET", "/machines/me/evaluations", {})).status).toBe(401);
   });
 });
 

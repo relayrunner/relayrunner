@@ -26,8 +26,8 @@ import {
   resolveRunnerOrder,
   saveRepoRunnerOrder,
 } from "../routing/runner-orders.ts";
-import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
-import { appInstallationToken, orgAppSlugs } from "../github/github-app.ts";
+import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
+import { workspaceProviderApps } from "../providers/provider-apps.ts";
 import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
@@ -203,30 +203,8 @@ export const workspaceRoutes = new Hono<AppEnv>()
   // step menu. Null when we can't tell: a personal account (GitHub only lists an org's apps), or
   // the read failed.
   .get("/:id/provider-apps", requireUser, requireMember, async (c) => {
-    const [row] = await c.var.db
-      .select({
-        installationId: schema.githubInstallation.id,
-        login: schema.githubInstallation.accountLogin,
-        type: schema.githubInstallation.accountType,
-      })
-      .from(schema.workspace)
-      .innerJoin(
-        schema.githubInstallation,
-        eq(schema.githubInstallation.id, schema.workspace.installationId),
-      )
-      .where(eq(schema.workspace.id, c.req.param("id")))
-      .limit(1);
-    if (row?.type !== "Organization") return c.json({ installed: null });
-    try {
-      const token = await appInstallationToken(c.env, row.installationId);
-      return c.json({ installed: providersOfAppSlugs(await orgAppSlugs(token, row.login)) });
-    } catch (error) {
-      log.error("github.apps_unavailable", "provider apps read failed", {
-        installationId: row.installationId,
-        error,
-      });
-      return c.json({ installed: null });
-    }
+    const { installed } = await workspaceProviderApps(c.env, c.var.db, c.req.param("id"));
+    return c.json({ installed });
   })
   // The Router page's setup panel: recent workflows, routed or not, and the hosted labels jobs
   // ran on (src/reports/router-setup.ts).

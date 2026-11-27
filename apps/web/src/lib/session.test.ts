@@ -205,3 +205,26 @@ describe("waiting for GitHub to name the installer", () => {
     expect(getCurrentWorkspace).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("a link that names its workspace", () => {
+  test("switches to it by id or slug, and leaves the active one alone otherwise", async () => {
+    const { organization } = await import("@/lib/auth-client");
+    const list = vi.mocked(organization.list);
+    const setActive = vi.mocked(organization.setActive);
+    list.mockResolvedValue({
+      data: [
+        { id: "w1", slug: "acme" },
+        { id: "w2", slug: "studio" },
+      ],
+    } as never);
+    setActive.mockClear();
+    const current = user() as never;
+
+    expect(await session.activateNamedWorkspace(current, "Studio")).toBe("w2");
+    expect(setActive).toHaveBeenCalledWith({ organizationId: "w2" });
+    setActive.mockClear();
+    expect(await session.activateNamedWorkspace(current, "w1")).toBe("w1");
+    expect(await session.activateNamedWorkspace(current, "someone-elses")).toBeNull();
+    expect(setActive).not.toHaveBeenCalled();
+  });
+});

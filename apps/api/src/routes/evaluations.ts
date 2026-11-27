@@ -13,7 +13,9 @@ import {
 import { importing, runHistoryState, withGitHubWorkflows } from "../ingest/run-history.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../auth/roles.ts";
+import { canManage, requireManager } from "../auth/roles.ts";
+import { jobFailure } from "../reports/job-failures.ts";
+import { workspaceProviderApps } from "../providers/provider-apps.ts";
 import { AppError } from "@relayrunner/errors";
 
 const StartBody = z.object({
@@ -24,11 +26,17 @@ const StartBody = z.object({
   workflowName: z.string().trim().max(256).nullish(),
 });
 
+const Id = z.coerce.number().int().positive();
+
 // Provider evaluations (src/reports/evaluations.ts): run a workflow on a provider five times and compare it
 // with its recent runs. Any member can look; owners and admins start and stop them, since the runs
 // cost money on the provider.
-export const evaluationRoutes = new Hono<AppEnv>()
-  .use("*", requireUser, requireWorkspace)
+//
+// The handlers need c.var.user, c.var.workspace and c.var.role. The dashboard reaches them with its
+// session and active workspace (evaluationRoutes); `relayrunner eval` with its machine token, as the
+// machine's owner in the workspace it names (routes/machines/machine-evaluations.ts). Both start the
+// same evaluation, so each can follow one the other started.
+export const evaluationHandlers = new Hono<AppEnv>()
   .get("/workflows", async (c) => {
     const { workspace } = c.var;
     const workflows = await evaluationWorkflows(c.var.db, workspace.id);
@@ -48,6 +56,19 @@ export const evaluationRoutes = new Hono<AppEnv>()
     const { installationId } = c.var.workspace;
     return c.json({
       history: installationId ? await runHistoryState(c.var.db, installationId) : null,
+    });
+  })
+  // Whether the provider's GitHub App is on the workspace's account, for the Connect step:
+  // `installed` is null when GitHub can't tell (a personal account), and the person confirms it.
+  .get("/provider-app", async (c) => {
+    const provider = c.req.query("provider");
+    if (!provider) throw new AppError("INVALID_REQUEST");
+    const { installed, account } = await workspaceProviderApps(c.env, c.var.db, c.var.workspace.id);
+    return c.json({
+      installed: installed === null ? null : (installed as string[]).includes(provider),
+      account,
+      workspace: { id: c.var.workspace.id, name: c.var.workspace.name, slug: c.var.workspace.slug },
+      canStart: canManage(c.var.role),
     });
   })
   // A provider's evaluations from the last 30 days, with their headline numbers, for its page.
@@ -82,6 +103,20 @@ export const evaluationRoutes = new Hono<AppEnv>()
   .get("/:id", async (c) =>
     c.json(await evaluationReport(c.var.db, c.var.workspace.id, c.req.param("id"))),
   )
+  // Why one of an evaluation's failed jobs failed, as History shows it.
+  .get("/:id/jobs/:jobId/failure", async (c) => {
+    const jobId = Id.safeParse(c.req.param("jobId"));
+    if (!jobId.success) throw new AppError("INVALID_REQUEST");
+    const failure = await jobFailure(
+      c.var.db,
+      c.env,
+      c.var.workspace.id,
+      c.var.user!.id,
+      jobId.data,
+    );
+    if (!failure) throw new AppError("NOT_FOUND");
+    return c.json(failure);
+  })
   .post("/:id/retry", requireManager, async (c) => {
     await retryEvaluation(c.env, c.var.db, c.var.workspace.id, c.req.param("id"));
     return c.json({ ok: true });
@@ -90,3 +125,8 @@ export const evaluationRoutes = new Hono<AppEnv>()
     await cancelEvaluation(c.env, c.var.db, c.var.workspace.id, c.req.param("id"));
     return c.json({ ok: true });
   });
+
+/** The dashboard's: the session's user in its active workspace. */
+export const evaluationRoutes = new Hono<AppEnv>()
+  .use("*", requireUser, requireWorkspace)
+  .route("/", evaluationHandlers);

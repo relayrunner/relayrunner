@@ -118,6 +118,10 @@ export const ERRORS = {
     status: 409,
     message: "Name the workspace to connect it to.",
   },
+  EVALUATION_WORKSPACE_UNCLEAR: {
+    status: 409,
+    message: "Name the workspace with --workspace.",
+  },
   PROVIDER_TOKEN_REJECTED: {
     status: 400,
     message: "The provider didn't accept that token. Check it and its scope.",
