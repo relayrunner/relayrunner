@@ -71,7 +71,7 @@
     "GITHUB_SPEND_APP_ID": "5718856",
     // The "RelayRunner" OAuth app on Boat (boat app list), for "Connect Boat" in Evaluate. Its redirect
     // URI is <BETTER_AUTH_URL>/api/providers/boat/callback. Empty: Boat connects by pasted key only.
-    "BOAT_OAUTH_CLIENT_ID": "",
+    "BOAT_OAUTH_CLIENT_ID": "boatapp_MYFNPQAP4Ktm3PFehqVWfQXH",
     // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
     // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"
