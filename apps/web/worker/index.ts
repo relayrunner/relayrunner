@@ -12,11 +12,16 @@
  *
  * /ingest/* is PostHog analytics, forwarded so it stays first-party (packages/posthog-proxy).
  *
- * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/*, /.well-known/* and /ingest/* here before the
- * assets layer; every other path is answered by assets (with the SPA fallback).
+ * /evaluate/<provider> is the public Evaluate page, served with its share tags written in
+ * (evaluate-meta.ts) so link previews show the provider's share image.
+ *
+ * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/*, /.well-known/*, /ingest/* and
+ * /evaluate/* here before the assets layer; every other path is answered by assets (with the SPA
+ * fallback).
  */
 import { gateAdmin, isAdminPath, type AccessEnv } from "@relayrunner/access";
 import { isPostHogPath, proxyPostHog } from "@relayrunner/posthog-proxy";
+import { evaluatePage } from "./evaluate-meta";
 
 interface Env extends AccessEnv {
   API: Fetcher;
@@ -45,6 +50,6 @@ export default {
     ) {
       return env.API.fetch(request);
     }
-    return env.ASSETS.fetch(request);
+    return (await evaluatePage(request, env.ASSETS)) ?? env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;

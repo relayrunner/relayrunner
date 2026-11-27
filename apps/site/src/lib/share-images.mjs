@@ -28,6 +28,11 @@ const fonts = [
 const svg = (path) => `data:image/svg+xml;base64,${read(path).toString("base64")}`;
 const logo = svg("public/assets/runner-head.svg");
 const provider = (id) => svg(`public/providers/${id}.svg`);
+// Some logos are a PNG wrapped in an SVG, which Satori draws blank: use the PNG itself.
+const logoOf = (id) =>
+  read(`public/providers/${id}.svg`)
+    .toString()
+    .match(/href="(data:image\/png;base64,[^"]+)"/)?.[1] ?? provider(id);
 
 // A tiny element factory, so the layouts read like markup. Satori lays out every element with
 // flexbox, and an element with more than one child needs `display: flex`.
@@ -333,6 +338,296 @@ export function integrationsCard({ url }) {
       "div",
       { position: "absolute", left: 72, bottom: 40, color: c.mute, fontSize: 18, fontWeight: 500 },
       url,
+    ),
+  );
+}
+
+/**
+ * The share image for the dashboard's public Evaluate page (app.relayrunner.dev/evaluate/<id>),
+ * drawn at build time as /og/evaluate/<id>.png. "Benchmark your CI on <provider>", the provider in
+ * a pill of its own brand colours, beside a card like the dashboard's Performance views: a
+ * workflow's runs on GitHub over two weeks with the provider's evaluation runs under them, then
+ * both runners' run time (range and median) and cost per run. The numbers are illustrative.
+ */
+export function evaluateCard({ id, name, url }) {
+  const c = dark;
+  const today = "#9aa3ad";
+  const them = "#3987e5";
+  const fixed = (src, size) => img(src, size, { flexShrink: 0 });
+  return h(
+    "div",
+    {
+      width: 1200,
+      height: 630,
+      position: "relative",
+      alignItems: "center",
+      gap: 44,
+      padding: "0 64px",
+      background: c.bg,
+      color: c.ink,
+      fontFamily: "Hanken Grotesk",
+    },
+    h(
+      "div",
+      { flexDirection: "column", flex: 1 },
+      brand(c),
+      h(
+        "div",
+        {
+          flexDirection: "column",
+          gap: 12,
+          marginTop: 40,
+          fontSize: 56,
+          fontWeight: 700,
+          lineHeight: 1.02,
+          letterSpacing: "-0.045em",
+        },
+        h("div", {}, "Benchmark your CI"),
+        h("div", { alignItems: "center", gap: 16 }, h("div", {}, "on"), brandPill(c, id, name, 56)),
+      ),
+      h(
+        "div",
+        { marginTop: 26, color: c.body, fontSize: 24, lineHeight: 1.45 },
+        `See how your own workflows run on ${name}, in time and cost, next to the runners you use today. Nothing in your repo changes.`,
+      ),
+    ),
+    h(
+      "div",
+      {
+        flexDirection: "column",
+        gap: 10,
+        width: 500,
+        flexShrink: 0,
+        padding: "18px 24px 8px",
+        borderRadius: 12,
+        border: `1px solid ${c.line}`,
+        background: c.lane,
+      },
+      h(
+        "div",
+        { alignItems: "center" },
+        h("div", { fontSize: 18, fontWeight: 700 }, "ci / test"),
+        h(
+          "div",
+          { marginLeft: "auto", gap: 18, alignItems: "center", ...mono(14, c.body) },
+          h(
+            "div",
+            { alignItems: "center", gap: 7 },
+            h("div", { width: 16, height: 3, background: today }),
+            "ubuntu-latest",
+          ),
+          h(
+            "div",
+            { alignItems: "center", gap: 7 },
+            h("div", { width: 12, height: 12, borderRadius: 6, border: `2.5px solid ${them}` }),
+            `${name} evaluation`,
+          ),
+        ),
+      ),
+      runsChart(c, { width: 450, height: 190, today, them }),
+      h(
+        "div",
+        { flexDirection: "column", marginTop: 4 },
+        rangeRow(c, fixed, {
+          logo: logoOf(id),
+          label: name,
+          tag: "evaluation",
+          time: "2:04",
+          timeChange: "40%",
+          range: [0.3, 0.4, 0.33],
+          tone: them,
+          cost: "$0.048",
+          costChange: "20%",
+        }),
+        rangeRow(c, fixed, {
+          logo: provider("github"),
+          label: "ubuntu-latest",
+          tag: "today",
+          time: "3:28",
+          range: [0.6, 0.86, 0.69],
+          tone: today,
+          cost: "$0.060",
+        }),
+      ),
+    ),
+    h(
+      "div",
+      { position: "absolute", left: 64, bottom: 40, color: c.mute, fontSize: 18, fontWeight: 500 },
+      url,
+    ),
+  );
+}
+
+/**
+ * A provider's name in a pill of its brand colours: the logo tile's fill behind, the mark's colour
+ * for the text, and the mark without its tile, so a dark brand's tile outline doesn't double up with
+ * the pill's. Dark fills get an outline of their own to stand off the background.
+ */
+function brandPill(c, id, name, size) {
+  const source = read(`public/providers/${id}.svg`).toString();
+  const tile = source.match(/<rect[^>]*\/>/)?.[0];
+  const bgFill = tile?.match(/fill="(#[0-9a-fA-F]{3,6})"/)?.[1];
+  // The mark's colour: its first plain fill or stroke once the tile is gone.
+  const mark = tile ? source.replace(tile, "") : source;
+  const markInk = mark.match(/(?:fill|stroke)="(#[0-9a-fA-F]{3,6})"/)?.[1];
+  // A tile with a plain fill and a mark in one colour, or else a neutral pill with the whole logo.
+  const branded = Boolean(bgFill && markInk);
+  const bg = branded ? bgFill : c.lane;
+  const ink = branded ? markInk : c.ink;
+  const logo = branded
+    ? `data:image/svg+xml;base64,${Buffer.from(mark).toString("base64")}`
+    : logoOf(id);
+  const outline = luminance(bg) < 0.12 ? { border: "2px solid #3a414c" } : {};
+  return h(
+    "div",
+    {
+      alignItems: "center",
+      gap: Math.round(size * 0.12),
+      padding: `${Math.round(size * 0.06)}px ${Math.round(size * 0.42)}px ${Math.round(size * 0.06)}px ${Math.round(size * 0.14)}px`,
+      borderRadius: 999,
+      background: bg,
+      color: ink,
+      letterSpacing: "-0.035em",
+      ...outline,
+    },
+    img(logo, Math.round(size * (branded ? 0.95 : 0.8)), { flexShrink: 0 }),
+    h("div", { marginTop: -Math.round(size * 0.06) }, name),
+  );
+}
+
+function luminance(color) {
+  const hex =
+    color.length === 4
+      ? color
+          .slice(1)
+          .split("")
+          .map((d) => d + d)
+          .join("")
+      : color.slice(1);
+  return [0.2126, 0.7152, 0.0722].reduce(
+    (sum, weight, i) => sum + weight * (parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255),
+    0,
+  );
+}
+
+/**
+ * Two weeks of a workflow's runs on GitHub (a dot per run, a line through each day's median) and
+ * the provider's evaluation runs as rings with a dashed median, like Performance's workflow chart.
+ * Drawn as one SVG, with the axis labels laid over it as text.
+ */
+function runsChart(c, { width, height, today, them }) {
+  const max = 6;
+  const days = 14;
+  const left = 34;
+  const bottom = 22;
+  const x = (day) => left + (day / (days - 1)) * (width - left - 6);
+  const y = (min) => 6 + (1 - min / max) * (height - bottom - 6);
+  // A fixed seed, so every provider's card shows the same history.
+  let seed = 7;
+  const noise = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+  const medians = Array.from(
+    { length: days },
+    (_, day) => 3.4 + noise() * 0.7 + (day === 6 ? 1.1 : day === 7 ? 0.5 : 0),
+  );
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
+  for (const min of [0, 2, 4, 6])
+    svg += `<line x1="${left}" x2="${width - 6}" y1="${y(min)}" y2="${y(min)}" stroke="${c.line}"/>`;
+  medians.forEach((min, day) => {
+    for (let run = 0; run < 2; run++)
+      svg += `<circle cx="${x(day) + noise() * 14}" cy="${y(min + noise() * 0.8)}" r="2.5" fill="${today}" opacity="0.35"/>`;
+  });
+  svg += `<polyline points="${medians.map((min, day) => `${x(day)},${y(min)}`).join(" ")}" fill="none" stroke="${today}" stroke-width="2.5"/>`;
+  medians.forEach((min, day) => {
+    svg += `<circle cx="${x(day)}" cy="${y(min)}" r="3.5" fill="${today}"/>`;
+  });
+  [2.6, 2.05, 1.95, 2.1, 2.0].forEach((min, run) => {
+    svg += `<circle cx="${x(10.6) + run * 9}" cy="${y(min)}" r="6" fill="none" stroke="${them}" stroke-width="2.5"/>`;
+  });
+  svg += `<line x1="${x(10.4)}" x2="${x(13)}" y1="${y(2.05)}" y2="${y(2.05)}" stroke="${them}" stroke-width="2" stroke-dasharray="5 4"/></svg>`;
+  return h(
+    "div",
+    { position: "relative", width, height },
+    {
+      type: "img",
+      props: {
+        src: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
+        width,
+        height,
+        style: { position: "absolute", left: 0, top: 0 },
+      },
+    },
+    [0, 2, 4, 6].map((min) =>
+      h(
+        "div",
+        { position: "absolute", left: 0, top: y(min) - 8, ...mono(11, c.mute) },
+        `${min}:00`,
+      ),
+    ),
+    ["Nov 9", "Nov 13", "Nov 17", "Nov 21"].map((label, i) =>
+      h(
+        "div",
+        { position: "absolute", left: x(i * 4) - 16, top: height - 16, ...mono(11, c.mute) },
+        label,
+      ),
+    ),
+  );
+}
+
+const down = (c) =>
+  `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><polygon points="0,1 10,1 5,9" fill="${c.go}"/></svg>`).toString("base64")}`;
+
+/** A smaller-is-better change in green with a down arrow, as in Performance's tables. */
+const drop = (c, text, size) =>
+  h(
+    "div",
+    { alignItems: "center", gap: 5, ...mono(size, c.go) },
+    img(down(c), Math.round(size * 0.7), { flexShrink: 0 }),
+    text,
+  );
+
+/** One runner as a row of Performance's Runners table: run time with its range and median, and cost. */
+function rangeRow(c, fixed, { logo, label, tag, time, timeChange, range, tone, cost, costChange }) {
+  const track = 110;
+  const [low, high, median] = range;
+  return h(
+    "div",
+    { alignItems: "center", gap: 12, padding: "15px 0", borderTop: `1px solid ${c.line}` },
+    fixed(logo, 26),
+    h(
+      "div",
+      { width: 140, flexDirection: "column" },
+      h("div", { fontSize: 19, fontWeight: 700, whiteSpace: "nowrap" }, label),
+      h("div", mono(12, c.mute), tag),
+    ),
+    h("div", { width: 52, ...mono(18, c.ink, 500) }, time),
+    h("div", { width: 62 }, timeChange ? drop(c, timeChange, 14) : []),
+    h(
+      "div",
+      { position: "relative", width: track, height: 10, borderRadius: 5, background: "#22272f" },
+      h("div", {
+        position: "absolute",
+        left: low * track,
+        width: (high - low) * track,
+        height: 10,
+        borderRadius: 5,
+        background: tone,
+        opacity: 0.45,
+      }),
+      h("div", {
+        position: "absolute",
+        left: median * track - 1.5,
+        top: -5,
+        width: 3,
+        height: 20,
+        borderRadius: 2,
+        background: tone,
+      }),
+    ),
+    h(
+      "div",
+      { marginLeft: "auto", flexDirection: "column", alignItems: "flex-end" },
+      h("div", mono(17, c.ink), cost),
+      costChange ? drop(c, costChange, 13) : [],
     ),
   );
 }
