@@ -987,11 +987,185 @@ fn route_job(source: &str, id: &str, inputs: &[(String, String)]) -> Result<Stri
     Ok(out)
 }
 
+/// The events a workflow's `on:` lists, or None when it can't be read.
+fn events_of(source: &str) -> Option<Vec<String>> {
+    let docs = YamlLoader::load_from_str(source).ok()?;
+    let Some(Yaml::Hash(workflow)) = docs.into_iter().next() else {
+        return None;
+    };
+    Some(match get(&workflow, "on")? {
+        Yaml::String(event) => vec![event.clone()],
+        Yaml::Array(events) => events.iter().filter_map(key_text).collect(),
+        Yaml::Hash(events) => events.keys().filter_map(key_text).collect(),
+        _ => return None,
+    })
+}
+
+/// The workflow's `name:`, when it has one.
+pub fn workflow_name(source: &str) -> Option<String> {
+    let docs = YamlLoader::load_from_str(source).ok()?;
+    let Some(Yaml::Hash(workflow)) = docs.into_iter().next() else {
+        return None;
+    };
+    match get(&workflow, "name")? {
+        Yaml::String(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+/// Whether the workflow can be started on demand, with `workflow_dispatch` among its triggers.
+pub fn has_dispatch(source: &str) -> bool {
+    events_of(source).is_some_and(|events| events.iter().any(|e| e == "workflow_dispatch"))
+}
+
+/// Adds `workflow_dispatch` to the workflow's `on:`, whether it's one event (`on: push`), a list
+/// or a map, and returns the new contents. Like `route_jobs`, it edits lines, so the rest stays
+/// byte for byte, and checks the result reads back with every old trigger and the new one.
+pub fn add_dispatch(source: &str) -> Result<String, String> {
+    let cant = || "its triggers aren't written in a way init can edit".to_string();
+    let before = events_of(source).ok_or_else(cant)?;
+    if before.iter().any(|e| e == "workflow_dispatch") {
+        return Ok(source.to_string());
+    }
+    let eol = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut lines: Vec<String> = source.split_inclusive('\n').map(String::from).collect();
+    let unterminated = lines.last().is_some_and(|l| !l.ends_with('\n'));
+    if unterminated && let Some(last) = lines.last_mut() {
+        last.push_str(eol);
+    }
+    let (on_at, value_at) = lines
+        .iter()
+        .enumerate()
+        .find_map(|(i, line)| {
+            if indent_of(line) != 0 || blank(line) || comment(line) {
+                return None;
+            }
+            split_key(text_of(line)).and_then(|(key, at)| (key == "on").then_some((i, at)))
+        })
+        .ok_or_else(cant)?;
+    let text = text_of(&lines[on_at]).to_string();
+    let value = text[value_at..].trim_start();
+    let start = text.len() - value.len();
+    if value.starts_with('[') {
+        // on: [push, pull_request]
+        let close = text.rfind(']').filter(|&c| c > start).ok_or_else(cant)?;
+        let inner = text[start + 1..close].trim_end();
+        let joined = if inner.trim().is_empty() {
+            format!("{}[workflow_dispatch", &text[..start])
+        } else {
+            format!("{}{inner}, workflow_dispatch", &text[..=start])
+        };
+        lines[on_at] = format!("{joined}{}{eol}", &text[close..]);
+    } else if value.starts_with('{') {
+        return Err(cant());
+    } else if value.is_empty() || value.starts_with('#') {
+        // A list or a map on the lines below.
+        let first = (on_at + 1..lines.len())
+            .find(|&i| !blank(&lines[i]) && !comment(&lines[i]))
+            .ok_or_else(cant)?;
+        let indent = indent_of(&lines[first]);
+        let item = text_of(&lines[first]).trim_start();
+        if item == "-" || item.starts_with("- ") {
+            // One more item after the list's last line.
+            let mut last = first;
+            for (i, line) in lines.iter().enumerate().skip(first + 1) {
+                if blank(line) || comment(line) {
+                    continue;
+                }
+                let at = indent_of(line);
+                let text = text_of(line).trim_start();
+                if at > indent || (at == indent && (text == "-" || text.starts_with("- "))) {
+                    last = i;
+                } else {
+                    break;
+                }
+            }
+            lines.insert(
+                last + 1,
+                format!("{}- workflow_dispatch{eol}", " ".repeat(indent)),
+            );
+        } else if indent > 0 {
+            // A map: the new event goes first, so nothing under the others moves.
+            lines.insert(
+                first,
+                format!("{}workflow_dispatch:{eol}", " ".repeat(indent)),
+            );
+        } else {
+            return Err(cant());
+        }
+    } else {
+        // on: push
+        let (s, e) = scalar_span(&text, value_at).ok_or_else(cant)?;
+        lines[on_at] = format!(
+            "{}[{}, workflow_dispatch]{}{eol}",
+            &text[..s],
+            &text[s..e],
+            &text[e..]
+        );
+    }
+    let mut out = lines.concat();
+    if unterminated {
+        out.truncate(out.len() - eol.len());
+    }
+    let after = events_of(&out).ok_or_else(cant)?;
+    let kept = before.iter().all(|e| after.contains(e));
+    if !kept || after.len() != before.len() + 1 || !has_dispatch(&out) {
+        return Err(cant());
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const FILE: &str = ".github/workflows/ci.yml";
+
+    #[test]
+    fn adds_workflow_dispatch_to_each_form_of_on() {
+        let jobs = "jobs:\n  test:\n    runs-on: ubuntu-latest\n";
+        for (on, want) in [
+            ("on: push\n", "on: [push, workflow_dispatch]\n"),
+            (
+                "on: push  # every push\n",
+                "on: [push, workflow_dispatch]  # every push\n",
+            ),
+            ("on: \"push\"\n", "on: [\"push\", workflow_dispatch]\n"),
+            (
+                "on: [push, pull_request]\n",
+                "on: [push, pull_request, workflow_dispatch]\n",
+            ),
+            (
+                "on:\n  - push\n  - pull_request\n",
+                "on:\n  - push\n  - pull_request\n  - workflow_dispatch\n",
+            ),
+            ("on:\n- push\n", "on:\n- push\n- workflow_dispatch\n"),
+            (
+                "on:\n  # main only\n  push:\n    branches: [main]\n  pull_request:\n",
+                "on:\n  # main only\n  workflow_dispatch:\n  push:\n    branches: [main]\n  pull_request:\n",
+            ),
+        ] {
+            let source = format!("name: CI\n{on}{jobs}");
+            let out = add_dispatch(&source).unwrap();
+            assert_eq!(out, format!("name: CI\n{want}{jobs}"), "{on}");
+            assert!(has_dispatch(&out));
+        }
+        // Already there, nothing changes; CRLF and a missing last newline stay as they were.
+        let has = "on:\n  workflow_dispatch:\n  push:\njobs: {}\n";
+        assert_eq!(add_dispatch(has).unwrap(), has);
+        assert_eq!(
+            add_dispatch("on: push\r\njobs: {}").unwrap(),
+            "on: [push, workflow_dispatch]\r\njobs: {}"
+        );
+        assert!(add_dispatch("on: {push: {branches: [main]}}\njobs: {}\n").is_err());
+        assert!(add_dispatch("jobs: {}\n").is_err());
+        assert_eq!(workflow_name("name: CI\non: push\n").as_deref(), Some("CI"));
+        assert_eq!(workflow_name("on: push\n"), None);
+    }
 
     fn judge(source: &str, host_os: &'static str, vm: bool) -> Vec<WorkflowJob> {
         let (jobs, errors) = analyze(
