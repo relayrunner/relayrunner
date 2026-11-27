@@ -1,6 +1,6 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
 //! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs`,
-//! `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
+//! `eval`, `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
 mod blacksmith;
@@ -9,6 +9,7 @@ mod connection;
 mod credentials;
 mod device;
 mod error;
+mod eval;
 mod events;
 mod feedback;
 mod firewall;
@@ -210,6 +211,42 @@ const COMMANDS: &[Command] = &[
         ],
     ),
     (
+        "eval",
+        "Evaluate a hosted provider on one of your workflows: 5 runs from the default branch, compared with its recent runs. It's the dashboard's Evaluate, so the dashboard shows it live.",
+        "relayrunner eval [provider] [options] | eval watch [id] | eval list [--provider P] | eval stop <id>",
+        &[
+            (
+                "--repo OWNER/NAME",
+                "The repository (default: this clone's origin)",
+            ),
+            (
+                "--workflow FILE|NAME",
+                "The workflow: its path, file name or name",
+            ),
+            (
+                "--vcpus N",
+                "Machine size, from the sizes the provider offers (default: 4)",
+            ),
+            (
+                "--workspace NAME",
+                "A name, slug or id (default: the one on the repo's GitHub account, or your only one)",
+            ),
+            (
+                "--yes",
+                "Don't ask. Exits with code 3 instead of waiting on a step you need to do",
+            ),
+            (
+                "--detach",
+                "Start it and exit with its id and dashboard link",
+            ),
+            (
+                "--json",
+                "Print the result as JSON on stdout, progress on stderr",
+            ),
+            ("--verbose", "With a failed run, show the whole log excerpt"),
+        ],
+    ),
+    (
         "blacksmith",
         "Connect your Blacksmith organization so the dashboard shows its real usage. You approve an org token in your browser as a Blacksmith org admin; only that token is sent.",
         "relayrunner blacksmith connect [--workspace NAME] [--yes]",
@@ -286,6 +323,24 @@ async fn plain(f: impl FnOnce() -> Result<(), error::Error> + Send + 'static) ->
     }
 }
 
+/// `relayrunner eval`, signing in first when this computer isn't yet and someone can approve it.
+async fn eval_command(rest: Vec<String>) -> i32 {
+    if matches!(credentials::read(), Ok(None)) && ui::can_ask() {
+        ui::info("Sign in first. Evaluations run as you, in your workspaces.");
+        let code = connect::login_command(&[]).await;
+        if code != 0 {
+            return code;
+        }
+    }
+    match sys::blocking(move || eval::command(&signed_in()?, &rest)).await {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("{e}");
+            if e.code == "USAGE" { 2 } else { 1 }
+        }
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -338,6 +393,7 @@ async fn main() {
         }
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
+        "eval" => eval_command(rest).await,
         "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
         "feedback" => plain(move || feedback::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {

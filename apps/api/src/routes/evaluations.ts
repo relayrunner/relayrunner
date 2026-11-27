@@ -5,6 +5,7 @@ import {
   cancelEvaluation,
   evaluationReport,
   evaluationWorkflows,
+  isEvaluable,
   listEvaluations,
   recentEvaluations,
   retryEvaluation,
@@ -17,6 +18,8 @@ import { canManage, requireManager } from "../auth/roles.ts";
 import { jobFailure } from "../reports/job-failures.ts";
 import { workspaceProviderApps } from "../providers/provider-apps.ts";
 import { AppError } from "@relayrunner/errors";
+import { AUTO_SIZES, labelForSize, providerPlans } from "@relayrunner/providers";
+import { currentProviders } from "../providers/provider-catalog.ts";
 
 const StartBody = z.object({
   repositoryId: z.number().int().positive(),
@@ -58,6 +61,20 @@ export const evaluationHandlers = new Hono<AppEnv>()
       history: installationId ? await runHistoryState(c.var.db, installationId) : null,
     });
   })
+  // The providers an evaluation can run on, with the sizes each offers and where to sign up, for
+  // `relayrunner eval`'s pick (the dashboard has these in its own bundle).
+  .get("/providers", (c) =>
+    c.json({
+      providers: currentProviders()
+        .filter((p) => isEvaluable(p.id) && p.status !== "off")
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          connectUrl: providerPlans(p.id)?.connectUrl ?? null,
+          sizes: evaluationSizes(p.id),
+        })),
+    }),
+  )
   // Whether the provider's GitHub App is on the workspace's account, for the Connect step:
   // `installed` is null when GitHub can't tell (a personal account), and the person confirms it.
   .get("/provider-app", async (c) => {
@@ -130,3 +147,11 @@ export const evaluationHandlers = new Hono<AppEnv>()
 export const evaluationRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace)
   .route("/", evaluationHandlers);
+
+/** The sizes a provider offers for an evaluation, with the label each gets, as the dashboard lists them. */
+function evaluationSizes(provider: string) {
+  return AUTO_SIZES.flatMap((vcpus) => {
+    const label = labelForSize(provider, vcpus, 0);
+    return label ? [{ vcpus, label }] : [];
+  }).filter((size, i, all) => all.findIndex((other) => other.label === size.label) === i);
+}

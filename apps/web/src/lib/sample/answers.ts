@@ -1,5 +1,6 @@
 // The dev preview's API (VITE_AUTH_DISABLED): what each GET answers with sample data instead of the
 // gateway. lib/api.ts imports this only in that mode, so none of it ships in the real dashboard.
+import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import type { ActivityFilter, ActivityResult } from "@/lib/activity";
 import type { RoutingRange } from "@/lib/admin-routing";
 import { EVALUATION_RUNS } from "@/lib/evaluations";
@@ -210,10 +211,18 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/telemetry$/, () => sampleTelemetry()],
   [/^\/log-bucket$/, () => sampleLogBucket()],
   [/^\/workspaces\/[^/]+\/runner-order$/, () => sampleRunnerOrder()],
-  // `?sample=connect` on a provider's Evaluate page: its GitHub App isn't installed yet.
+  // On a provider's Evaluate page, `?sample=connect`: its GitHub App isn't installed yet;
+  // `?sample=personal`: a personal account, where GitHub can't tell, so the person confirms it.
   [
     /^\/workspaces\/[^/]+\/provider-apps$/,
-    () => ({ installed: sampleParam() === "connect" ? [] : null }),
+    () => ({
+      installed:
+        sampleParam() === "connect"
+          ? []
+          : sampleParam() === "personal"
+            ? null
+            : [...HOSTED_PROVIDER_IDS],
+    }),
   ],
   [/^\/workspaces\/[^/]+\/route-outcomes$/, () => sampleRouteOutcomes()],
   [/^\/workspaces\/[^/]+\/router-setup$/, () => sampleRouterSetup()],

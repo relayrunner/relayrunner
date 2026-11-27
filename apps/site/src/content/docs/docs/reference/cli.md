@@ -125,6 +125,31 @@ relayrunner history --json
 
 Lists the jobs `connect` ran on this machine, newest first, with each one's result and how long it took. They're kept in `~/.relayrunner/history.jsonl`, the newest 500 at least, which the Mac app reads too.
 
+## `eval`
+
+```sh
+relayrunner eval depot                                  # in a clone: pick a workflow, then start
+relayrunner eval depot --workflow ci.yml --vcpus 8      # skip the questions you've answered
+relayrunner eval depot --workflow ci.yml --yes --json   # for scripts and CI
+relayrunner eval watch                                  # follow the one running now
+relayrunner eval list --provider depot                  # the last 30 days
+relayrunner eval stop <id>
+```
+
+Evaluates a hosted provider on one of your workflows: it runs the whole workflow five times on that provider from the default branch, on the same commit (a cold cache first, then warm), and compares it with the workflow's last 20 passing runs. It's the same evaluation as the provider's Evaluate page in the dashboard, so the command prints a link where you can follow it, and `eval watch` follows one you started in the dashboard. The runs bill to your account with the provider.
+
+In a clone, the command uses that repo and the workspace on its GitHub account; `--repo` and `--workspace` pick others. It walks through the same steps as the dashboard. If the provider's GitHub App isn't on your organization yet, it shows how to install it and waits until it's there. On a personal account, where GitHub doesn't show which apps are installed, you confirm that yourself. A workflow whose jobs don't go through a relay needs `relayrunner init` first, and one without `workflow_dispatch` shows the line to add and starts after the next push to the default branch.
+
+While it runs, `s` stops it and keeps the runs that finished, `o` opens it in the dashboard, and Ctrl-C leaves it running. Only workspace owners and admins can start or stop one. Run `relayrunner login` first if this computer isn't signed in.
+
+| Exit code | When                                                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 0         | All five runs passed, you stopped it after at least one passed, or `--detach` started it                                       |
+| 1         | A run failed, or GitHub or RelayRunner refused it                                                                              |
+| 2         | Bad flags, or `--yes` is missing off a terminal                                                                                |
+| 3         | You have a step to do first: install the provider's app, route the workflow, add `workflow_dispatch`, or ask an owner or admin |
+| 130       | Ctrl-C. The evaluation keeps running                                                                                           |
+
 ## `blacksmith`
 
 ```sh
