@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  nextPrice,
   priceAt,
   HOSTED_PROVIDER_IDS,
   hostedProviderOf,
@@ -73,7 +72,7 @@ describe("provider GitHub Apps", () => {
   });
 });
 
-describe("priceAt and nextPrice", () => {
+describe("priceAt", () => {
   const history = [
     { usd: 1, from: "2026-11-01" },
     { usd: 2, from: "2026-12-01" },
@@ -84,13 +83,10 @@ describe("priceAt and nextPrice", () => {
   test("uses a row from the start of its UTC day, and only then", () => {
     expect(priceAt(history, nov30)?.usd).toBe(1);
     expect(priceAt(history, dec1)?.usd).toBe(2);
-    expect(nextPrice(history, nov30)?.usd).toBe(2);
-    expect(nextPrice(history, dec1)).toBeUndefined();
   });
 
-  test("lets the oldest row cover earlier days, so it's never upcoming", () => {
+  test("lets the oldest row cover earlier days", () => {
     expect(priceAt(history, Date.parse("2020-01-01"))?.usd).toBe(1);
-    expect(nextPrice(history, Date.parse("2020-01-01"))?.usd).toBe(2);
     expect(priceAt([], dec1)).toBeUndefined();
   });
 });

@@ -854,13 +854,6 @@ ol.sol-steps h3 {
   font-size: 14px;
   text-align: right;
 }
-.int-price-next {
-  display: block;
-  margin-top: 2px;
-  color: var(--ink-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
 .int-prices p,
 .int-billing p {
   margin-top: 12px;

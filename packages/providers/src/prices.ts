@@ -418,10 +418,6 @@ export function ratePrices(book: PriceBook, provider: string): RatePrices[] {
 export const priceAt = <T extends { from: string }>(history: T[], at = Date.now()) =>
   history.findLast((row, i) => i === 0 || dayMs(row.from) <= at);
 
-/** The first row of a price history that hasn't started by `at`, if one is on the way. */
-export const nextPrice = <T extends { from: string }>(history: T[], at = Date.now()) =>
-  history.find((row, i) => i > 0 && dayMs(row.from) > at);
-
 /** The base list on its own, for places without the API's rows, such as the docs site. */
 export const BASE_BOOK = priceBook(BASE_PRICES);
 

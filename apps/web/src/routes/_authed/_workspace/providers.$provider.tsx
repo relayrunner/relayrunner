@@ -546,9 +546,10 @@ function PriceChanges({ prices }: { prices: RatePrices[] }) {
         key: `${rate}:${row.from}`,
         from: row.from,
         text: `${rateName(rate)}: ${rateText(history[i]!.usd)} to ${rateText(row.usd)}`,
-        upcoming: dayMs(row.from) > now,
       })),
     )
+    // A change shows from the day it takes effect, not before.
+    .filter((change) => dayMs(change.from) <= now)
     .sort((a, b) => b.from.localeCompare(a.from));
   return (
     <div className="grid max-w-3xl gap-2 text-sm text-muted-foreground">
@@ -560,8 +561,7 @@ function PriceChanges({ prices }: { prices: RatePrices[] }) {
           <ul className="grid gap-1 tabular-nums">
             {changes.map((change) => (
               <li key={change.key}>
-                {change.upcoming ? `From ${dayText(change.from)}` : dayText(change.from)}.{" "}
-                {change.text}
+                {dayText(change.from)}. {change.text}
               </li>
             ))}
           </ul>
