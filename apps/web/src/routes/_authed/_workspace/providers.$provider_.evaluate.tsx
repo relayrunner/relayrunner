@@ -19,7 +19,7 @@ import {
   TriangleAlertIcon,
   WorkflowIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { CodeBlock } from "@/components/code-block";
 import { providerStyle, TILE } from "@/components/providers";
 import { StatTile } from "@/components/stat-tile";
@@ -62,7 +62,6 @@ import { routePrompt } from "@/lib/route-repo";
 import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { EVALUATE_STEP, EvaluateStepper } from "@/components/evaluate-stepper";
-import { JobFailureSection } from "@/components/job-failure";
 
 type EvaluateSearch = { id?: string };
 
@@ -996,6 +995,12 @@ export function Results({
   );
 }
 
+// Results is in the dashboard's first load (the signed-out Evaluate page shares it), and only a
+// failed evaluation needs the failure reader, so it loads on demand.
+const JobFailureSection = lazy(() =>
+  import("@/components/job-failure").then((m) => ({ default: m.JobFailureSection })),
+);
+
 const isFailedAttempt = (a: Attempt) => a.status === "done" && a.conclusion !== "success";
 const isFailedJob = (job: AttemptJob) =>
   job.conclusion === "failure" || job.conclusion === "timed_out";
@@ -1066,7 +1071,11 @@ function FailedJobs({ report, preview }: { report: EvaluationReport; preview?: b
                 workflow.
               </p>
             )}
-            {!preview && <JobFailureSection jobId={job.id} logUrl={url} hideCause={refused} />}
+            {!preview && (
+              <Suspense fallback={<div aria-busy className="h-32 rounded-lg border" />}>
+                <JobFailureSection jobId={job.id} logUrl={url} hideCause={refused} />
+              </Suspense>
+            )}
           </div>
         );
       })}
