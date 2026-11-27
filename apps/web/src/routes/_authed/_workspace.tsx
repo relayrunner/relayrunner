@@ -113,7 +113,7 @@ export const Route = createFileRoute("/_authed/_workspace")({
     const runner = textParam(search.runner);
     const wf = textParam(search.wf);
     return {
-      // A link that names its workspace (an id or slug), such as one from `relayrunner eval`.
+      // A link that names its workspace (an id or slug), such as one from `relayrunner benchmark`.
       workspace: textParam(search.workspace),
       runner,
       runnerRange: runner

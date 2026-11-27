@@ -226,7 +226,7 @@ export async function ensureActiveWorkspace(current: Session): Promise<string | 
 
 /**
  * Makes the workspace a link names (`?workspace=`, an id or slug) the active one, as links from
- * `relayrunner eval` do, so they open in the workspace they were made in. Returns its id, or null
+ * `relayrunner benchmark` do, so they open in the workspace they were made in. Returns its id, or null
  * when the user isn't a member of one by that name (the active workspace then stays as it is).
  */
 export async function activateNamedWorkspace(

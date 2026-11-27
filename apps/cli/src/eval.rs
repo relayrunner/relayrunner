@@ -1,7 +1,7 @@
-//! `relayrunner eval`: run a provider evaluation from the terminal. It starts the same evaluation
-//! the dashboard's Evaluate page starts (apps/api/src/reports/evaluations.ts), through the same
-//! handlers called with the machine's token as its owner (/api/machines/me/evaluations), so the
-//! dashboard shows it live, and `eval watch` follows one started in the browser.
+//! `relayrunner benchmark` (once `eval`, still accepted): run a provider evaluation from the
+//! terminal. It starts the same evaluation the dashboard's Evaluate page starts
+//! (apps/api/src/reports/evaluations.ts), through the same handlers called with the machine's token as its owner (/api/machines/me/evaluations), so the
+//! dashboard shows it live, and `benchmark watch` follows one started in the browser.
 //!
 //! The steps are the page's: the provider's GitHub App on the workspace's account (confirmed by the
 //! person on a personal account, where GitHub can't tell), a workflow whose jobs go through a relay,
@@ -31,7 +31,7 @@ const DEFAULT_VCPUS: u64 = 4;
 pub const NEEDS_YOU: i32 = 3;
 pub const INTERRUPTED: i32 = 130;
 
-const USAGE: &str = "Usage: relayrunner eval [provider] [--repo OWNER/NAME] [--workflow FILE|NAME] [--vcpus N] [--workspace NAME] [--yes] [--detach] [--json]\n       relayrunner eval watch [id] | eval list [--provider P] | eval stop <id>";
+const USAGE: &str = "Usage: relayrunner benchmark [provider] [--repo OWNER/NAME] [--workflow FILE|NAME] [--vcpus N] [--workspace NAME] [--yes] [--detach] [--json]\n       relayrunner benchmark watch [id] | benchmark list [--provider P] | benchmark stop <id>";
 
 #[derive(Debug, Default, PartialEq)]
 pub enum Action {
@@ -278,7 +278,7 @@ pub fn dashboard_url(server: &str, provider: &str, id: &str, workspace: &str) ->
 
 // ---- The command ---------------------------------------------------------------------------------
 
-/// Runs `eval` and answers its exit code.
+/// Runs `benchmark` and answers its exit code.
 pub fn command(credentials: &Credentials, rest: &[String]) -> Result<i32, Error> {
     let args = Args::parse(rest)?;
     if args.json {
@@ -354,7 +354,7 @@ fn refusal(code: &str, reason: String) -> Error {
     match code {
         "FORBIDDEN" => Error::new(
             "FORBIDDEN",
-            "Only owners and admins can start or stop an evaluation. You can still watch one with `relayrunner eval watch`.",
+            "Only owners and admins can start or stop an evaluation. You can still watch one with `relayrunner benchmark watch`.",
         ),
         "NOT_FOUND" => Error::new(
             "NOT_FOUND",
@@ -397,7 +397,7 @@ fn running_one(credentials: &Credentials, scope: &mut Scope) -> Result<String, E
     match active.as_slice() {
         [] => Err(Error::new(
             "NOT_FOUND",
-            "Nothing is being evaluated now. Start one with `relayrunner eval <provider>`.",
+            "Nothing is being evaluated now. Start one with `relayrunner benchmark <provider>`.",
         )),
         [one] => Ok(str_of(&one["id"]).to_string()),
         many => {
@@ -411,7 +411,7 @@ fn running_one(credentials: &Credentials, scope: &mut Scope) -> Result<String, E
             let index = ui::select("Which evaluation?", &choices, 0).ok_or_else(|| {
                 Error::new(
                     "USAGE",
-                    "More than one is running. Pass its id: `relayrunner eval watch <id>`.",
+                    "More than one is running. Pass its id: `relayrunner benchmark watch <id>`.",
                 )
             })?;
             Ok(str_of(&many[index]["id"]).to_string())
@@ -509,7 +509,10 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
         None => {
             return Err(Error::new(
                 "USAGE",
-                format!("Name the provider: relayrunner eval <{}>.", ids.join("|")),
+                format!(
+                    "Name the provider: relayrunner benchmark <{}>.",
+                    ids.join("|")
+                ),
             ));
         }
     };
@@ -542,7 +545,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
     ));
     if app["canStart"] != json!(true) {
         ui::error(
-            "Only owners and admins can start an evaluation. You can still watch one with `relayrunner eval watch`.",
+            "Only owners and admins can start an evaluation. You can still watch one with `relayrunner benchmark watch`.",
         );
         return Ok(NEEDS_YOU);
     }
@@ -710,7 +713,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
             "{title}'s jobs don't go through RelayRunner yet, so an evaluation can't steer them.\nRun `relayrunner init` in this repo to route them. Where they run today doesn't change."
         ));
         ui::outro(&format!(
-            "Then run `relayrunner eval {id} --workflow {}` again.",
+            "Then run `relayrunner benchmark {id} --workflow {}` again.",
             file_of(str_of(&workflow["path"]))
         ));
         return Ok(NEEDS_YOU);
@@ -816,7 +819,7 @@ fn start(credentials: &Credentials, args: &Args, scope: &mut Scope) -> Result<i3
             println!("{}", json!({ "id": evaluation, "url": url }));
         } else {
             ui::outro(&format!(
-                "Started {evaluation}. Follow it with `relayrunner eval watch {evaluation}`.\n   {url}"
+                "Started {evaluation}. Follow it with `relayrunner benchmark watch {evaluation}`.\n   {url}"
             ));
         }
         return Ok(0);
@@ -1160,7 +1163,7 @@ fn watch(
                 area.clear();
                 drop(keys);
                 ui::outro(&format!(
-                    "Left it running. Follow it again with `relayrunner eval watch {id}`.\n   {url}"
+                    "Left it running. Follow it again with `relayrunner benchmark watch {id}`.\n   {url}"
                 ));
                 return INTERRUPTED;
             }

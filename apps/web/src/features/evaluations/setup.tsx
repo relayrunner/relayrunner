@@ -79,7 +79,7 @@ function AppSetup({
   editable: boolean;
 }) {
   // Null: GitHub can't tell (a personal account, or the read failed), so the person says so
-  // instead, once per browser, as `relayrunner eval` asks them to.
+  // instead, once per browser, as `relayrunner benchmark` asks them to.
   const apps = usePolled(() => getProviderApps(workspaceId), true, [workspaceId]);
   const confirmKey = `evaluate.app-confirmed.${workspaceId}.${provider}`;
   const [confirmed, setConfirmed] = useState(() => readFlag(confirmKey));

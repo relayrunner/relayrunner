@@ -1,6 +1,6 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
 //! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs`,
-//! `eval`, `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
+//! `benchmark` (once `eval`), `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
 mod blacksmith;
@@ -211,9 +211,9 @@ const COMMANDS: &[Command] = &[
         ],
     ),
     (
-        "eval",
-        "Evaluate a hosted provider on one of your workflows: 5 runs from the default branch, compared with its recent runs. It's the dashboard's Evaluate, so the dashboard shows it live.",
-        "relayrunner eval [provider] [options] | eval watch [id] | eval list [--provider P] | eval stop <id>",
+        "benchmark",
+        "Benchmark a hosted provider on one of your workflows: 5 runs from the default branch, compared with its recent runs. It's the dashboard's Evaluate, so the dashboard shows it live.",
+        "relayrunner benchmark [provider] [options] | benchmark watch [id] | benchmark list [--provider P] | benchmark stop <id>",
         &[
             (
                 "--repo OWNER/NAME",
@@ -289,6 +289,8 @@ fn usage() -> String {
 }
 
 fn command_help(name: &str) -> Option<String> {
+    // `eval` is benchmark's old name, kept so scripts that use it still work.
+    let name = if name == "eval" { "benchmark" } else { name };
     let (_, about, usage, options) = COMMANDS.iter().find(|c| c.0 == name)?;
     let mut out = format!("{about}\n\nUsage: {usage}\n");
     if !options.is_empty() {
@@ -323,8 +325,8 @@ async fn plain(f: impl FnOnce() -> Result<(), error::Error> + Send + 'static) ->
     }
 }
 
-/// `relayrunner eval`, signing in first when this computer isn't yet and someone can approve it.
-async fn eval_command(rest: Vec<String>) -> i32 {
+/// `relayrunner benchmark` (or its old name `eval`), signing in first when this computer isn't yet and someone can approve it.
+async fn benchmark_command(rest: Vec<String>) -> i32 {
     if matches!(credentials::read(), Ok(None)) && ui::can_ask() {
         ui::info("Sign in first. Evaluations run as you, in your workspaces.");
         let code = connect::login_command(&[]).await;
@@ -393,7 +395,7 @@ async fn main() {
         }
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
-        "eval" => eval_command(rest).await,
+        "benchmark" | "eval" => benchmark_command(rest).await,
         "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
         "feedback" => plain(move || feedback::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
