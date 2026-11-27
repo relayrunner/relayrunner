@@ -798,8 +798,13 @@ export function Results({
   const runUsd = report.warm.usd ?? report.cold.usd;
   // Stopped or failed before every run finished: the numbers come from the runs that did.
   const partial = stopped ? finished : null;
-  // Stopped before any run finished: nothing to show but how to start again.
-  const empty = stopped && finished === 0;
+  // Stopped by hand before any run finished: nothing to show but how to start again. A failed
+  // evaluation keeps the page, so people see what a passing run would fill in.
+  const empty = report.state === "cancelled" && finished === 0;
+  // Failed before any run passed: the numbers wait on a passing run.
+  const blocked = report.state === "failed" && finished === 0;
+  // Shown with today's number while nothing can fill a tile.
+  const needsRun = (today: string) => `Needs a passing run · today ${today}`;
   const ran = partial ?? (active ? finished : report.runs);
   const hasWarm = report.warm.ms !== null;
   const showWarm = hasWarm || active;
@@ -838,7 +843,7 @@ export function Results({
             <span className="text-muted-foreground">
               {finished === 0
                 ? report.state === "failed"
-                  ? "No run passed, so there's nothing to compare yet."
+                  ? `No run passed, so ${name}'s numbers below are still empty.`
                   : "No run finished, so there's nothing to compare yet."
                 : finished === 1
                   ? "The numbers below are run 1's, with an empty cache; a warm number needs run 2."
@@ -860,11 +865,13 @@ export function Results({
             detail={
               warm
                 ? `${warm.text} than ${clock(report.baseline.medianMs)} today`
-                : partial !== null
-                  ? "Needs run 2"
-                  : active
-                    ? "After run 2"
-                    : "Median of runs 2 on"
+                : blocked
+                  ? needsRun(clock(report.baseline.medianMs))
+                  : partial !== null
+                    ? "Needs run 2"
+                    : active
+                      ? "After run 2"
+                      : "Median of runs 2 on"
             }
           />
           <StatTile
@@ -873,9 +880,11 @@ export function Results({
             detail={
               cold
                 ? `${cold.text} · run 1, empty cache`
-                : active
-                  ? "After run 1"
-                  : "Run 1, empty cache"
+                : blocked
+                  ? needsRun(clock(report.baseline.medianMs))
+                  : active
+                    ? "After run 1"
+                    : "Run 1, empty cache"
             }
           />
           <StatTile
@@ -884,7 +893,9 @@ export function Results({
             detail={
               finished === 0 && active
                 ? `After run 1 · today ${usd(report.baseline.usd)}`
-                : costDetail(name, runUsd, report.baseline.usd)
+                : blocked
+                  ? needsRun(usd(report.baseline.usd))
+                  : costDetail(name, runUsd, report.baseline.usd)
             }
           />
           <StatTile
@@ -893,7 +904,9 @@ export function Results({
             detail={
               finished === 0 && active
                 ? `After run 1 · today ${clock(report.baseline.waitMs)}`
-                : `Median per job · today ${clock(report.baseline.waitMs)}`
+                : blocked
+                  ? needsRun(clock(report.baseline.waitMs))
+                  : `Median per job · today ${clock(report.baseline.waitMs)}`
             }
           />
         </div>
@@ -903,7 +916,7 @@ export function Results({
 
       {current && <LiveRun report={report} attempt={current} />}
 
-      {finished > 0 && (
+      {(finished > 0 || blocked) && (
         <div className="overflow-x-auto rounded-xl border bg-card">
           <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3 pb-2">
             <h3 className="font-semibold">By job</h3>
@@ -981,7 +994,7 @@ export function Results({
         </div>
       )}
 
-      {finished > 0 && !preview && (
+      {(finished > 0 || blocked) && !preview && (
         <p className="max-w-3xl text-xs text-muted-foreground">
           Today is the median of the workflow's last {plural(report.baseline.runs, "passing run")}{" "}
           on {report.ref} over 14 days, on whatever runners they used and at whatever commit each
@@ -1073,7 +1086,7 @@ function FailedJobs({ report, preview }: { report: EvaluationReport; preview?: b
             )}
             {!preview && (
               <Suspense fallback={<div aria-busy className="h-32 rounded-lg border" />}>
-                <JobFailureSection jobId={job.id} logUrl={url} hideCause={refused} />
+                <JobFailureSection jobId={job.id} logUrl={url} hideCause={refused} compact />
               </Suspense>
             )}
           </div>

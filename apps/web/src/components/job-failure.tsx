@@ -1,9 +1,11 @@
 import { AppError } from "@relayrunner/errors";
 import { useQuery } from "@tanstack/react-query";
 import { CatchBoundary } from "@tanstack/react-router";
-import { ExternalLinkIcon, TriangleAlert } from "lucide-react";
+import { ChevronDownIcon, ExternalLinkIcon, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { type FailureCause, getJobFailure, type JobFailure } from "@/lib/runs";
+import { plural } from "@/lib/job-times";
 import { cn } from "@/lib/utils";
 
 type Problem = { text: string; retry: boolean };
@@ -29,11 +31,17 @@ export function JobFailureSection({
   jobId,
   logUrl,
   hideCause = false,
+  compact = false,
 }: {
   jobId: number;
   logUrl: string;
   /** Leaves out the model's guess, when the page already says what went wrong. */
   hideCause?: boolean;
+  /**
+   * Shows only the log's error lines, with the rest a click away, and leaves out annotations those
+   * lines already say (the Evaluate page, where the failure sits above the results).
+   */
+  compact?: boolean;
 }) {
   return (
     <section className="grid gap-2">
@@ -50,7 +58,7 @@ export function JobFailureSection({
           </>
         )}
       >
-        <FailureDetail jobId={jobId} logUrl={logUrl} hideCause={hideCause} />
+        <FailureDetail jobId={jobId} logUrl={logUrl} hideCause={hideCause} compact={compact} />
       </CatchBoundary>
     </section>
   );
@@ -70,10 +78,12 @@ function FailureDetail({
   jobId,
   logUrl,
   hideCause,
+  compact,
 }: {
   jobId: number;
   logUrl: string;
   hideCause: boolean;
+  compact: boolean;
 }) {
   // A failed job's failure doesn't change, so it's read once.
   const query = useQuery({
@@ -86,6 +96,12 @@ function FailureDetail({
   // A retry shows the skeleton again until it answers.
   const problem = query.isError && !query.isFetching ? problemOf(query.error) : null;
   const retry = () => void query.refetch();
+  const errorLines = failure?.log?.filter((line) => line.startsWith("##[error]")) ?? [];
+  // Compact, an annotation whose text is already an error line in the log isn't said twice.
+  const annotations =
+    failure?.annotations.filter(
+      (message) => !compact || !errorLines.some((line) => line.includes(message)),
+    ) ?? [];
 
   return (
     <>
@@ -100,9 +116,9 @@ function FailureDetail({
           {failure.runnerFailed && (
             <p className="text-sm">The runner failed the job before any step ran.</p>
           )}
-          {failure.annotations.length > 0 && (
+          {annotations.length > 0 && (
             <ul className="grid gap-1 text-sm">
-              {failure.annotations.map((message, index) => (
+              {annotations.map((message, index) => (
                 <li key={index} className="break-words">
                   {message}
                 </li>
@@ -112,7 +128,11 @@ function FailureDetail({
           {failure.log === null ? (
             <p className="text-sm text-muted-foreground">GitHub no longer has this job's log.</p>
           ) : failure.log.length > 0 ? (
-            <LogLines lines={failure.log} />
+            compact && errorLines.length > 0 ? (
+              <CompactLog lines={failure.log} errors={errorLines} />
+            ) : (
+              <LogLines lines={failure.log} />
+            )
           ) : (
             !failure.runnerFailed &&
             failure.annotations.length === 0 && (
@@ -182,6 +202,26 @@ function ProblemNote({
           </a>
         </Button>
       </span>
+    </div>
+  );
+}
+
+/** Just the log's error lines, in red, with the whole excerpt behind a toggle. */
+function CompactLog({ lines, errors }: { lines: string[]; errors: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="grid gap-1.5">
+      <LogLines lines={open ? lines : errors} />
+      <Button
+        variant="ghost"
+        size="xs"
+        className="justify-self-start"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <ChevronDownIcon aria-hidden className={cn("transition-transform", open && "rotate-180")} />
+        {open ? "Show only the errors" : `Show the log (${plural(lines.length, "line")})`}
+      </Button>
     </div>
   );
 }
