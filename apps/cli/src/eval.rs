@@ -1239,11 +1239,8 @@ fn live_lines(report: &Value, elapsed: Option<u64>) -> Vec<String> {
     let runs = report["runs"].as_u64().unwrap_or(5);
     let attempts = report["attempts"].as_array().cloned().unwrap_or_default();
     let state = str_of(&report["state"]);
-    let Some(current) = attempts
-        .iter()
-        .rev()
-        .find(|a| str_of(&a["status"]) != "done")
-    else {
+    // The first attempt that isn't done: the later ones are "waiting" until it ends.
+    let Some(current) = attempts.iter().find(|a| str_of(&a["status"]) != "done") else {
         let what = match state {
             "dispatching" => "Asking GitHub to start the run…",
             "waiting" => "Waiting for workflow_dispatch on the default branch…",
@@ -1797,5 +1794,22 @@ mod tests {
     fn tells_the_provider_refused_before_any_step() {
         assert!(is_runner_setup("2. Set up runner"));
         assert!(!is_runner_setup("3. Run tests"));
+    }
+    #[test]
+    fn live_view_shows_the_run_going_now() {
+        let attempt = |n: u64, status: &str| json!({ "attempt": n, "status": status, "jobs": [] });
+        let report = json!({
+            "runs": 5,
+            "state": "running",
+            "attempts": [
+                attempt(1, "done"),
+                attempt(2, "running"),
+                attempt(3, "waiting"),
+                attempt(4, "waiting"),
+                attempt(5, "waiting"),
+            ],
+        });
+        let first = live_lines(&report, None).join("\n");
+        assert!(first.contains("Run 2 of 5"), "{first}");
     }
 }
