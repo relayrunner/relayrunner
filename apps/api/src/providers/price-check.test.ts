@@ -180,7 +180,10 @@ describe("price files", () => {
 
   test("match the published JSON Schema field for field", () => {
     const schema = JSON.parse(
-      readFileSync(new URL("../../../site/public/schemas/prices.json", import.meta.url), "utf8"),
+      readFileSync(
+        new URL("../../../site/public/schemas/runner-prices.json", import.meta.url),
+        "utf8",
+      ),
     );
     const price = schema.properties.prices.items;
     // Every field the schema allows parses, and both refuse anything else.
@@ -323,7 +326,7 @@ describe("checkPrices", () => {
   });
 
   describe("from a provider's price file", () => {
-    const url = "https://groundbox.example/.well-known/relayrunner-prices.json";
+    const url = "https://groundbox.example/.well-known/runner-prices.json";
     const setPriceUrl = async (provider: string) => {
       await env.DB.prepare(
         "insert into provider (id, name, summary, labels, prefixes, status, price_url, updated_by, updated_at) values (?, ?, '', '', '[]', 'live', ?, 'ops', 0)",

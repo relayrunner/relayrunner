@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://relayrunner.dev/schemas/prices.json",
+  "$id": "https://relayrunner.dev/schemas/runner-prices.json",
   "title": "Runner price file",
-  "description": "List prices a runner service publishes for the RelayRunner daily price check. See https://relayrunner.dev/docs/contribute/publish-prices",
+  "description": "List prices a CI runner service publishes on its own site, usually at /.well-known/runner-prices.json, for tools that estimate what jobs cost. See https://relayrunner.dev/docs/contribute/publish-prices",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "prices"],
@@ -23,7 +23,7 @@
           "rate": {
             "type": "string",
             "minLength": 1,
-            "description": "The rate's id, as listed for your service under RATES in packages/providers/src/prices.ts."
+            "description": "The rate's id: a runner size or platform, such as linux or acme-4vcpu."
           },
           "per": {
             "enum": ["vcpu", "runner"],
