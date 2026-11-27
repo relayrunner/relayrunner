@@ -12,6 +12,7 @@ const row = {
   dashboardUrl: null,
   docsUrl: null,
   logoUrl: null,
+  priceUrl: null,
   status: "live" as const,
   featured: null,
   updatedBy: "op@example.com",

@@ -38,6 +38,7 @@ export const SIDEBAR = [
       "docs/runners/hosted",
       "docs/reference/labels",
       "docs/contribute/add-provider",
+      "docs/contribute/publish-prices",
     ],
   },
   // Collapsed groups start closed, but the one holding the current page always opens.

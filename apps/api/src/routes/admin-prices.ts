@@ -5,14 +5,7 @@
  * Prices the daily check finds (price-check.ts, price_finding) wait here until an operator approves
  * one into provider_price or dismisses it.
  */
-import {
-  ADDED_RATE,
-  dayMs,
-  isProviderId,
-  isRate,
-  type PricedProvider,
-  RATES,
-} from "@relayrunner/providers";
+import { ADDED_RATE, dayMs, isDay, isProviderId, RATES, rateUnit } from "@relayrunner/providers";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
@@ -30,10 +23,7 @@ const PriceBody = z.object({
   rate: z.string(),
   // USD for a minute; anything near a dollar is a typo.
   usd: z.number().positive().max(1),
-  from: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .refine((day) => !Number.isNaN(dayMs(day))),
+  from: z.string().refine(isDay),
   source: z.string().trim().max(500).optional(),
 });
 
@@ -60,7 +50,7 @@ export interface AdminRate {
 /** A price the daily check found, waiting for an operator. */
 export interface PendingPrice {
   id: string;
-  provider: PricedProvider;
+  provider: string;
   rate: string;
   per: "vcpu" | "runner";
   usd: number;
@@ -154,19 +144,24 @@ export const adminPriceRoutes = new Hono<AppEnv>()
         createdBy: createdBy ?? null,
       })),
     }));
-    const pending: PendingPrice[] = pendingRows
-      // The daily check only reads prices for providers in code.
-      .filter((row) => isProviderId(row.provider) && isRate(row.provider, row.rate))
-      .map(({ id, provider, rate, usd, from, source }) => ({
-        id,
-        provider: provider as PricedProvider,
-        rate,
-        per: RATES[provider as PricedProvider][rate as never],
-        usd,
-        from,
-        source,
-        current: book.usd(provider, rate, Math.min(dayMs(from), now)),
-      }));
+    const pending: PendingPrice[] = pendingRows.flatMap(
+      ({ id, provider, rate, usd, from, source }) => {
+        const per = rateUnit(provider, rate);
+        if (!per) return [];
+        return [
+          {
+            id,
+            provider,
+            rate,
+            per,
+            usd,
+            from,
+            source,
+            current: book.usd(provider, rate, Math.min(dayMs(from), now)),
+          },
+        ];
+      },
+    );
     const checked: PriceCheckStatus[] = checks.map(({ provider, checkedAt, error }) => ({
       provider,
       checkedAt: checkedAt.toISOString(),

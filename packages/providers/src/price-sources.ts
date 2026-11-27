@@ -2,7 +2,7 @@
 // these once a day (apps/api/src/providers/price-check.ts) and holds any change for an operator to approve.
 // Parsers return what they found and throw when the page no longer looks the way they expect, so
 // a redesign shows up as a failed check instead of a wrong price.
-import { GITHUB_LARGER, type PricedProvider } from "./prices.ts";
+import { GITHUB_LARGER } from "./prices.ts";
 
 /** A price read off a provider's page: USD a minute per vCPU or per runner, as RATES says. */
 export interface FoundPrice {
@@ -13,12 +13,17 @@ export interface FoundPrice {
 }
 
 export interface PriceSource {
-  provider: PricedProvider;
+  provider: string;
   /** What the check fetches. */
   url: string;
   /** Where a person reads the same prices, for links. */
   page: string;
   parse(body: string): FoundPrice[];
+  /**
+   * The provider publishes this file for RelayRunner (price-file.ts), so the check applies its
+   * changes on its own within limits instead of holding every one for an operator.
+   */
+  fromProvider?: boolean;
 }
 
 const dollars = (text: string) => {
@@ -45,7 +50,7 @@ const priceCell = (cells: string[]) => dollars(cells.find((cell) => cell.include
 // The runner a row names, by its first cell's first `code` span.
 const runnerIs = (label: string) => (cell: string) => /`([^`]+)`/.exec(cell)?.[1] === label;
 
-function found(rate: string, usd: number, from?: string): FoundPrice {
+export function found(rate: string, usd: number, from?: string): FoundPrice {
   if (!(usd > 0 && usd < 1)) throw new Error(`${rate}: unlikely price ${usd}`);
   return from ? { rate, usd, from } : { rate, usd };
 }

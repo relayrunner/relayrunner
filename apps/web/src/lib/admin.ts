@@ -180,6 +180,8 @@ export type ProviderFields = {
   docsUrl: string;
   /** An https image for an added provider's mark. */
   logoUrl: string;
+  /** The price file the provider publishes, which the daily price check reads. */
+  priceUrl: string;
   status: ProviderStatus;
   featured: boolean;
 };

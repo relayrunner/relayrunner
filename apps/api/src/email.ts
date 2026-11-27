@@ -28,6 +28,9 @@ import { log } from "./log.ts";
 // binding's allowed_sender_addresses in wrangler.jsonc.
 export const DEFAULT_FROM = "noreply@send.relayrunner.app";
 
+/** A price the daily price check found, as the price-check email lists it. */
+type PriceChange = { provider: string; rate: string; usd: number; from: string };
+
 export type EmailArgs = (
   | { to: string; template: "welcome"; context: { name?: string } }
   | {
@@ -66,7 +69,8 @@ export type EmailArgs = (
       to: string;
       template: "price-check";
       context: {
-        changes: { provider: string; rate: string; usd: number; from: string }[];
+        changes: PriceChange[];
+        applied: PriceChange[];
         failures: { provider: string; error: string }[];
       };
     }
@@ -108,19 +112,22 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       return renderIntegrationProblemEmail({ ...args.context, dashboardUrl: dashboard });
     case "health-alert":
       return renderHealthAlertEmail(args.context);
-    case "price-check":
+    case "price-check": {
+      const change = ({ provider, rate, usd, from }: PriceChange) => ({
+        name: `${providerName(provider)} ${rate}`,
+        price: rateText(usd),
+        from,
+      });
       return renderPriceCheckEmail({
-        changes: args.context.changes.map(({ provider, rate, usd, from }) => ({
-          name: `${providerName(provider)} ${rate}`,
-          price: rateText(usd),
-          from,
-        })),
+        changes: args.context.changes.map(change),
+        applied: args.context.applied.map(change),
         failures: args.context.failures.map(({ provider, error }) => ({
           name: providerName(provider),
           error,
         })),
         pricesUrl: `${dashboard}/admin/prices`,
       });
+    }
     case "feedback":
       return renderFeedbackEmail(args.context);
   }
