@@ -1,32 +1,18 @@
 //! Commits and pushes the workflow change `eval` makes, after the person says yes. The commit is
 //! made on top of the default branch as `origin` has it, without touching the checkout's branch or
-//! index, so it holds this one file's change and nothing else:
-//!
-//! - On the default branch, with nothing else changed and level with `origin`, it's pushed there
-//!   and the checkout moves up to it.
-//! - Otherwise, or when the push is refused (a protected branch), it's pushed to a new branch
-//!   `relayrunner/route-<workflow>`, with GitHub's link to open a pull request.
-//!
-//! It never force-pushes.
+//! index, so it holds this one file's change and nothing else. It always goes to a new branch,
+//! `relayrunner/route-<workflow>`, with GitHub's link to open a pull request: never to the default
+//! branch, and never force-pushed.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Where the change went.
+/// The branch the change went to, with the link that opens its pull request.
 #[derive(Debug, PartialEq)]
-pub enum Pushed {
-    /// Pushed to the default branch.
-    Default,
-    /// Pushed to a branch of its own, with the link that opens its pull request.
-    Branch { branch: String, compare: String },
-}
-
-/// The checkout as it was before the edit.
-pub struct Before {
-    branch: Option<String>,
-    /// No tracked file had changes.
-    clean: bool,
+pub struct Pushed {
+    pub branch: String,
+    pub compare: String,
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
@@ -75,15 +61,6 @@ fn git_with(
             .rfind(|l| !l.is_empty() && !l.starts_with("hint:"))
             .unwrap_or("git failed")
             .to_string())
-    }
-}
-
-/// Read before the edit: which branch the checkout is on and whether its tracked files are clean.
-pub fn before_edit(root: &Path) -> Before {
-    Before {
-        branch: git(root, &["symbolic-ref", "--short", "-q", "HEAD"]).ok(),
-        clean: git(root, &["status", "--porcelain", "--untracked-files=no"])
-            .is_ok_and(|s| s.is_empty()),
     }
 }
 
@@ -137,10 +114,9 @@ fn same_text(a: &str, b: &str) -> bool {
     a.replace("\r\n", "\n") == b.replace("\r\n", "\n")
 }
 
-/// Commits `after` as `file` on top of `origin/<default>` and pushes it, as the module says.
+/// Commits `after` as `file` on top of `origin/<default>` and pushes it to a branch of its own.
 /// `before` is the file as the edit found it, which must match the default branch's, so the commit
 /// holds only the edit.
-#[allow(clippy::too_many_arguments)]
 pub fn push(
     root: &Path,
     repo: &str,
@@ -149,7 +125,6 @@ pub fn push(
     before: &str,
     after: &str,
     message: &str,
-    checkout: &Before,
 ) -> Result<Pushed, String> {
     let _ = git(root, &["fetch", "-q", "origin", default]);
     let remote = format!("refs/remotes/origin/{default}");
@@ -204,25 +179,6 @@ pub fn push(
     let _ = std::fs::remove_file(&index);
     let commit = git(root, &["commit-tree", &tree?, "-p", &base, "-m", message])?;
 
-    let head = git(root, &["rev-parse", "-q", "--verify", "HEAD"]).ok();
-    if checkout.clean
-        && checkout.branch.as_deref() == Some(default)
-        && head.as_deref() == Some(base.as_str())
-        && git(
-            root,
-            &[
-                "push",
-                "-q",
-                "origin",
-                &format!("{commit}:refs/heads/{default}"),
-            ],
-        )
-        .is_ok()
-    {
-        // The checkout already has the file as committed, so this only moves the branch up.
-        let _ = git(root, &["reset", "-q", &commit]);
-        return Ok(Pushed::Default);
-    }
     let first = branch_for(file);
     let mut refused = String::new();
     for n in 1..=3 {
@@ -241,7 +197,7 @@ pub fn push(
             ],
         ) {
             Ok(_) => {
-                return Ok(Pushed::Branch {
+                return Ok(Pushed {
                     compare: compare_url(repo, default, &branch),
                     branch,
                 });
@@ -292,9 +248,9 @@ mod tests {
     const FILE: &str = ".github/workflows/ci.yml";
 
     #[test]
-    fn pushes_to_the_default_branch_when_it_can() {
+    fn never_pushes_to_the_default_branch() {
+        // A clean checkout of main, level with origin: it still goes to a branch of its own.
         let (dir, work) = clone_with(FILE, "on: push\n");
-        let before = before_edit(&work);
         std::fs::write(work.join(FILE), "on: [push, workflow_dispatch]\n").unwrap();
         let pushed = push(
             &work,
@@ -304,25 +260,18 @@ mod tests {
             "on: push\n",
             "on: [push, workflow_dispatch]\n",
             "ci: route ci.yml through RelayRunner",
-            &before,
         )
         .unwrap();
-        assert_eq!(pushed, Pushed::Default);
+        assert_eq!(pushed.branch, "relayrunner/route-ci");
         let origin = dir.join("origin.git");
+        assert_eq!(run(&origin, &["log", "-1", "--format=%s", "main"]), "first");
         assert_eq!(
-            run(&origin, &["show", &format!("main:{FILE}")]),
+            run(&origin, &["show", &format!("relayrunner/route-ci:{FILE}")]),
             "on: [push, workflow_dispatch]"
         );
-        assert_eq!(
-            run(&origin, &["log", "-1", "--format=%s", "main"]),
-            "ci: route ci.yml through RelayRunner"
-        );
-        // The checkout is level with it and has nothing left to commit.
-        assert_eq!(run(&work, &["status", "--porcelain"]), "");
-        assert_eq!(
-            run(&work, &["rev-parse", "HEAD"]),
-            run(&origin, &["rev-parse", "main"])
-        );
+        // The checkout stays on main with the edit left in place.
+        assert_eq!(run(&work, &["symbolic-ref", "--short", "HEAD"]), "main");
+        assert!(run(&work, &["status", "--porcelain"]).contains(FILE));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -332,7 +281,6 @@ mod tests {
         std::fs::write(work.join("README.md"), "hi\n").unwrap();
         run(&work, &["add", "README.md"]);
         run(&work, &["switch", "-q", "-c", "feature"]);
-        let before = before_edit(&work);
         std::fs::write(work.join(FILE), "on: [push, workflow_dispatch]\n").unwrap();
         let pushed = push(
             &work,
@@ -342,12 +290,11 @@ mod tests {
             "on: push\n",
             "on: [push, workflow_dispatch]\n",
             "ci: route ci.yml through RelayRunner",
-            &before,
         )
         .unwrap();
         assert_eq!(
             pushed,
-            Pushed::Branch {
+            Pushed {
                 branch: "relayrunner/route-ci".into(),
                 compare: "https://github.com/acme/web/compare/main...relayrunner/route-ci?expand=1"
                     .into(),
@@ -375,19 +322,15 @@ mod tests {
             "on: push\n",
             "on: [push, workflow_dispatch]\n",
             "ci: route ci.yml through RelayRunner again",
-            &before,
         )
         .unwrap();
-        assert!(
-            matches!(again, Pushed::Branch { branch, .. } if branch == "relayrunner/route-ci-2")
-        );
+        assert!(again.branch == "relayrunner/route-ci-2");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn refuses_when_the_default_branch_has_another_version() {
         let (dir, work) = clone_with(FILE, "on: push\n");
-        let before = before_edit(&work);
         let refused = push(
             &work,
             "acme/web",
@@ -396,7 +339,6 @@ mod tests {
             "on: pull_request\n",
             "on: [pull_request, workflow_dispatch]\n",
             "ci: route",
-            &before,
         )
         .unwrap_err();
         assert!(refused.contains("isn't the same"), "{refused}");

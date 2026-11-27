@@ -773,7 +773,6 @@ fn start(
             ));
             return Ok(NEEDS_YOU);
         }
-        let before = crate::push::before_edit(&local.root);
         let edit = match crate::init::route_for_eval(local, &path) {
             Ok(Some(edit)) => edit,
             Ok(None) => {
@@ -787,35 +786,28 @@ fn start(
         };
         let default = crate::push::default_branch(&local.root, seen_default.as_deref())
             .unwrap_or_else(|| "main".to_string());
-        let pushed = if ui::confirm("Commit and push it?", true) == Some(true) {
-            match crate::push::push(
-                &local.root,
-                &repo,
-                &default,
-                &path,
-                &edit.before,
-                &edit.after,
-                &format!("ci: route {file} through RelayRunner"),
-                &before,
-            ) {
-                Ok(pushed) => Some(pushed),
-                Err(message) => {
-                    ui::warn(&message);
-                    None
+        let pushed =
+            if ui::confirm("Push it to a branch and open a pull request?", true) == Some(true) {
+                match crate::push::push(
+                    &local.root,
+                    &repo,
+                    &default,
+                    &path,
+                    &edit.before,
+                    &edit.after,
+                    &format!("ci: route {file} through RelayRunner"),
+                ) {
+                    Ok(pushed) => Some(pushed),
+                    Err(message) => {
+                        ui::warn(&message);
+                        None
+                    }
                 }
-            }
-        } else {
-            None
-        };
-        let on_default = matches!(pushed, Some(crate::push::Pushed::Default));
+            } else {
+                None
+            };
         match pushed {
-            Some(crate::push::Pushed::Default) => {
-                ui::success(&format!("Pushed the change to {default}"));
-                waiting_for = Some(format!(
-                    "The evaluation starts once GitHub sees {file}'s new version on {default}."
-                ));
-            }
-            Some(crate::push::Pushed::Branch { branch, compare }) => {
+            Some(crate::push::Pushed { branch, compare }) => {
                 ui::success(&format!("Pushed the change to {branch}"));
                 ui::info(&format!(
                     "Open a pull request and merge it into {default}:\n{compare}"
@@ -825,7 +817,9 @@ fn start(
                 ));
             }
             None => {
-                ui::info(&format!("Commit {path} and push it to {default}."));
+                ui::info(&format!(
+                    "Commit {path} on a branch and merge it into {default} with a pull request."
+                ));
                 waiting_for = Some(format!(
                     "The evaluation starts once the change is on {default}."
                 ));
@@ -833,7 +827,7 @@ fn start(
         }
         // A workflow that can already be started on demand would start today's version, whose
         // jobs aren't routed, so it's started once the change is in.
-        if !on_default && edit.dispatchable {
+        if edit.dispatchable {
             ui::outro(&format!(
                 "Once the change is on {default}, run `{again}` again."
             ));
