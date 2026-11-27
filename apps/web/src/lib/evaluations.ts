@@ -31,9 +31,13 @@ export interface Split {
 }
 
 export interface AttemptJob {
+  /** The GitHub job's id, for reading why it failed. */
+  id: number;
   name: string;
   status: "queued" | "running" | "done";
   conclusion: string | null;
+  /** The step that failed, such as "2. Set up runner". */
+  failedStep: string | null;
   split: Split | null;
   onProvider: boolean;
 }
@@ -182,6 +186,10 @@ export const cancelEvaluation = (id: string) =>
 /** Where to edit a workflow file on GitHub. */
 export const editUrl = (repository: string, ref: string, path: string) =>
   `https://github.com/${repository}/edit/${encodeURIComponent(ref)}/${path}`;
+
+/** A job's page on GitHub. */
+export const jobUrl = (report: Pick<EvaluationReport, "repository" | "runId">, jobId: number) =>
+  `https://github.com/${report.repository}/actions/runs/${report.runId}/job/${jobId}`;
 
 export const runUrl = (report: Pick<EvaluationReport, "repository" | "runId">, attempt?: number) =>
   report.runId

@@ -2,6 +2,7 @@
 // /api/runs/jobs.
 import { relayInputs } from "@relayrunner/runner-order";
 import type { RouteWalk } from "../route-walk";
+import { SAMPLE_FAILED_JOB } from "./evaluations";
 import type { Environment, TypicalTime } from "../job-times";
 import type {
   HistoryJob,
@@ -22,7 +23,27 @@ export const sampleSha = (n: number) =>
 export const sampleActor = (n: number) => (n % 3 === 0 ? "hubot" : "octocat");
 
 /** An example failure for a sample job. */
-export function sampleJobFailure(): JobFailure {
+export function sampleJobFailure(jobId?: number): JobFailure {
+  // The provider refusing a job in its own setup (sample evaluations' `:refused-<n>`).
+  if (jobId === SAMPLE_FAILED_JOB + 1)
+    return {
+      failedStep: "2. Set up runner",
+      runnerFailed: false,
+      annotations: [
+        "CI on Boat VMs needs the $20/month plan or higher. Start it at https://boat.dev/dashboard (or `boat billing`), then re-run the job.",
+        "Process completed with exit code 1.",
+      ],
+      log: [
+        "Complete job name: unit tests",
+        "A job started hook has been configured by the self-hosted runner administrator",
+        "##[group]Run '/home/runner/actions-runner/boat-job-started.sh'",
+        "shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}",
+        "##[endgroup]",
+        "##[error]CI on Boat VMs needs the $20/month plan or higher. Start it at https://boat.dev/dashboard (or `boat billing`), then re-run the job.",
+        "##[error]Process completed with exit code 1.",
+      ],
+      cause: { kind: "config", confidence: 0.9, passesOnRerun: 0.05, rerun: "fails" },
+    };
   return {
     failedStep: "6. Run pnpm check",
     runnerFailed: false,

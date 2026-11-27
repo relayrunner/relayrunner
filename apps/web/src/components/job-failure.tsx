@@ -25,7 +25,16 @@ function problemOf(caught: unknown): Problem {
  * end of its log up to the last error. Read from GitHub when the panel opens; never stored. When
  * it can't be shown, even if it crashes, it links to the job's output on GitHub (`logUrl`).
  */
-export function JobFailureSection({ jobId, logUrl }: { jobId: number; logUrl: string }) {
+export function JobFailureSection({
+  jobId,
+  logUrl,
+  hideCause = false,
+}: {
+  jobId: number;
+  logUrl: string;
+  /** Leaves out the model's guess, when the page already says what went wrong. */
+  hideCause?: boolean;
+}) {
   return (
     <section className="grid gap-2">
       <CatchBoundary
@@ -41,7 +50,7 @@ export function JobFailureSection({ jobId, logUrl }: { jobId: number; logUrl: st
           </>
         )}
       >
-        <FailureDetail jobId={jobId} logUrl={logUrl} />
+        <FailureDetail jobId={jobId} logUrl={logUrl} hideCause={hideCause} />
       </CatchBoundary>
     </section>
   );
@@ -57,7 +66,15 @@ function Heading({ failure }: { failure: JobFailure | undefined }) {
   );
 }
 
-function FailureDetail({ jobId, logUrl }: { jobId: number; logUrl: string }) {
+function FailureDetail({
+  jobId,
+  logUrl,
+  hideCause,
+}: {
+  jobId: number;
+  logUrl: string;
+  hideCause: boolean;
+}) {
   // A failed job's failure doesn't change, so it's read once.
   const query = useQuery({
     queryKey: ["job-failure", jobId],
@@ -79,7 +96,7 @@ function FailureDetail({ jobId, logUrl }: { jobId: number; logUrl: string }) {
         <div aria-busy aria-label="Loading the log" className="h-32 rounded-lg border" />
       ) : (
         <>
-          {failure.cause && <CauseNote cause={failure.cause} />}
+          {failure.cause && !hideCause && <CauseNote cause={failure.cause} />}
           {failure.runnerFailed && (
             <p className="text-sm">The runner failed the job before any step ran.</p>
           )}

@@ -95,6 +95,8 @@ export function sampleEvaluation(
         status === "waiting"
           ? []
           : SAMPLE_JOBS.map(([name, , cold, warm], j) => ({
+              id: 9000 + attempt * 10 + j,
+              failedStep: null,
               name,
               status: status === "done" || j < 2 ? "done" : j === 2 ? "running" : "queued",
               conclusion: status === "done" || j < 2 ? "success" : null,
@@ -212,4 +214,46 @@ export function sampleEvaluations(provider: string): RecentEvaluation[] {
       createdAt: now - 12 * DAY,
     },
   ];
+}
+
+/** The sample failed job's id; one more is the provider refusing it in its own setup. */
+export const SAMPLE_FAILED_JOB = 9900;
+
+/**
+ * A made-up failed evaluation: `passed` runs passed, then the next one's "unit tests" failed. With
+ * `refused`, the provider failed it in its own setup before any step ran, as Boat does without a
+ * paid plan.
+ */
+export function sampleFailedEvaluation(provider: string, passed: number, refused: boolean) {
+  const report = sampleEvaluation(provider, passed, "failed", true);
+  const failed = passed + 1;
+  const attempts: Attempt[] = report.attempts.map((a) =>
+    a.attempt !== failed
+      ? a
+      : {
+          ...a,
+          status: "done",
+          conclusion: "failure",
+          ms: s(refused ? 21 : 168),
+          usd: null,
+          jobs: SAMPLE_JOBS.map(([name, , cold, warm], j) => {
+            const bad = name === "unit tests";
+            return {
+              id: bad ? SAMPLE_FAILED_JOB + (refused ? 1 : 0) : 9100 + j,
+              name,
+              status: "done",
+              conclusion: bad ? "failure" : "success",
+              failedStep: bad ? (refused ? "2. Set up runner" : "6. Run pnpm check") : null,
+              split: bad ? split(refused ? 9 : 8, refused ? 6 : 142) : failed === 1 ? cold : warm,
+              onProvider: true,
+            };
+          }),
+        },
+  );
+  const step = refused ? "Set up runner" : "Run pnpm check";
+  return {
+    ...report,
+    error: `Run ${failed} failed: unit tests failed at ${step}.`,
+    attempts,
+  } satisfies EvaluationReport;
 }

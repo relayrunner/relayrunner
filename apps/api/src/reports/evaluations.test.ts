@@ -150,7 +150,67 @@ test("the last attempt finishes it, and a failed one ends it", async () => {
   await db.delete(schema.evaluation);
   await evaluation({ attempt: 2 });
   await advanceEvaluation(env, db, completed(2, "failure"));
-  expect(await state()).toMatchObject({ state: "failed", error: "Run 2 failure." });
+  expect(await state()).toMatchObject({
+    state: "failed",
+    error: "Run 2 failed.",
+  });
+});
+
+test("a failed attempt's error names the job and the step it failed at", async () => {
+  await evaluation();
+  vi.stubGlobal("fetch", vi.fn());
+  const job = (id: number, name: string, conclusion: string, failedStep: string | null) =>
+    db.insert(schema.jobTiming).values({
+      id,
+      installationId: 8,
+      repositoryId: 5,
+      repositoryFullName: "acme/web",
+      runId: 100,
+      runAttempt: 1,
+      workflowName: "CI",
+      name,
+      labels: ["boat"],
+      conclusion,
+      failedStep,
+      completedAt: new Date(id * 1000),
+    });
+  await job(1, "lint", "success", null);
+  await job(2, "test", "failure", "2. Set up runner");
+  await job(3, "build", "failure", null);
+  await advanceEvaluation(env, db, completed(1, "failure"));
+  expect((await state())?.error).toBe("Run 1 failed: test (and 1 more) failed at Set up runner.");
+});
+
+test("a failed attempt isn't compared, and its jobs say where they failed", async () => {
+  const at = Date.now() - 60 * 60_000;
+  await evaluation({ state: "failed", createdAt: new Date(at) });
+  await db.insert(schema.jobTiming).values({
+    id: 7,
+    installationId: 8,
+    repositoryId: 5,
+    repositoryFullName: "acme/web",
+    runId: 100,
+    runAttempt: 1,
+    workflowName: "CI",
+    name: "test",
+    labels: ["nscloud-ubuntu-24.04-amd64-4x16"],
+    conclusion: "failure",
+    failedStep: "2. Set up runner",
+    queuedAt: new Date(at),
+    startedAt: new Date(at),
+    completedAt: new Date(at + 6_000),
+  });
+  const report = await evaluationReport(db, "w1", "e1");
+  expect(report.attempts[0]).toMatchObject({
+    status: "done",
+    conclusion: "failure",
+  });
+  expect(report.attempts[0]?.jobs[0]).toMatchObject({
+    id: 7,
+    failedStep: "2. Set up runner",
+  });
+  expect(report.cold.ms).toBeNull();
+  expect(report.jobs[0]?.cold).toBeNull();
 });
 
 test("compares runs with the workflow's recent passing runs", async () => {

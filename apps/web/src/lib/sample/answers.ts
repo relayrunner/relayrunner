@@ -18,6 +18,7 @@ import {
   SAMPLE_WORKFLOWS,
   sampleEvaluation,
   sampleEvaluations,
+  sampleFailedEvaluation,
 } from "./evaluations";
 import { sampleJobTimes } from "./job-times";
 import { sampleJobTypeTimes } from "./job-types";
@@ -176,7 +177,7 @@ const ANSWERS: [RegExp, Answer][] = [
   ],
   [/^\/runs\/live$/, () => sampleLiveJobs()],
   [/^\/runs\/jobs$/, (_, q) => sampleJobs(daysOf(q))],
-  [/^\/runs\/jobs\/\d+\/failure$/, () => sampleJobFailure()],
+  [/^\/runs\/jobs\/(\d+)\/failure$/, ([, id]) => sampleJobFailure(Number(id))],
   [
     /^\/runs\/jobs\/(\d+)\/steps$/,
     ([, id]) => {
@@ -251,6 +252,13 @@ function sampleEvaluationById(id: string) {
       routedRuns: sampleParam() === "unused" ? 0 : 128,
     };
   if (state === "first") return sampleEvaluation(provider, 0);
+  // `:failed-<n>` fails after n passing runs; `:refused-<n>` has the provider refuse the job.
+  if (state?.startsWith("failed-") || state?.startsWith("refused-"))
+    return sampleFailedEvaluation(
+      provider,
+      Number(state.split("-")[1]) || 0,
+      state.startsWith("refused-"),
+    );
   if (state?.startsWith("stopped-"))
     return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);
   if (state === "starting") {

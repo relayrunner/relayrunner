@@ -36,6 +36,7 @@ import {
   ACTIVE_STATES,
   RECENT_DAYS,
   type Attempt,
+  type AttemptJob,
   cancelEvaluation,
   editUrl,
   type EvaluationReport,
@@ -45,6 +46,7 @@ import {
   getEvaluation,
   getEvaluationWorkflows,
   getRunHistory,
+  jobUrl,
   listEvaluations,
   retryEvaluation,
   runUrl,
@@ -60,6 +62,7 @@ import { routePrompt } from "@/lib/route-repo";
 import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { EVALUATE_STEP, EvaluateStepper } from "@/components/evaluate-stepper";
+import { JobFailureSection } from "@/components/job-failure";
 
 type EvaluateSearch = { id?: string };
 
@@ -599,7 +602,7 @@ function NextSteps({ report }: { report: EvaluationReport }) {
   // Stopped before any run finished: nothing to add to the Router on.
   const empty =
     (report.state === "failed" || report.state === "cancelled") &&
-    !report.attempts.some((a) => a.status === "done");
+    !report.attempts.some((a) => a.status === "done" && a.conclusion === "success");
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" asChild>
@@ -784,7 +787,10 @@ export function Results({
   const { name } = providerInfo(report.provider);
   const active = ACTIVE_STATES.includes(report.state);
   const stopped = report.state === "failed" || report.state === "cancelled";
-  const finished = report.attempts.filter((a) => a.status === "done").length;
+  // Runs that passed: a failed run stopped partway, so it isn't compared.
+  const finished = report.attempts.filter(
+    (a) => a.status === "done" && a.conclusion === "success",
+  ).length;
   // The run going now, or the one GitHub is about to start.
   const current = active ? report.attempts.find((a) => a.status !== "done") : undefined;
   const { bar } = providerStyle(report.provider);
@@ -826,20 +832,26 @@ export function Results({
           )}
           <span>
             {report.state === "failed"
-              ? `Stopped: ${report.error ?? "a run failed."}`
+              ? failedHeadline(report)
               : finished === 0
                 ? "Stopped before run 1 finished."
                 : `Stopped after ${finished} of ${report.runs} runs.`}{" "}
             <span className="text-muted-foreground">
               {finished === 0
-                ? "No run finished, so there's nothing to compare yet."
+                ? report.state === "failed"
+                  ? "No run passed, so there's nothing to compare yet."
+                  : "No run finished, so there's nothing to compare yet."
                 : finished === 1
                   ? "The numbers below are run 1's, with an empty cache; a warm number needs run 2."
-                  : `The numbers below come from those ${finished}. More runs would give steadier numbers.`}
+                  : report.state === "failed"
+                    ? `The numbers below come from the ${finished} runs that passed. More runs would give steadier numbers.`
+                    : `The numbers below come from those ${finished}. More runs would give steadier numbers.`}
             </span>
           </span>
         </div>
       )}
+
+      {report.state === "failed" && <FailedJobs report={report} preview={preview} />}
 
       {!empty && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -980,6 +992,84 @@ export function Results({
           minutes, plan fees and discounts aren't counted.
         </p>
       )}
+    </div>
+  );
+}
+
+const isFailedAttempt = (a: Attempt) => a.status === "done" && a.conclusion !== "success";
+const isFailedJob = (job: AttemptJob) =>
+  job.conclusion === "failure" || job.conclusion === "timed_out";
+
+/** The run that ended a failed evaluation, or undefined when GitHub refused before one ran. */
+const failedAttempt = (report: EvaluationReport) => report.attempts.find(isFailedAttempt);
+
+// GitHub's name for a self-hosted runner's job-started hook: the provider's own setup, which runs
+// before any of the workflow's steps.
+const RUNNER_SETUP = /^\d+\. Set up runner$/;
+
+/** The banner's first sentence for a failed evaluation. */
+function failedHeadline(report: EvaluationReport) {
+  const attempt = failedAttempt(report);
+  if (!attempt) return `Stopped: ${report.error ?? "a run failed."}`;
+  const jobs = attempt.jobs.filter(isFailedJob);
+  const what =
+    jobs.length === 1
+      ? `${jobs[0]!.name} failed`
+      : jobs.length > 1
+        ? `${plural(jobs.length, "job")} failed`
+        : attempt.conclusion === "cancelled"
+          ? "it was cancelled"
+          : "it failed";
+  return `Run ${attempt.attempt} stopped the evaluation: ${what}.`;
+}
+
+/**
+ * Why the run that ended the evaluation failed: each failed job's failed step, GitHub's
+ * annotations and the end of its log, read from GitHub as in History, so nobody has to dig through
+ * GitHub to find it. A job the provider failed in its own setup says so: that's the provider
+ * account, not the workflow.
+ */
+function FailedJobs({ report, preview }: { report: EvaluationReport; preview?: boolean }) {
+  const attempt = failedAttempt(report);
+  const jobs = attempt?.jobs.filter(isFailedJob) ?? [];
+  if (!report.runId || jobs.length === 0) return null;
+  const { name } = providerInfo(report.provider);
+  return (
+    <div className="grid gap-3">
+      {jobs.map((job) => {
+        const url = jobUrl(report, job.id);
+        const refused =
+          job.onProvider && job.failedStep !== null && RUNNER_SETUP.test(job.failedStep);
+        return (
+          <div key={job.id} className="grid gap-3 rounded-xl border bg-card px-4 py-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-semibold">
+                {job.name}
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {job.onProvider ? `On ${name}` : "Not on " + name + ": no relay"}
+                </span>
+              </h3>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                On GitHub
+                <ArrowUpRightIcon aria-hidden className="size-3" />
+              </a>
+            </div>
+            {refused && (
+              <p className="text-sm">
+                {name} stopped this job in its own setup, before any of your workflow's steps ran.
+                That's usually something on your {name} account, such as its plan, rather than your
+                workflow.
+              </p>
+            )}
+            {!preview && <JobFailureSection jobId={job.id} logUrl={url} hideCause={refused} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1270,7 +1360,10 @@ function RunsChart({ report, current }: { report: EvaluationReport; current: num
               </span>
             ) : (
               <span
-                className={cn("w-full max-w-14 rounded-t-md", bar, a.attempt === 1 && "opacity-50")}
+                className={cn(
+                  "w-full max-w-14 rounded-t-md",
+                  isFailedAttempt(a) ? "bg-destructive/60" : [bar, a.attempt === 1 && "opacity-50"],
+                )}
                 style={{ height: `${((a.ms ?? 0) / max) * 100}%` }}
               />
             )}
@@ -1282,17 +1375,19 @@ function RunsChart({ report, current }: { report: EvaluationReport; current: num
           <span key={a.attempt} className="flex-1">
             {/* Under the axis, so a bar near the median line never hides its time. */}
             <span className="block text-sm font-medium text-foreground tabular-nums">
-              {a.ms !== null
-                ? clock(a.ms)
-                : a.attempt === current
-                  ? a.status === "waiting"
-                    ? "Starting"
-                    : "Running"
-                  : notRunLabel !== null
-                    ? notRunLabel
-                    : current !== null
-                      ? "Queued"
-                      : "—"}
+              {isFailedAttempt(a)
+                ? "Failed"
+                : a.ms !== null
+                  ? clock(a.ms)
+                  : a.attempt === current
+                    ? a.status === "waiting"
+                      ? "Starting"
+                      : "Running"
+                    : notRunLabel !== null
+                      ? notRunLabel
+                      : current !== null
+                        ? "Queued"
+                        : "—"}
             </span>
             {a.usd !== null && (
               <span className="block text-foreground tabular-nums">{usd(a.usd)}</span>

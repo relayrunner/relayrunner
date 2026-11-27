@@ -401,7 +401,12 @@ export async function advanceEvaluation(env: Env, db: Db, message: WorkflowRunMe
     .get();
   if (!row || row.state !== "running" || row.attempt !== run.runAttempt) return;
   if (run.conclusion !== "success") {
-    await finish(db, row.id, "failed", `Run ${run.runAttempt} ${run.conclusion ?? "ended"}.`);
+    await finish(
+      db,
+      row.id,
+      "failed",
+      await failedRunText(db, run.id, run.runAttempt, run.conclusion),
+    );
     return;
   }
   if (run.runAttempt >= row.runs) {
@@ -420,6 +425,42 @@ export async function advanceEvaluation(env: Env, db: Db, message: WorkflowRunMe
     await finish(db, row.id, "failed", `GitHub didn't start run ${run.runAttempt + 1}: ${error}`);
 }
 
+/**
+ * Why an attempt ended, for the evaluation's `error`: its first failed job and the step it failed
+ * at, such as "Run 1 failed: Test failed at Set up runner." Jobs' own events usually land before
+ * the run's `completed`; when none has yet, it says only how the run ended.
+ */
+const ENDED: Record<string, string> = {
+  failure: "failed",
+  cancelled: "was cancelled",
+  timed_out: "timed out",
+};
+
+export async function failedRunText(
+  db: Db,
+  runId: number,
+  runAttempt: number,
+  conclusion: string | null,
+) {
+  const failed = await db
+    .select({ name: jobs.name, failedStep: jobs.failedStep })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.runId, runId),
+        eq(jobs.runAttempt, runAttempt),
+        inArray(jobs.conclusion, ["failure", "timed_out"]),
+      ),
+    )
+    .orderBy(jobs.completedAt)
+    .all();
+  const first = failed[0];
+  if (!first) return `Run ${runAttempt} ${ENDED[conclusion ?? ""] ?? "ended"}.`;
+  const step = first.failedStep?.replace(/^\d+\. /, "");
+  const more = failed.length > 1 ? ` (and ${failed.length - 1} more)` : "";
+  return `Run ${runAttempt} failed: ${first.name}${more} failed${step ? ` at ${step}` : ""}.`;
+}
+
 // ---- The comparison ------------------------------------------------------------------------------
 
 /** Where a job's time went, in ms: waiting for a runner, then running. */
@@ -429,9 +470,13 @@ export interface Split {
 }
 
 export interface AttemptJob {
+  /** The GitHub job's id, for reading why it failed (GET /runs/jobs/:id/failure). */
+  id: number;
   name: string;
   status: "queued" | "running" | "done";
   conclusion: string | null;
+  /** The step that failed, such as "2. Set up runner", once a failed job finished. */
+  failedStep: string | null;
   split: Split | null;
   /** Whether it ran on the evaluated provider: jobs without a relay keep their own runner. */
   onProvider: boolean;
@@ -485,7 +530,9 @@ export interface EvaluationReport {
 
 type JobRow = Pick<
   typeof jobs.$inferSelect,
+  | "id"
   | "name"
+  | "failedStep"
   | "labels"
   | "runnerGroupName"
   | "conclusion"
@@ -496,7 +543,9 @@ type JobRow = Pick<
 >;
 
 const jobColumns = {
+  id: jobs.id,
   name: jobs.name,
+  failedStep: jobs.failedStep,
   labels: jobs.labels,
   runnerGroupName: jobs.runnerGroupName,
   conclusion: jobs.conclusion,
@@ -713,9 +762,11 @@ export async function evaluationReport(
       usd: done ? usdOf(attemptJobs) : null,
       jobs: attemptJobs
         .map((job) => ({
+          id: job.id,
           name: job.name,
           status: job.completedAt ? "done" : job.startedAt ? "running" : "queued",
           conclusion: job.conclusion,
+          failedStep: job.failedStep,
           split: splitOf(job),
           onProvider: providerJob(job),
         }))
@@ -723,7 +774,10 @@ export async function evaluationReport(
     };
   });
 
-  const finished = attempts.filter((attempt) => attempt.status === "done");
+  // Only passing attempts are compared: a failed one stopped partway, so its time says nothing.
+  const finished = attempts.filter(
+    (attempt) => attempt.status === "done" && attempt.conclusion === "success",
+  );
   const cold = finished.filter((attempt) => attempt.attempt === 1);
   const warm = finished.filter((attempt) => attempt.attempt > 1);
   const ownSplits = (list: Attempt[], name: string) =>
