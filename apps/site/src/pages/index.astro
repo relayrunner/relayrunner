@@ -12,7 +12,8 @@ import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { setupPrompt } from "../lib/agent-setup";
 import { CHANGELOG_ID, latestUpdates, type UpdateType } from "../lib/changelog";
-import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
+import { INTEGRATION_IDS, integrationPath } from "../lib/integrations";
+import { PROVIDERS } from "../lib/providers";
 import "../style.css";
 
 const site = Astro.site!.origin;
@@ -39,10 +40,8 @@ const UPDATE_ICONS: Record<UpdateType, string> = {
   Reliability:
     '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
 };
-// Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
-const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
-  (id) => !["blacksmith", "github", "cloudflare"].includes(id),
-);
+// Provider tiles: every integration without a card above.
+const MORE_PROVIDERS = INTEGRATION_IDS.filter((id) => id !== "blacksmith" && id !== "github");
 // Structured data for search engines and agents: the project and what it is. Keywords use terms
 // that appear on the page.
 const structuredData = {
@@ -288,15 +287,20 @@ const structuredData = {
             </p>
           </li>
         </ul>
-        <ul class="logo-row" aria-label="More providers">
+        <ul class="provider-tiles" aria-label="More providers">
           {
             MORE_PROVIDERS.map((id) => (
               <li>
-                <ProviderLogo id={id} size={26} />
-                {PROVIDERS[id].name}
+                <a href={integrationPath(id)}>
+                  <ProviderLogo id={id} size={24} />
+                  {PROVIDERS[id].name}
+                </a>
               </li>
             ))
           }
+          <li>
+            <a class="provider-tiles-all" href="/integrations">All providers →</a>
+          </li>
         </ul>
       </section>
 

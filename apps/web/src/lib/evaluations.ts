@@ -39,6 +39,8 @@ export interface AttemptJob {
   /** The step that failed, such as "2. Set up runner". */
   failedStep: string | null;
   split: Split | null;
+  /** What it cost at its runner's list price once finished, or null without one. */
+  usd: number | null;
   onProvider: boolean;
 }
 
@@ -57,6 +59,8 @@ export interface JobComparison {
   baseline: Split | null;
   cold: Split | null;
   warm: Split | null;
+  /** Medians of what the job cost at list prices: today, run 1, and runs 2 on. */
+  usd: { baseline: number | null; cold: number | null; warm: number | null };
   onProvider: boolean;
 }
 

@@ -14,7 +14,15 @@
     // /api/* must reach the Worker, not the SPA fallback. So must the Access-gated admin views,
     // or assets would serve their HTML without the check. Old /dev links: public/_redirects.
     // /ingest/* is PostHog, forwarded by the Worker rather than answered with the SPA.
-    "run_worker_first": ["/api/*", "/admin", "/admin/*", "/.well-known/*", "/ingest/*"],
+    // /evaluate/* gets its share tags written into index.html (worker/evaluate-meta.ts).
+    "run_worker_first": [
+      "/api/*",
+      "/admin",
+      "/admin/*",
+      "/.well-known/*",
+      "/ingest/*",
+      "/evaluate/*",
+    ],
   },
   // Same-origin API: the dashboard forwards /api/* to apps/api over this binding,
   // so auth cookies stay first-party on workers.dev and on the custom domain.

@@ -289,6 +289,7 @@ test("compares runs with the workflow's recent passing runs", async () => {
       baseline: { waitMs: 15_000, runMs: 110_000 },
       cold: { waitMs: 5_000, runMs: 80_000 },
       warm: null,
+      usd: { baseline: 0.012, cold: 0.024, warm: null },
       onProvider: true,
     },
   ]);
