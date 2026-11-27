@@ -90,7 +90,7 @@ function setupOrder() {
     lanes().forEach((lane, i) => {
       lane.classList.toggle("on", i === 0);
       const state = lane.querySelector(".lane-state");
-      if (state) state.textContent = i === 0 ? "Takes the next job" : i === 1 ? "Next" : "Fallback";
+      if (state) state.textContent = i === 0 ? "Next job" : i === 1 ? "Standby" : "Fallback";
       const up = lane.querySelector<HTMLButtonElement>(".lane-up");
       if (up) up.disabled = i === 0;
     });
