@@ -346,7 +346,10 @@ const faqData = {
                 {p.prices.map((row) => (
                   <tr>
                     <th scope="row">{row.name}</th>
-                    <td>{row.price}</td>
+                    <td>
+                      {row.price}
+                      {row.next && <span class="int-price-next">{row.next}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

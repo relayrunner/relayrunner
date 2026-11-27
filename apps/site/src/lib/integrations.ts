@@ -6,6 +6,9 @@ import {
   BILLING_PROVIDERS,
   HOSTED_PROVIDER_IDS,
   isBillingProvider,
+  dayMs,
+  nextPrice,
+  priceAt,
   PROVIDERS,
   rateName,
   ratePrices,
@@ -158,20 +161,40 @@ export interface Integration {
   setup: string;
   docsUrl?: string;
   dashboardUrl?: string;
-  /** The latest list price of each rate, such as { name: "Linux", price: "$0.004/min per vCPU" }. */
-  prices: { name: string; price: string }[];
+  /**
+   * Each rate's list price on the day the site was built, such as { name: "Linux", price:
+   * "$0.004/min per vCPU" }, and the next announced one, such as "$0.005/min per vCPU from Dec 1, 2026".
+   */
+  prices: { name: string; price: string; next?: string }[];
   /** How to connect its billing, for the providers whose real spend the dashboard can read. */
   billing?: BillingProviderInfo;
   quirks: Quirks;
 }
 
+const dayText = (day: string) =>
+  new Date(dayMs(day)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
 export function integration(id: IntegrationId): Integration {
   const { name, summary, labels, example, setup, docsUrl, dashboardUrl } = PROVIDERS[id];
+  // The page is built ahead of time, so it shows the price on the day it was built and says when
+  // a price that's already announced takes over, rather than showing that one early.
   const prices = ratePrices(BASE_BOOK, id).flatMap(({ rate, per, history }) => {
-    const latest = history.at(-1);
-    if (!latest) return [];
-    const price = rateText(latest.usd);
-    return [{ name: rateName(rate), price: per === "vcpu" ? `${price} per vCPU` : price }];
+    const today = priceAt(history);
+    if (!today) return [];
+    const text = (usd: number) => `${rateText(usd)}${per === "vcpu" ? " per vCPU" : ""}`;
+    const next = nextPrice(history);
+    return [
+      {
+        name: rateName(rate),
+        price: text(today.usd),
+        next: next && `${text(next.usd)} from ${dayText(next.from)}`,
+      },
+    ];
   });
   return {
     id,
