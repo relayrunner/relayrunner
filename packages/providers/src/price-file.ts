@@ -9,7 +9,7 @@ import { isDay, rateUnit } from "./prices.ts";
 /** Where the docs suggest a provider puts its file. */
 export const PRICE_FILE_PATH = "/.well-known/relayrunner-prices.json";
 
-// The JSON Schema for the file, published by the site (apps/site/public/schemas/prices-v1.json) so a
+// The JSON Schema for the file, published by the site (apps/site/public/schemas/prices.json) so a
 // provider's editor or CI can check it. A file may name it in `$schema`. Keep the two in step.
 const ROOT_KEYS = new Set(["$schema", "version", "prices"]);
 const PRICE_KEYS = new Set(["rate", "per", "usd_per_minute", "from"]);

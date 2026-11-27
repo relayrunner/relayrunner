@@ -180,7 +180,7 @@ describe("price files", () => {
 
   test("match the published JSON Schema field for field", () => {
     const schema = JSON.parse(
-      readFileSync(new URL("../../../site/public/schemas/prices-v1.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../../../site/public/schemas/prices.json", import.meta.url), "utf8"),
     );
     const price = schema.properties.prices.items;
     // Every field the schema allows parses, and both refuse anything else.
