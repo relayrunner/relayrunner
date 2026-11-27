@@ -1158,6 +1158,75 @@ describe("choosing a machine's workspaces (#363)", () => {
     );
     expect((await send("GET", "/machines/me/evaluations", {})).status).toBe(401);
   });
+
+  test("`relayrunner eval` finds a repo of the workspace's install by name before any run", async () => {
+    const { team, own } = await ownAndJoined("eval-repo");
+    const { token } = await enrollAs(own.cookie, own.workspace.id, "studio");
+    const db = createDb(env.DB);
+    await db.insert(schema.githubRepository).values([
+      {
+        id: 7101,
+        installationId: own.workspace.installationId,
+        fullName: "eval-repo-own/Web",
+        private: true,
+        githubStateAt: new Date(),
+      },
+      {
+        id: 7102,
+        installationId: own.workspace.installationId,
+        fullName: "eval-repo-own/gone",
+        private: true,
+        removedAt: new Date(),
+        githubStateAt: new Date(),
+      },
+      {
+        id: 7103,
+        installationId: team.workspace.installationId,
+        fullName: "eval-repo-team/api",
+        private: true,
+        githubStateAt: new Date(),
+      },
+    ]);
+    const repo = (name: string, workspace = own.workspace.slug) =>
+      send(
+        "GET",
+        `/machines/me/evaluations/repos?name=${encodeURIComponent(name)}&workspace=${workspace}`,
+        { token },
+      );
+
+    const found = await repo("eval-repo-own/web");
+    expect(found.status).toBe(200);
+    expect(await found.json()).toEqual({
+      id: 7101,
+      fullName: "eval-repo-own/Web",
+      defaultBranch: null,
+    });
+
+    // Once a run has reached RelayRunner, its default branch comes along.
+    await db.insert(schema.workflowRun).values({
+      id: 71010,
+      installationId: own.workspace.installationId,
+      repositoryId: 7101,
+      repositoryFullName: "eval-repo-own/Web",
+      workflowPath: ".github/workflows/ci.yml",
+      defaultBranch: "trunk",
+      headBranch: "trunk",
+      event: "push",
+      status: "completed",
+      runAttempt: 1,
+      headSha: "abc",
+      githubUpdatedAt: new Date(),
+    });
+    expect(await (await repo("eval-repo-own/web")).json()).toMatchObject({
+      defaultBranch: "trunk",
+    });
+
+    // A removed repo, another workspace's repo and a malformed name aren't found.
+    expect((await repo("eval-repo-own/gone")).status).toBe(404);
+    expect((await repo("eval-repo-team/api")).status).toBe(404);
+    expect((await repo("eval-repo-team/api", team.workspace.slug)).status).toBe(200);
+    expect((await repo("not a repo")).status).toBe(400);
+  });
 });
 
 describe("the machine WebSocket", () => {
