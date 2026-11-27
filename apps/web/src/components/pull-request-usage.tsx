@@ -1,12 +1,16 @@
 import { GitPullRequestIcon } from "lucide-react";
 import { useMemo } from "react";
+import { TipRow } from "@/components/chart-parts";
 import { Count } from "@/components/count";
+import { Histogram } from "@/components/histogram";
 import { StatTile } from "@/components/stat-tile";
-import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RepoSelect, repositoriesOf } from "@/components/repo-select";
 import { minutesText } from "@/lib/job-times";
 import {
+  bucketPosition,
+  minuteBuckets,
   PULL_REQUEST_RANGES,
   type PullRequestMinutes,
   type PullRequestReport,
@@ -44,11 +48,15 @@ export function PullRequestUsage({
     [report],
   );
   const showRepository = repositories.length > 1 && repository === "all";
-  const { pullRequests, summary } = useMemo(() => {
+  const { pullRequests, summary, table } = useMemo(() => {
     const keep = (row: { repository: string }) =>
       repository === "all" || row.repository === repository;
     const pullRequests = report.pullRequests.filter(keep);
-    return { pullRequests, summary: summarize(pullRequests, report.outside.filter(keep)) };
+    return {
+      pullRequests,
+      summary: summarize(pullRequests, report.outside.filter(keep)),
+      table: { most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)) },
+    };
   }, [report, repository]);
 
   return (
@@ -83,16 +91,20 @@ export function PullRequestUsage({
             />
           </div>
 
-          <DataTable
-            columns={showRepository ? columns : withoutRepository}
-            data={pullRequests}
-            getRowId={(pr) => `${pr.repository}#${pr.number}`}
-            initialSorting={[{ id: "minutes", desc: true }]}
-            exportAs={{
-              name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
-              columns: EXPORT_COLUMNS,
-            }}
-          />
+          <Spread pullRequests={pullRequests} summary={summary} />
+
+          <TableContext value={table}>
+            <DataTable
+              columns={showRepository ? columns : withoutRepository}
+              data={pullRequests}
+              getRowId={(pr) => `${pr.repository}#${pr.number}`}
+              initialSorting={[{ id: "minutes", desc: true }]}
+              exportAs={{
+                name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
+                columns: EXPORT_COLUMNS,
+              }}
+            />
+          </TableContext>
         </>
       )}
 
@@ -103,6 +115,77 @@ export function PullRequestUsage({
         each job up to a whole minute.
       </p>
     </div>
+  );
+}
+
+const bucketLabel = ({ from, to }: { from: number; to: number | null }) =>
+  to === null ? `${minutesOf(from)}+` : from ? `${minutesOf(from)}–${minutesOf(to)}` : `<${to}`;
+
+/**
+ * How many pull requests took how many minutes, with the typical one and p90 marked, so a few
+ * heavy pull requests stand out from the usual.
+ */
+function Spread({
+  pullRequests,
+  summary,
+}: {
+  pullRequests: PullRequestMinutes[];
+  summary: ReturnType<typeof summarize>;
+}) {
+  if (pullRequests.length < 5) return null;
+  const buckets = minuteBuckets(pullRequests.map((pr) => pr.minutes));
+  const { median, p90, total } = summary.minutes;
+  return (
+    <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold">Minutes per pull request</h2>
+        <p className="text-sm text-muted-foreground">How many pull requests used each amount.</p>
+      </div>
+      <Histogram
+        label="Pull requests by the CI minutes they used"
+        markers={[
+          { at: bucketPosition(buckets, median), label: "Typical" },
+          { at: bucketPosition(buckets, p90), label: "p90" },
+        ]}
+        bars={buckets.map((bucket) => ({
+          label: bucketLabel(bucket),
+          value: bucket.count,
+          color: "var(--rr-go)",
+          tip: (
+            <>
+              <p className="font-medium">{bucketLabel(bucket)} min</p>
+              <TipRow label="Pull requests" value={String(bucket.count)} />
+              <TipRow label="Minutes" value={minutesOf(bucket.minutes)} />
+              <TipRow
+                label="Share of minutes"
+                value={percent(total ? bucket.minutes / total : 0)}
+              />
+            </>
+          ),
+        }))}
+      />
+    </section>
+  );
+}
+
+// The most minutes any pull request in the table used, for the bars beside each one's minutes.
+const [TableContext, useTableContext] = createCellContext<{ most: number }>("Pull requests");
+
+/** A pull request's minutes as a bar against the most, its re-run part in a lighter shade. */
+function MinutesBar({ pr }: { pr: PullRequestMinutes }) {
+  const { most } = useTableContext();
+  const width = (minutes: number) => `${most ? (minutes / most) * 100 : 0}%`;
+  return (
+    <span aria-hidden className="hidden h-1.5 w-14 overflow-hidden rounded-full bg-muted sm:flex">
+      <span
+        className="h-full bg-[var(--rr-go)]"
+        style={{ width: width(pr.minutes - pr.rerunMinutes) }}
+      />
+      <span
+        className="h-full bg-[var(--rr-go)] opacity-40"
+        style={{ width: width(pr.rerunMinutes) }}
+      />
+    </span>
   );
 }
 
@@ -151,7 +234,12 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: { ...NUM, className: "whitespace-nowrap" },
-    cell: ({ getValue }) => minutesOf(getValue()),
+    cell: ({ row: { original: pr } }) => (
+      <span className="flex items-center justify-end gap-2">
+        <MinutesBar pr={pr} />
+        {minutesOf(pr.minutes)}
+      </span>
+    ),
   }),
   column.accessor("rerunMinutes", {
     header: "Re-runs",

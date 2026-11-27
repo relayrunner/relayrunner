@@ -6,6 +6,7 @@ import {
   DAY_FORMAT,
   HOUR_FORMAT,
   OrderAxis,
+  roundStep,
   thinLabels,
   TipRow,
   topRounded,
@@ -732,7 +733,7 @@ function Bars({
     return list;
   }, [tallies, bucketMs, frame.start, frame.end]);
   const maxCount = Math.max(...buckets.map((bucket) => bucket.total), 1);
-  const { y, ticks } = yScale(maxCount, countStep(maxCount));
+  const { y, ticks } = yScale(maxCount, roundStep(maxCount));
   const slot = plotX(frame, frame.start + bucketMs) - plotX(frame, frame.start);
   // A 4px gap, or a quarter of the slot when bars are narrow (hours over a week).
   const barWidth = Math.max(Math.min(slot - Math.min(4, slot / 4), 24), 1);
@@ -883,12 +884,6 @@ function XAxis({ frame }: { frame: Frame }) {
 /** The hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */
 const floorTo = (at: number, stepMs: number) =>
   startOfHours(at, Math.min(stepMs, DAY_MS) / HOUR_MS);
-
-// 1, 2, 5, 10, 20, 50, ... so a count axis lands on round numbers with about three steps.
-function countStep(max: number) {
-  for (let scale = 1; ; scale *= 10)
-    for (const step of [1, 2, 5]) if (step * scale * 3 >= max) return step * scale;
-}
 
 /** "30s", "5m", "90m": the axis needs no seconds once it counts minutes, and never counts hours. */
 function axisTime(ms: number) {

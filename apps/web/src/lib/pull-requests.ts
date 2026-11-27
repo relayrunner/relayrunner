@@ -64,3 +64,46 @@ export function summarize(
       : 0,
   };
 }
+
+// Round minute edges for the pull request bars, never hours.
+const LADDER = [1, 2, 5, 10, 20, 30, 60, 120, 240, 480, 960, 1920];
+// The most edges the bars split at, so they stay readable on a phone.
+const MAX_EDGES = 7;
+
+/** One bar: pull requests from `from` minutes up to `to` (null: and up). */
+export type MinuteBucket = { from: number; to: number | null; count: number; minutes: number };
+
+/**
+ * Pull requests' minutes in bars at round edges that span the middle of the spread: from about
+ * the 10th to the 95th percentile, so one huge pull request doesn't squash the rest into a bar.
+ */
+export function minuteBuckets(values: number[]): MinuteBucket[] {
+  if (!values.length) return [];
+  const sorted = values.toSorted((a, b) => a - b);
+  const low = interpolate(sorted, 0.1);
+  const high = interpolate(sorted, 0.95);
+  const first = LADDER.findLastIndex((edge) => edge <= low);
+  const last = LADDER.findIndex((edge) => edge >= high);
+  // Past the most edges, the smallest go: the long pull requests are where the minutes are.
+  const edges = LADDER.slice(Math.max(first, 0), last < 0 ? undefined : last + 1).slice(-MAX_EDGES);
+  const buckets: MinuteBucket[] = [0, ...edges].map((from, i) => ({
+    from,
+    to: edges[i] ?? null,
+    count: 0,
+    minutes: 0,
+  }));
+  for (const value of sorted) {
+    const bucket = buckets.find((b) => b.to === null || value < b.to)!;
+    bucket.count += 1;
+    bucket.minutes += value;
+  }
+  return buckets;
+}
+
+/** Where `value` falls across the bars, in bars from the left edge (2.5 is mid third bar). */
+export function bucketPosition(buckets: MinuteBucket[], value: number) {
+  const i = buckets.findIndex((b) => b.to === null || value < b.to);
+  if (i < 0) return buckets.length;
+  const { from, to } = buckets[i]!;
+  return i + (to === null ? 0.5 : (value - from) / (to - from));
+}

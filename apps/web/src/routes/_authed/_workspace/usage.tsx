@@ -29,6 +29,7 @@ import {
   type UsageRow,
 } from "@/lib/usage";
 import { ExportMenu } from "@/components/export-menu";
+import { JobLengths } from "@/components/job-lengths";
 import type { ExportColumn } from "@/lib/table-export";
 
 // As far back as the API keeps jobs, starting on this month since GitHub's included minutes reset
@@ -175,6 +176,8 @@ function Overview({ loaded }: { loaded: UsageData }) {
               detail={`of ${money(totals.cost)} estimated for all jobs`}
             />
           </div>
+
+          <JobLengths report={report} />
 
           <Table
             caption="By runner"

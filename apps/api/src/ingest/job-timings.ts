@@ -398,7 +398,16 @@ export interface UsageReport {
     shortJobs: number;
     shortCost: number;
   }[];
+  /**
+   * How long the jobs ran, shortest first: jobs under `under` seconds and at least the previous
+   * bucket's, the last (`under: null`) the rest. Read from jobs' own rows only, so a range past
+   * RAW_RETENTION_DAYS has fewer jobs here than in `totals`.
+   */
+  lengths: { under: number | null; jobs: number }[];
 }
+
+// The usage report's job length buckets, in seconds.
+const LENGTH_BUCKETS = [10, 30, 60, 120, 300, 600, 1800];
 
 /**
  * The workspace's finished jobs in the window: how many ran under a minute, and what
@@ -418,6 +427,15 @@ export async function usageReport(
     recentUsage(db, book, workspaceId, window),
     dailyUsage(db, book, workspaceId, window),
   ]);
+  // Only job_timing's own rows have lengths: jobs under each edge, less those under the one before.
+  const under = [
+    ...LENGTH_BUCKETS.map((_, i) => total(recent, (row) => row.under[i]!)),
+    total(recent, (row) => Number(row.jobs)),
+  ];
+  const lengths = [...LENGTH_BUCKETS, null].map((edge, i) => ({
+    under: edge,
+    jobs: under[i]! - (under[i - 1] ?? 0),
+  }));
   const rows = [...recent, ...older];
 
   const totals = zero();
@@ -473,6 +491,7 @@ export async function usageReport(
       .map((repo) => ({ ...repo, shortCost: cents(repo.shortCost) }))
       .sort((a, b) => b.shortCost - a.shortCost || b.shortJobs - a.shortJobs)
       .slice(0, 10),
+    lengths,
   };
 }
 
@@ -495,6 +514,13 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, { from,
       runMs: sql<number>`sum(${durationMs})`,
       billedMinutes: sql<number>`sum(${billed})`,
       shortBilledMinutes: sql<number>`sum(case when ${isShort} then ${billed} else 0 end)`,
+      // Jobs under each LENGTH_BUCKETS edge, for the report's lengths.
+      ...Object.fromEntries(
+        LENGTH_BUCKETS.map((seconds) => [
+          `under${seconds}`,
+          sql<number>`sum(${durationMs} < ${seconds * 1000})`,
+        ]),
+      ),
     })
     .from(table)
     .innerJoin(schema.workspace, eq(schema.workspace.installationId, table.installationId))
@@ -516,7 +542,13 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, { from,
       table.repositoryFullName,
       schema.githubRepository.private,
     );
-  return rows.map(({ period, ...row }) => ({ ...row, pricedAt: prices.at(Number(period)) }));
+  return rows.map(({ period, ...row }) => ({
+    ...row,
+    under: LENGTH_BUCKETS.map((seconds) =>
+      Number((row as Record<string, unknown>)[`under${seconds}`]),
+    ),
+    pricedAt: prices.at(Number(period)),
+  }));
 }
 
 // The same sums from job_timing_daily, for whole days that start in the window.
@@ -558,6 +590,9 @@ async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, { from, 
     pricedAt: prices.at(Number(period)),
   }));
 }
+
+const total = <T>(rows: T[], value: (row: T) => number) =>
+  rows.reduce((sum, row) => sum + value(row), 0);
 
 function zero(): Counters {
   return Object.fromEntries(COUNTERS.map((key) => [key, 0])) as Counters;

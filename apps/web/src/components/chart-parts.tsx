@@ -3,6 +3,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { periodStarts } from "@/lib/chart-trend";
 import { startOfDay, startOfHours, zoneFormat } from "@/lib/time-zone";
+import { count } from "@/lib/utils";
 
 /** A tooltip line: a label, with its value on the right. */
 export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
@@ -144,4 +145,46 @@ export function OrderAxis({
       ))}
     </>
   );
+}
+
+// 1, 2, 5, 10, 20, 50, ... so the axis lands on round numbers with about three steps.
+export function roundStep(max: number) {
+  for (let scale = 1; ; scale *= 10)
+    for (const step of [1, 2, 5]) if (step * scale * 3 >= max) return step * scale;
+}
+
+/** A count axis from 0 past `max` at round steps, between `top` and `bottom` px. */
+export function countScale(max: number, top: number, bottom: number) {
+  const step = roundStep(Math.max(max, 1));
+  const end = Math.ceil((Math.max(max, 1) * 1.05) / step) * step;
+  const y = (value: number) => top + (1 - value / end) * (bottom - top);
+  const ticks = Array.from({ length: Math.round(end / step) + 1 }, (_, i) => i * step);
+  return { y, ticks };
+}
+
+/** Gridlines at each tick, with its count on the left, ending at `left`. */
+export function CountGrid({
+  ticks,
+  y,
+  left,
+  right,
+}: {
+  ticks: number[];
+  y: (value: number) => number;
+  left: number;
+  right: number;
+}) {
+  return ticks.map((tick) => (
+    <g key={tick}>
+      <line x1={left} x2={right} y1={y(tick)} y2={y(tick)} stroke="var(--border)" strokeWidth={1} />
+      <text
+        x={left - 8}
+        y={y(tick) + 3.5}
+        textAnchor="end"
+        className="fill-muted-foreground text-[10px] tabular-nums"
+      >
+        {count(tick)}
+      </text>
+    </g>
+  ));
 }

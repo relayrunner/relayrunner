@@ -48,6 +48,11 @@ export type UsageReport = {
     shortJobs: number;
     shortCost: number;
   }[];
+  /**
+   * Jobs by how long they ran, shortest first: under `under` seconds (the last, null, the rest).
+   * Only covers the jobs the API keeps one by one, the last 62 days.
+   */
+  lengths: { under: number | null; jobs: number }[];
 };
 
 /** The workspace's finished jobs in a range. */

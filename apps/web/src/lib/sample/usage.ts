@@ -56,6 +56,18 @@ export function sampleUsageReport(days: number): UsageReport {
       { repository: "acme/app", private: true, jobs: 1800, shortJobs: 1100, shortCost: 8.9 },
       { repository: "acme/docs", private: false, jobs: 400, shortJobs: 380, shortCost: 0 },
     ],
+    lengths: (
+      [
+        [10, 260],
+        [30, 690],
+        [60, 680],
+        [120, 410],
+        [300, 380],
+        [600, 220],
+        [1800, 150],
+        [null, 30],
+      ] as const
+    ).map(([under, jobs]) => ({ under, jobs: Math.round(jobs * scale) })),
   };
 }
 

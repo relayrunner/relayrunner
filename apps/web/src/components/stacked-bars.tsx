@@ -1,10 +1,17 @@
 // A bar per hour, day or week stacked by series. The Providers page stacks billed minutes by provider,
 // the Router page runs by how they were routed.
 import { type PointerEvent, type ReactNode, useState } from "react";
-import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
+import {
+  ChartTip,
+  CountGrid,
+  countScale,
+  TipRow,
+  topRounded,
+  useWidth,
+} from "@/components/chart-parts";
 import { DAY_MS } from "@/lib/job-times";
 import { shortDate, startOfDay, zoneFormat, zoneParts } from "@/lib/time-zone";
-import { cn, count } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /** A series' fill for bars, and for its swatch when that differs (stripes, say). */
 export type Series<K extends string = string> = {
@@ -40,12 +47,6 @@ export const SERIES_COLORS = [
   "var(--job-other)",
 ];
 export const seriesColor = (index: number) => SERIES_COLORS[index] ?? "var(--job-none)";
-
-// 1, 2, 5, 10, 20, 50, ... so the axis lands on round numbers with about three steps.
-function roundStep(max: number) {
-  for (let scale = 1; ; scale *= 10)
-    for (const step of [1, 2, 5]) if (step * scale * 3 >= max) return step * scale;
-}
 
 export function Swatch({ color, className }: { color: string; className?: string }) {
   return (
@@ -96,11 +97,8 @@ export function StackedBars({
   const [hover, setHover] = useState<number | null>(null);
   const totals = buckets.map((b) => series.reduce((n, s) => n + (b.values[s.key] ?? 0), 0));
   const max = Math.max(...totals, 1);
-  const step = roundStep(max);
-  const top = Math.ceil((max * 1.05) / step) * step;
   const plotHeight = height - PAD.top - PAD.bottom;
-  const y = (value: number) => PAD.top + (1 - value / top) * plotHeight;
-  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
+  const { y, ticks } = countScale(max, PAD.top, PAD.top + plotHeight);
   const slot = width ? (width - PAD.left - PAD.right) / buckets.length : 0;
   // Slim bars when there are many, wider (up to 72px) when a few weeks fill the plot.
   const barWidth = Math.max(
@@ -147,26 +145,7 @@ export function StackedBars({
           onPointerDown={pointAt}
           onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
         >
-          {ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={PAD.left}
-                x2={width - PAD.right}
-                y1={y(tick)}
-                y2={y(tick)}
-                stroke="var(--border)"
-                strokeWidth={1}
-              />
-              <text
-                x={PAD.left - 8}
-                y={y(tick) + 3.5}
-                textAnchor="end"
-                className="fill-muted-foreground text-[10px] tabular-nums"
-              >
-                {count(tick)}
-              </text>
-            </g>
-          ))}
+          <CountGrid ticks={ticks} y={y} left={PAD.left} right={width - PAD.right} />
           {buckets.map((bucket, i) => {
             const x = PAD.left + i * slot;
             const total = totals[i] ?? 0;

@@ -186,6 +186,9 @@ describe("usage report", () => {
       shortJobs: 4,
       shortCost: 0.074,
     });
+    // 12, 20 and 20s; 30 and 45s; 90s.
+    expect(report.lengths.map((bucket) => bucket.jobs)).toEqual([0, 3, 2, 1, 0, 0, 0, 0]);
+    expect(report.lengths.at(-1)?.under).toBeNull();
   });
 
   test("counts a job on the retry when its rollups fail to write", async () => {
@@ -350,7 +353,12 @@ describe("usage report", () => {
     await processWebhook(env, at(finished(installationId, 90), 1));
     await processWebhook(env, at(finished(installationId, 20, { labels: ["macos-latest"] }), 2));
     await processWebhook(env, at(finished(installationId, 0, { conclusion: "skipped" }), 3));
-    const before = await usage(cookie, 90);
+    // Job lengths come from jobs' own rows only, so they're left out of the comparison.
+    const withoutLengths = async (days: number) => {
+      const { lengths: _, ...report } = await usage(cookie, days);
+      return report;
+    };
+    const before = await withoutLengths(90);
 
     await purgeOldJobTimings(db);
     const raw = await db
@@ -373,7 +381,7 @@ describe("usage report", () => {
       shortBilledMinutes: 1,
     });
     // The report reads the same either way; the last 30 days only see the recent job.
-    expect(await usage(cookie, 90)).toEqual(before);
+    expect(await withoutLengths(90)).toEqual(before);
     expect((await usage(cookie, 90)).totals).toMatchObject({ jobs: 4, shortJobs: 3 });
     expect((await usage(cookie)).totals.jobs).toBe(1);
 
