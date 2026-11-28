@@ -15,8 +15,13 @@ import {
   RAW_RETENTION_DAYS,
   type RunFilters,
 } from "@relayrunner/api-types";
-import { PullRequestUsage, pullRequestSortOf } from "@/components/pull-request-usage";
-import { getPullRequests, PULL_REQUEST_RANGES, type PullRequestReport } from "@/lib/pull-requests";
+import { PullRequestUsage } from "@/components/pull-request-usage";
+import {
+  getPullRequests,
+  PULL_REQUEST_RANGES,
+  pullRequestSortParam,
+  type PullRequestReport,
+} from "@/lib/pull-requests";
 import {
   type RangeSearch,
   rangeSearch,
@@ -83,7 +88,7 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
     view: viewOf(TABS, search.view),
     ...ranges.validateSearch(search),
     repo: textParam(search.repo),
-    sort: pullRequestSortOf(search.sort) && String(search.sort),
+    sort: pullRequestSortParam(search.sort),
     ...parseRunFilters(search),
   }),
   loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
@@ -140,7 +145,7 @@ function PullRequests({ loaded }: { loaded: PullRequestReport }) {
         onRange={(next) => setSearch(ranges.toSearch(next))}
         repository={search.repo ?? "all"}
         onRepository={(next) => setSearch({ repo: unlessDefault(next, "all") })}
-        sort={pullRequestSortOf(search.sort)}
+        sort={search.sort}
         onSort={(sort) => setSearch({ sort })}
       />
     </SectionBoundary>

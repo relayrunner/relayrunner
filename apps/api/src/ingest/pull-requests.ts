@@ -5,12 +5,11 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { sql } from "drizzle-orm";
 import { type Db, isMissingTable, schema } from "../db/index.ts";
 import { findInstallation } from "../github/installations.ts";
+import { parseDate } from "./jobs.ts";
 
 const table = schema.pullRequest;
 
 type PullRequestMessage = Extract<WebhookMessage, { event: "pull_request" }>;
-
-const dateOf = (iso: string | null) => (iso === null ? null : new Date(iso));
 
 /** Stores the pull request's dates. False when its installation isn't one RelayRunner knows. */
 export async function recordPullRequest(db: Db, message: PullRequestMessage): Promise<boolean> {
@@ -19,10 +18,10 @@ export async function recordPullRequest(db: Db, message: PullRequestMessage): Pr
   const values = {
     installationId,
     repositoryFullName: repository.fullName,
-    openedAt: dateOf(pullRequest.openedAt),
-    mergedAt: dateOf(pullRequest.mergedAt),
-    closedAt: dateOf(pullRequest.closedAt),
-    githubUpdatedAt: new Date(pullRequest.updatedAt ?? receivedAt),
+    openedAt: parseDate(pullRequest.openedAt),
+    mergedAt: parseDate(pullRequest.mergedAt),
+    closedAt: parseDate(pullRequest.closedAt),
+    githubUpdatedAt: parseDate(pullRequest.updatedAt) ?? new Date(receivedAt),
   };
   try {
     await db

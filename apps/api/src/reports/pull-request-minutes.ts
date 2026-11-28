@@ -90,6 +90,7 @@ export async function pullRequestReport(
       runMs: sql<number>`sum(${DURATION_MS})`,
       rerunMs: sql<number>`sum(case when ${job.runAttempt} > 1 then ${DURATION_MS} else 0 end)`,
       billedMinutes: sql<number>`sum(${BILLED_MINUTES})`,
+      firstAt: sql<number>`min(coalesce(${job.startedAt}, ${job.completedAt}))`,
     })
     .from(job)
     .leftJoin(run, and(eq(run.id, job.runId), eq(run.runAttempt, job.runAttempt)))
@@ -114,7 +115,6 @@ export async function pullRequestReport(
       number: run.pullRequestNumber,
       branch: run.headBranch,
       commits: sql<number>`count(distinct ${run.headSha})`,
-      firstAt: sql<number>`min(coalesce(${job.startedAt}, ${job.completedAt}))`,
       lastAt: sql<number>`max(${job.completedAt})`,
       title: run.displayTitle,
     })
@@ -132,7 +132,13 @@ export async function pullRequestReport(
       closedAt: schema.pullRequest.closedAt,
     })
     .from(schema.pullRequest)
-    .where(eq(schema.pullRequest.installationId, installationId))
+    // Only pull requests a run in the window named (the primary key answers each).
+    .where(
+      sql`(${schema.pullRequest.repositoryId}, ${schema.pullRequest.number}) in (
+        select distinct ${job.repositoryId}, ${run.pullRequestNumber} from ${job}
+        inner join ${run} on ${run.id} = ${job.runId} and ${run.runAttempt} = ${job.runAttempt}
+        where ${counted} and ${run.pullRequestNumber} is not null)`,
+    )
     // Before its migration has run, every pull request goes without dates.
     .catch((error) => {
       if (isMissingTable(error)) return [];
@@ -165,6 +171,7 @@ export async function pullRequestReport(
       continue;
     }
     const key = prKey(row.repository, number);
+    const dates = datesOf.get(key);
     const pr = pullRequests.get(key) ?? {
       repository: row.repository,
       number,
@@ -173,12 +180,13 @@ export async function pullRequestReport(
       rerunMinutes: 0,
       cost: 0,
       commits: 0,
-      openedAt: datesOf.get(key)?.openedAt?.getTime() ?? null,
-      mergedAt: datesOf.get(key)?.mergedAt?.getTime() ?? null,
-      closedAt: datesOf.get(key)?.closedAt?.getTime() ?? null,
-      firstRunAt: Infinity,
+      openedAt: dates?.openedAt?.getTime() ?? null,
+      mergedAt: dates?.mergedAt?.getTime() ?? null,
+      closedAt: dates?.closedAt?.getTime() ?? null,
+      firstRunAt: Number(row.firstAt),
     };
     const cls = runnerClass(row.labels, row.runnerGroupName);
+    pr.firstRunAt = Math.min(pr.firstRunAt, Number(row.firstAt));
     pr.minutes += minutes;
     pr.rerunMinutes += Number(row.rerunMs) / 60_000;
     pr.cost +=
@@ -188,9 +196,7 @@ export async function pullRequestReport(
   for (const meta of metas) {
     const number = numberOf(meta);
     const pr = number === undefined ? undefined : pullRequests.get(prKey(meta.repository, number));
-    if (!pr) continue;
-    pr.commits += Number(meta.commits);
-    pr.firstRunAt = Math.min(pr.firstRunAt, Number(meta.firstAt));
+    if (pr) pr.commits += Number(meta.commits);
   }
 
   return {

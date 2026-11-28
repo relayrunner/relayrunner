@@ -1,5 +1,6 @@
 import { api } from "./api";
 import { interpolate } from "./chart-trend";
+import { type Sort, sortOf, sortParam, unlessDefault } from "./search-params";
 import { type RangeOptions, rangeQuery, type TimeRange } from "./time-range";
 
 /** One pull request's CI in GET /api/usage/pull-requests. Minutes are run time; money is USD. */
@@ -32,15 +33,35 @@ export const PULL_REQUEST_RANGES: RangeOptions = {
   presets: ["7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
 };
 
+// The table columns `?sort=` can name, and its sort without one: the most minutes first.
+const SORTABLE = ["number", "date", "minutes", "rerunMinutes", "commits", "cost"];
+export const DEFAULT_PULL_REQUEST_SORT: Sort = { id: "minutes", desc: true };
+
+/** The Pull requests table's sort as its `?sort=`: nothing for the default or what it can't sort by. */
+export function pullRequestSortParam(value: unknown) {
+  const sort = sortOf(value, SORTABLE);
+  return sort && unlessDefault(sortParam(sort), sortParam(DEFAULT_PULL_REQUEST_SORT));
+}
+
+/** The Pull requests table's sort from its `?sort=`. */
+export const pullRequestSortOf = (value: unknown) =>
+  sortOf(value, SORTABLE) ?? DEFAULT_PULL_REQUEST_SORT;
+
 export function getPullRequests(range: TimeRange) {
   return api<PullRequestReport>(`/usage/pull-requests?${rangeQuery(range)}`);
 }
 
 /**
- * The date the table shows and sorts by: when it merged, or when it opened while it hasn't. For a
- * pull request RelayRunner hasn't seen open, its first job in the range stands in.
+ * The date the table shows and sorts by, and what it is: when it merged, or when it opened while
+ * it hasn't. For a pull request RelayRunner hasn't seen open, its first job in the range stands in.
  */
-export const dateOf = (pr: PullRequestMinutes) => pr.mergedAt ?? pr.openedAt ?? pr.firstRunAt;
+export function datedAs(pr: PullRequestMinutes) {
+  if (pr.mergedAt !== null) return { label: "Merged", at: pr.mergedAt };
+  if (pr.openedAt !== null) return { label: "Opened", at: pr.openedAt };
+  return { label: "First CI run", at: pr.firstRunAt };
+}
+
+export const dateOf = (pr: PullRequestMinutes) => datedAs(pr).at;
 
 /** Merged, closed without merging, or open (or not known: shown as open). */
 export const stateOf = (pr: PullRequestMinutes) =>

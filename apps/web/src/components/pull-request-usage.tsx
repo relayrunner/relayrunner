@@ -11,15 +11,19 @@ import { minutesText } from "@/lib/job-times";
 import {
   bucketPosition,
   dateOf,
+  datedAs,
+  DEFAULT_PULL_REQUEST_SORT,
   minuteBuckets,
   PULL_REQUEST_RANGES,
+  pullRequestSortOf,
+  pullRequestSortParam,
   type PullRequestMinutes,
   type PullRequestReport,
   stateOf,
   summarize,
 } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
-import { type Sort, sortOf, sortParam } from "@/lib/search-params";
+import { sortParam } from "@/lib/search-params";
 import { isoTime, type ExportColumn } from "@/lib/table-export";
 import type { TimeRange } from "@/lib/time-range";
 import { formatDate, shortDate } from "@/lib/time-zone";
@@ -28,13 +32,6 @@ import { percent } from "@/lib/utils";
 
 const minutesOf = (minutes: number) => minutesText(minutes * 60_000);
 const min = (minutes: number) => `${minutesOf(minutes)} min`;
-
-// The table's columns `?sort=` can name, and its sort without one: the most minutes first.
-const SORTABLE = ["number", "date", "minutes", "rerunMinutes", "commits", "cost"];
-const DEFAULT_SORT: Sort = { id: "minutes", desc: true };
-
-/** The table's sort from its `?sort=`. */
-export const pullRequestSortOf = (value: unknown) => sortOf(value, SORTABLE);
 
 /**
  * Usage › Pull requests: CI minutes per pull request across its pushes and re-runs, the typical
@@ -48,7 +45,7 @@ export function PullRequestUsage({
   onRange,
   repository,
   onRepository,
-  sort = DEFAULT_SORT,
+  sort,
   onSort,
 }: {
   report: PullRequestReport;
@@ -56,7 +53,8 @@ export function PullRequestUsage({
   onRange: (range: TimeRange) => void;
   repository: string;
   onRepository: (repository: string) => void;
-  sort?: Sort;
+  /** The `?sort=` param, undefined at the default. */
+  sort: string | undefined;
   onSort: (sort: string | undefined) => void;
 }) {
   const repositories = useMemo(
@@ -74,6 +72,8 @@ export function PullRequestUsage({
       table: { most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)), showRepository },
     };
   }, [report, repository, showRepository]);
+
+  const sorting = useMemo(() => [pullRequestSortOf(sort)], [sort]);
 
   return (
     <div className="grid gap-6">
@@ -114,10 +114,9 @@ export function PullRequestUsage({
               columns={columns}
               data={pullRequests}
               getRowId={(pr) => `${pr.repository}#${pr.number}`}
-              sorting={[sort]}
-              // Sorting a column a third time goes back to the default, rather than to no sort.
-              onSortingChange={([next = DEFAULT_SORT]) =>
-                onSort(next.id === DEFAULT_SORT.id && next.desc ? undefined : sortParam(next))
+              sorting={sorting}
+              onSortingChange={([next = DEFAULT_PULL_REQUEST_SORT]) =>
+                onSort(pullRequestSortParam(sortParam(next)))
               }
               exportAs={{
                 name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
@@ -234,9 +233,8 @@ const STATE_ICON = {
 
 // What the Date column shows for a pull request, for its hover text.
 function dateTitle(pr: PullRequestMinutes) {
-  if (pr.mergedAt !== null) return `Merged ${formatDate(pr.mergedAt)}`;
-  if (pr.openedAt !== null) return `Opened ${formatDate(pr.openedAt)}`;
-  return `First CI run ${formatDate(pr.firstRunAt)}`;
+  const { label, at } = datedAs(pr);
+  return `${label} ${formatDate(at)}`;
 }
 
 /** A pull request's title over two lines at most, with its number (and repo) under it. */

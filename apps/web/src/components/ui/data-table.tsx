@@ -178,6 +178,8 @@ export function DataTable<TData extends RowData>({
     getRowId,
     getSubRows,
     state: { sorting, globalFilter: search, ...(expanded && { expanded }) },
+    // A page that keeps the sort goes back to its default rather than to no sort.
+    enableSortingRemoval: !onSortingChange,
     onSortingChange: (change) => {
       const next = typeof change === "function" ? change(sorting) : change;
       if (onSortingChange) onSortingChange(next);
