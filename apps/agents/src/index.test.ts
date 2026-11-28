@@ -383,6 +383,134 @@ describe("mcp server", () => {
     expect(asked).toContain("/api/signals?days=30&breakdown=0&repo=acme%2Fapp&path=apps%2Fweb @w1");
   });
 
+  test("reporting tools pass the run filters, and get_providers answers a compact report", async () => {
+    const stat = {
+      runs: 4,
+      successes: 4,
+      samples: 4,
+      confidence: "low",
+      medianMs: 61_000,
+      p90Ms: 90_400,
+      waitMs: 4_000,
+      trend: null,
+    };
+    const counts = {
+      jobs: 4,
+      failures: 1,
+      billedMinutes: 8,
+      cost: 0.05,
+      unpricedJobs: 0,
+      waits: 4,
+      quickStarts: 3,
+      runnerFailures: 0,
+    };
+    const { env, asked } = fakeEnv({
+      "/api/runs": { runs: [], truncated: false },
+      "/api/usage": { totals: { jobs: 4 } },
+      "/api/usage/checks": { saved: 0 },
+      "/api/usage/actions": { accounts: [] },
+      "/api/usage/pull-requests": {
+        pullRequests: [{ number: 1 }, { number: 2 }, { number: 3 }],
+        outside: [],
+      },
+      "/api/usage/breakdown": { by: "workflow", total: {}, rows: [], rest: null },
+      "/api/providers": {
+        days: 30,
+        providers: [{ provider: "github", stat, runners: [{}], priorBilledMinutes: 5, ...counts }],
+      },
+      "/api/workspaces/w1/route-outcomes": {
+        runs: 3,
+        first: 2,
+        movedOn: 1,
+        waited: 0,
+        failed: 0,
+        reasons: [{ reason: "busy", count: 1 }],
+        buckets: [{ start: 0 }],
+      },
+      "/api/providers/github": {
+        provider: "github",
+        days: 30,
+        stat,
+        workflows: [],
+        ...counts,
+        runners: [
+          {
+            key: "github:linux-2-core",
+            label: "ubuntu-latest",
+            detail: "GitHub-hosted",
+            stat,
+            perMinute: 0.006,
+            ...counts,
+          },
+        ],
+      },
+      "/api/providers/github/trends": {
+        bucketMs: 86_400_000,
+        runners: [
+          {
+            key: "github:linux-2-core",
+            points: [
+              {
+                start: 0,
+                jobs: 4,
+                runnerFailures: 0,
+                wait: null,
+                run: { p50: 60_000, p75: 70_000, p90: 80_000, p95: 85_000, p99: 90_000 },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const call = async (name: string, args: object) =>
+      JSON.parse(
+        (
+          (await (
+            await rpc(env, { method: "tools/call", params: { name, arguments: args } })
+          ).json()) as { result: { content: { text: string }[] } }
+        ).result.content[0].text,
+      );
+
+    await call("list_runs", { days: 30, agent: "claude", branch: "main" });
+    expect(asked).toContain("/api/runs?days=30&branch=main&agent=claude @w1");
+
+    const usage = await call("get_usage", { person: "ada", pullRequests: 2 });
+    expect(asked).toContain("/api/usage?days=30&person=ada @w1");
+    // Optimized checks aren't runs, so a filter leaves them out.
+    expect(asked.some((path) => path.startsWith("/api/usage/checks"))).toBe(false);
+    expect(usage.pullRequests).toHaveLength(2);
+    expect(usage.morePullRequests).toBe(1);
+
+    await call("get_breakdown", { by: "workflow", perDay: true, trigger: "push" });
+    expect(asked).toContain(
+      "/api/usage/breakdown?by=workflow&sort=minutes&days=30&perDay=1&limit=20&utcOffset=0&trigger=push @w1",
+    );
+
+    const providers = await call("get_providers", {});
+    expect(providers.providers[0]).toMatchObject({
+      provider: "github",
+      startedWithinMinute: 0.75,
+      medianSeconds: 61,
+      runnerTypes: 1,
+    });
+    expect(providers.routerOutcomes).toEqual({
+      runs: 3,
+      first: 2,
+      movedOn: 1,
+      waited: 0,
+      failed: 0,
+      reasons: [{ reason: "busy", count: 1 }],
+    });
+
+    const github = await call("get_providers", { provider: "github" });
+    expect(github.bucket).toBe("day");
+    expect(github.runners[0].overTime[0]).toMatchObject({
+      date: "1970-01-01",
+      waitSeconds: null,
+      runSeconds: { p50: 60, p90: 80, p99: 90 },
+    });
+  });
+
   test("a connection with several workspaces asks which, by id or name", async () => {
     const { env, asked } = fakeEnv(
       {

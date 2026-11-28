@@ -221,6 +221,9 @@ importers:
       '@relayrunner/activity':
         specifier: workspace:*
         version: link:../../packages/activity
+      '@relayrunner/api-types':
+        specifier: workspace:*
+        version: link:../../packages/api-types
       '@relayrunner/errors':
         specifier: workspace:*
         version: link:../../packages/errors

@@ -72,6 +72,8 @@ The server also serves the RelayRunner skills, so agents that support skills ove
 - "Which jobs cost the most this month?"
 - "How long does the test job usually take on each runner?"
 - "What's making our CI slow?"
+- "How often does the deploy workflow run per day?"
+- "How many CI minutes did Claude's branches use this month?"
 - "Which workflows aren't routed yet?"
 - "Run the e2e job on 8 vCPU." (needs Allow changes)
 - "Pause my Mac until tomorrow's demo is over." (needs Allow changes)
@@ -85,13 +87,15 @@ The server also serves the RelayRunner skills, so agents that support skills ove
 | `list_runners`        | Runners, their status, labels, pause state and current job              |
 | `get_runner_order`    | The providers jobs are tried on, in order                               |
 | `list_workflows`      | Recent workflows and which ones are routed                              |
-| `list_runs`           | Recent workflow runs, by repo, status or result                         |
+| `list_runs`           | Workflow runs, by repo, workflow, person, branch, trigger or agent      |
 | `get_run_jobs`        | One run's jobs and where each ran                                       |
 | `get_run_failures`    | Why a run's jobs failed, with the end of each log (read from GitHub)    |
 | `list_activity`       | The activity log, including where each job was routed and why           |
-| `get_usage`           | Short jobs and round-up cost, optimized check savings, Actions minutes  |
+| `get_usage`           | Short jobs, round-up cost, check savings, Actions minutes, PR minutes   |
 | `get_job_times`       | Typical job durations per runner                                        |
 | `get_signals`         | What's making CI slow, costly or busier than it needs to be             |
+| `get_breakdown`       | Runs, minutes, cost and failures by workflow, person, agent and more    |
+| `get_providers`       | How each provider performed, and where the Router sent jobs             |
 | `get_router_settings` | Auto jobs' sizes, the default size, automatic retries and AI            |
 | `send_feedback`       | Reports a bug, confusing result or missing tool to the RelayRunner team |
 

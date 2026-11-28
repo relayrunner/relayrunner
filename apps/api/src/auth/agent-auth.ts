@@ -222,13 +222,17 @@ export function agentIssuer(env: Env) {
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,
-  /^\/api\/workspaces\/[^/]+\/(runner-order|router-setup|auto-jobs|retry-settings|ai)$/,
+  /^\/api\/workspaces\/[^/]+\/(runner-order|router-setup|auto-jobs|retry-settings|ai|route-outcomes)$/,
   /^\/api\/machines$/,
   /^\/api\/runs$/,
   /^\/api\/runs\/\d+\/\d+\/\d+\/(jobs|failures)$/,
   /^\/api\/activity$/,
   /^\/api\/usage$/,
-  /^\/api\/usage\/(checks|actions)$/,
+  /^\/api\/usage\/(checks|actions|breakdown|pull-requests)$/,
+  // The Providers pages: the overview, one provider's report and its charts. Not the connections,
+  // catalog or spend routes that share the prefix.
+  /^\/api\/providers$/,
+  /^\/api\/providers\/(?!catalog$|connections$|spend$)[a-z0-9-]+(\/trends)?$/,
   /^\/api\/job-times$/,
   /^\/api\/signals(\/runs)?$/,
 ];

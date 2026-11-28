@@ -27,7 +27,7 @@ const runs = schema.workflowRun;
 const timing = schema.jobTiming;
 
 /** Who started a run: its first attempt's starter, else whoever started this attempt. */
-const PERSON = sql`coalesce(${runs.startedByLogin}, ${runs.actorLogin})`;
+export const PERSON = sql`coalesce(${runs.startedByLogin}, ${runs.actorLogin})`;
 
 /** A branch name that starts with one of an agent's prefixes, in SQL. */
 function branchLike(prefixes: readonly string[]): SQL {

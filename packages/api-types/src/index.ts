@@ -1,4 +1,5 @@
 export * from "./agents.ts";
+export * from "./breakdown.ts";
 export * from "./device.ts";
 export * from "./failure-cause.ts";
 export * from "./flags.ts";

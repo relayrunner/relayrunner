@@ -1,6 +1,6 @@
 ---
 name: relayrunner-ci-insights
-description: Answer questions about a RelayRunner workspace's CI with the RelayRunner MCP server. Use when the user asks whether their runners or machines are online, what's running now, why a job ran on GitHub instead of their machine (or anywhere unexpected), where a run's jobs ran, how long jobs take on each runner, what's making CI slow or costly, which workflows aren't routed yet, what short jobs or GitHub Actions minutes cost, what RelayRunner saved, or what the runner order is. Also use to change the runner order, job sizes, retries or AI, or pause a runner, and to report a RelayRunner bug or missing feature.
+description: Answer questions about a RelayRunner workspace's CI with the RelayRunner MCP server. Use when the user asks whether their runners or machines are online, what's running now, why a job ran on GitHub instead of their machine (or anywhere unexpected), where a run's jobs ran, how long jobs take on each runner, what's making CI slow or costly, which workflows aren't routed yet, what short jobs or GitHub Actions minutes cost, how often a workflow runs, who or which coding agent uses the most CI minutes, which pull requests cost the most, how each provider performs, what RelayRunner saved, or what the runner order is. Also use to change the runner order, job sizes, retries or AI, or pause a runner, and to report a RelayRunner bug or missing feature.
 license: Apache-2.0
 ---
 
@@ -21,13 +21,15 @@ If no RelayRunner MCP tools are available, help the user add the remote server `
 | Are my machines online, busy, paused? What's running now?         | `list_runners`                                            |
 | Which providers are tried, in what order?                         | `get_runner_order`                                        |
 | Which workflows are routed, and which are left                    | `list_workflows`                                          |
-| Recent workflow runs, by repo, status or result                   | `list_runs`                                               |
+| Workflow runs, by repo, workflow, person, branch, trigger, agent  | `list_runs`                                               |
 | Where each job of one run ran                                     | `get_run_jobs` (`repositoryId`, `runId` from `list_runs`) |
 | Why a run's jobs failed, with the end of each log                 | `get_run_failures` (same arguments as `get_run_jobs`)     |
 | Why a job went where it did; machines connecting or going offline | `list_activity`                                           |
-| Short jobs, round-up cost, check savings, Actions minutes         | `get_usage`                                               |
+| Short jobs, round-up cost, check savings, Actions minutes, PRs    | `get_usage`                                               |
 | How long jobs usually take on each runner                         | `get_job_times`                                           |
 | What's making CI slow, costly or busier than it needs to be       | `get_signals`                                             |
+| Runs, minutes, cost or failures by workflow, person, agent, day   | `get_breakdown`                                           |
+| How each provider performs; where the Router sent routed runs     | `get_providers`                                           |
 | Auto jobs' sizes, the default size, retries and AI                | `get_router_settings`                                     |
 | Reorder providers or change their limits                          | `set_runner_order` (`version` from `get_runner_order`)    |
 | Put a repo with its own order back on the workspace's             | `use_workspace_order`                                     |
@@ -52,9 +54,13 @@ Every tool takes an optional `workspace` (id or name), needed only when the conn
 
 **"Which workflows still need routing?"** `list_workflows` (narrow with `repository`). Workflows with `routedRuns: 0` come first. To route one, use the `relayrunner-route-jobs` skill in that repo.
 
-**"What did it save?" / "What does CI cost?"** `get_usage` (default 30 days, up to 90). Report jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each GitHub account's Actions minutes this billing cycle.
+**"What did it save?" / "What does CI cost?"** `get_usage` (default 30 days, up to 90). Report jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, each GitHub account's Actions minutes this billing cycle (and when they'll run out at this pace), and the pull requests that used the most minutes.
 
-**"Did my last push work?"** `list_runs` with `repository` (and `routed: true` for routed runs only), then `get_run_jobs` on the run.
+**"How often does X run?" / "Who uses the most CI?" / "What did agent branches cost?"** `get_breakdown` with `by` set to what the question cuts by: `workflow`, `job`, `repository`, `person`, `branch`, `trigger`, `agent`, `provider`, `runner` or `job_type`. Add `perDay: true` for a number per day (pass `utcOffset` so days end at the person's midnight), `sort` for the order (`runs`, `cost` or `failures` instead of minutes), and the filters (`workflow`, `person`, `branch`, `trigger`, `agent`) to narrow it, such as `by: "workflow", agent: "any"` for what agent-made runs spent per workflow. `runs` are only there for cuts a whole run falls in; for `job`, `provider`, `runner` and `job_type`, count `jobs`. Cost is estimated at GitHub's rates, so self-hosted runners and machines show 0; for a hosted provider's own prices use `get_providers`. Up to 62 days.
+
+**"Is a hosted provider (or my Mac) faster or more reliable than GitHub?" / "Where did the Router send jobs?"** `get_providers` for every provider's jobs, failures, billed minutes, estimated cost, the share started within a minute and runner failures, plus `routerOutcomes`: how many routed runs took their first step, moved on (and why), waited for a busy machine or couldn't route. Then `get_providers` with `provider` for its runner types, each with p50, p90 and p99 queue wait and job time per day, to see whether one is getting slower. Use `get_job_times` to compare the same job across runners.
+
+**"Did my last push work?"** `list_runs` with `repository` (and `routed: true` for routed runs only), then `get_run_jobs` on the run. `list_runs` also takes `days` (up to 62) and the same filters as `get_breakdown`, such as `branch` or `agent`; it reads at most 200 runs, so filter rather than paging, and use `get_breakdown` to count.
 
 **"Why did CI fail?"** `list_runs` with `repository` and `conclusion: "failure"`, then `get_run_failures` on the run. Lead with the failed step and the error lines. When `runnerFailed` is true the runner failed the job before any step ran, so the code isn't the problem and a re-run is the fix. When a job has a `cause`, use it as a hint: `rerun: "passes"` means a re-run is worth trying, while `lint`, `test`, `build` or `config` means the code or workflow needs a fix. Check it against the error lines before you say so.
 

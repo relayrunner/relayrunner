@@ -30,13 +30,18 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /workspaces/{id}/runner-order`                      | The providers jobs are tried on, in order (`?repo=` for one repo's)    |
 | `GET /workspaces/{id}/router-setup`                      | Recent workflows and how many of their runs were routed                |
 | `GET /machines`                                          | Runners, their status, labels, pause state and current job             |
-| `GET /runs`                                              | Workflow runs from the last 14 days                                    |
+| `GET /runs`                                              | Workflow runs, by workflow, person, branch, trigger or agent           |
 | `GET /runs/{repositoryId}/{runId}/{runAttempt}/jobs`     | One run's jobs and where each ran                                      |
 | `GET /runs/{repositoryId}/{runId}/{runAttempt}/failures` | Why a run's jobs failed, with the end of each log                      |
 | `GET /activity`                                          | The activity log, including where each job was routed and why          |
 | `GET /usage`, `/usage/checks`, `/usage/actions`          | Short jobs and round-up cost, optimized check savings, Actions minutes |
+| `GET /usage/pull-requests`                               | CI minutes per pull request                                            |
+| `GET /usage/breakdown`                                   | Runs, minutes, cost and failures cut one way, optionally per day       |
 | `GET /job-times`                                         | Typical job durations per runner                                       |
 | `GET /signals`                                           | What's making CI slow, costly or busier than it needs to be            |
+| `GET /providers`, `/providers/{provider}`                | How each provider and its runner types performed                       |
+| `GET /providers/{provider}/trends`                       | Queue wait and job time percentiles over time                          |
+| `GET /workspaces/{id}/route-outcomes`                    | How routed runs went down the runner order                             |
 | `GET /workspaces/{id}/auto-jobs`                         | Auto jobs' sizes and first providers, and the default size             |
 | `GET /workspaces/{id}/retry-settings`, `/ai`             | Automatic retries, and whether AI is on                                |
 | `POST /feedback`                                         | Reports a bug, confusing result or missing feature to the team         |

@@ -7,6 +7,7 @@ import { usageReport } from "../ingest/job-timings.ts";
 import * as testing from "../testing.ts";
 import { recentJobs } from "./job-times.ts";
 import { lastDays, withPrior } from "./report-window.ts";
+import { breakdown } from "./breakdown.ts";
 import { runFilterOptions } from "./run-filters.ts";
 import { listRuns, performanceReport, recordWorkflowRun } from "./runs.ts";
 
@@ -194,5 +195,42 @@ describe("run filters", () => {
       { value: "claude", runs: 1 },
       { value: "codex", runs: 1 },
     ]);
+  });
+});
+
+describe("breakdown", () => {
+  test("cuts jobs by person, agent, workflow and provider, with the run filters", async () => {
+    const { db, workspaceId } = await workspaceWithRuns();
+    const window = lastDays(1);
+    const keys = async (by: Parameters<typeof breakdown>[3]["by"], query = {}) => {
+      const report = await breakdown(db, workspaceId, window, {
+        by,
+        filters: parseRunFilters(query),
+      });
+      return Object.fromEntries(report.rows.map((row) => [row.key, row.runs ?? row.jobs]));
+    };
+    expect(await keys("person")).toEqual({ ada: 2, grace: 1, "dependabot[bot]": 1 });
+    expect(await keys("agent")).toEqual({ claude: 1, codex: 1, none: 2 });
+    expect(await keys("workflow")).toEqual({ CI: 3, Deps: 1 });
+    expect(await keys("trigger", { person: "ada" })).toEqual({ pull_request: 2 });
+    // Jobs, since one run's jobs can run on several providers.
+    expect(await keys("provider")).toEqual({ github: 4 });
+  });
+
+  test("adds up minutes, cost and waits, a day at a time", async () => {
+    const { db, workspaceId } = await workspaceWithRuns();
+    const report = await breakdown(db, workspaceId, lastDays(2), {
+      by: "workflow",
+      perDay: true,
+      limit: 1,
+    });
+    expect(report.days).toHaveLength(3);
+    expect(report.total).toMatchObject({ runs: 4, jobs: 4, minutes: 6, billedMinutes: 8 });
+    expect(report.total.waitSeconds).toBe(5);
+    expect(report.total.cost).toBeGreaterThan(0);
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toMatchObject({ key: "CI", repository: "acme/app", runs: 3 });
+    expect(report.rows[0]!.perDay!.runs!.reduce((a, b) => a + b, 0)).toBe(3);
+    expect(report.rest).toMatchObject({ rows: 1, runs: 1 });
   });
 });

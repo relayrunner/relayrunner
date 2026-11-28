@@ -5,7 +5,7 @@ import {
   type ActivityStarter,
   type RouteWalk,
 } from "@relayrunner/activity";
-import type { JobRow, PerformanceReport, Stat } from "@relayrunner/api-types";
+import type { Environment, JobRow, PerformanceReport, Stat } from "@relayrunner/api-types";
 
 // Agent clients cap tool results (Claude Code's is about 25k tokens), and the dashboard's answers
 // carry everything a page might render. These cut them down to what an agent reasons over.
@@ -131,5 +131,137 @@ export function compactJobTimes(
     ...report,
     environments: report.environments.filter((env) => env.stat.samples > 0 && used.has(env.key)),
     workflows,
+  };
+}
+
+// The Providers pages' answers (apps/api/src/reports/provider-report.ts, provider-trends.ts and
+// route-outcomes.ts), with the fields an agent reads. Typed here loosely: they're the dashboard's.
+
+interface ProviderCounts {
+  jobs: number;
+  failures: number;
+  billedMinutes: number;
+  cost: number;
+  unpricedJobs: number;
+  waits: number;
+  quickStarts: number;
+  runnerFailures: number;
+}
+
+type ProviderRunner = ProviderCounts &
+  Pick<Environment, "key" | "label" | "detail" | "size"> & { stat: Stat; perMinute: number | null };
+
+type Percentiles = Record<"p50" | "p75" | "p90" | "p95" | "p99", number> | null;
+
+export interface ProvidersAnswer {
+  days: number;
+  providers: (ProviderCounts & {
+    provider: string;
+    stat: Stat;
+    runners: unknown[];
+    priorBilledMinutes: number | null;
+  })[];
+}
+
+export interface RouteOutcomesAnswer {
+  runs: number;
+  first: number;
+  movedOn: number;
+  waited: number;
+  failed: number;
+  reasons: { reason: string; count: number }[];
+}
+
+export interface ProviderAnswer extends ProviderCounts {
+  provider: string;
+  days: number;
+  stat: Stat;
+  runners: ProviderRunner[];
+  workflows: unknown[];
+}
+
+export interface ProviderTrendsAnswer {
+  bucketMs: number;
+  runners: {
+    key: string;
+    points: {
+      start: number;
+      jobs: number;
+      runnerFailures: number;
+      wait: Percentiles;
+      run: Percentiles;
+    }[];
+  }[];
+}
+
+const seconds = (ms: number | null) => (ms === null ? null : Math.round(ms / 1000));
+
+/** Counts with the share of jobs started within a minute instead of the two counts behind it. */
+function counts({ waits, quickStarts, ...rest }: ProviderCounts) {
+  return {
+    ...rest,
+    startedWithinMinute: waits ? Math.round((quickStarts / waits) * 100) / 100 : null,
+  };
+}
+
+const times = (stat: Stat) => ({
+  medianSeconds: seconds(stat.medianMs),
+  p90Seconds: seconds(stat.p90Ms),
+  waitSeconds: seconds(stat.waitMs),
+  samples: stat.samples,
+});
+
+const secondsAt = (p: Percentiles) =>
+  p && { p50: seconds(p.p50), p90: seconds(p.p90), p99: seconds(p.p99) };
+
+/** Every provider in the window, and how the Router's routed runs went. */
+export function compactProviders(overview: ProvidersAnswer, outcomes: RouteOutcomesAnswer) {
+  const { runs, first, movedOn, waited, failed, reasons } = outcomes;
+  return {
+    days: overview.days,
+    providers: overview.providers.map(
+      ({ provider, stat, runners, priorBilledMinutes, ...rest }) => ({
+        provider,
+        ...counts(rest),
+        ...times(stat),
+        runnerTypes: runners.length,
+        priorBilledMinutes,
+      }),
+    ),
+    routerOutcomes: { runs, first, movedOn, waited, failed, reasons },
+  };
+}
+
+/** One provider's runner types, with their queue wait and job time percentiles over time. */
+export function compactProvider(report: ProviderAnswer, trends: ProviderTrendsAnswer) {
+  const byKey = new Map(trends.runners.map((runner) => [runner.key, runner.points]));
+  return {
+    provider: report.provider,
+    days: report.days,
+    ...counts(report),
+    ...times(report.stat),
+    workflows: report.workflows,
+    bucket: trends.bucketMs >= 7 * 86_400_000 ? "week" : "day",
+    runners: report.runners.map(
+      ({ stat, waits, quickStarts, key, label, detail, size, perMinute, ...rest }) => ({
+        key,
+        label,
+        detail,
+        ...(size && { size }),
+        perMinute,
+        ...counts({ ...rest, waits, quickStarts }),
+        ...times(stat),
+        // Only the busiest few runner types have charts.
+        ...(byKey.has(key) && {
+          overTime: byKey.get(key)!.map((point) => ({
+            date: new Date(point.start).toISOString().slice(0, 10),
+            jobs: point.jobs,
+            runnerFailures: point.runnerFailures,
+            waitSeconds: secondsAt(point.wait),
+            runSeconds: secondsAt(point.run),
+          })),
+        }),
+      }),
+    ),
   };
 }
