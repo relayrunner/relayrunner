@@ -64,6 +64,17 @@ describe("attentionItems", () => {
     });
   });
 
+  test("leaves out a teammate's personal runner, which only waits on their own jobs", () => {
+    const personal = machine({ id: "p", name: "grace-mbp", status: offline, sharing: "only_me" });
+    const waiting = queued(job({ environment: "machine:p" }));
+    expect(attentionItems([{ ...personal, mine: false }], waiting)).toEqual([]);
+    expect(attentionItems([{ ...personal, mine: true }], waiting)).toHaveLength(1);
+    // Shared, it's everyone's to look after.
+    expect(attentionItems([{ ...personal, mine: false, sharing: "anyone" }], waiting)).toHaveLength(
+      1,
+    );
+  });
+
   test("a paused machine with jobs waiting unpauses from the row when allowed", () => {
     const paused = machine({
       id: "a",

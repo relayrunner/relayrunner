@@ -1,4 +1,4 @@
-// The Runners page's groups (self-hosted, cloud): their heading, view toggle and footnote.
+// The Runners page's groups (personal, shared, cloud): their heading, view toggle and footnote.
 import { LayoutGridIcon, ListIcon } from "lucide-react";
 import { type ReactNode } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
@@ -33,7 +33,7 @@ export function RunnerGroup({
   bare?: boolean;
   children: ReactNode;
 }) {
-  const id = `group-${title.toLowerCase()}`;
+  const id = `group-${title.toLowerCase().replaceAll(" ", "-")}`;
   return (
     <section aria-labelledby={id} className="grid gap-3">
       <div className="flex min-h-6 items-center justify-between gap-2">

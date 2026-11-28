@@ -52,7 +52,7 @@ type Command = (
 const COMMANDS: &[Command] = &[
     (
         "connect",
-        "Put this machine online for your workspaces and run the jobs the gateway sends it. Signs in on first run; Ctrl-C takes the machine offline.",
+        "Put this machine online for your workspaces, as a personal runner unless you share it, and run the jobs the gateway sends it. Signs in on first run; Ctrl-C takes the machine offline.",
         "relayrunner connect [options]",
         &[
             ("--server URL", SERVER_HELP),
@@ -165,7 +165,7 @@ const COMMANDS: &[Command] = &[
     ),
     (
         "share",
-        "Show or change who can run jobs on this machine: only-me (jobs you started) or anyone in your workspaces.",
+        "Show or change who can run jobs on this machine: only-me (a personal runner: jobs you started) or anyone in your workspaces (a shared runner).",
         "relayrunner share [only-me|anyone]",
         &[],
     ),

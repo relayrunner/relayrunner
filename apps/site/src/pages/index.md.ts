@@ -36,9 +36,9 @@ Or paste this into Claude Code, Codex or Cursor and your agent does the setup:
 ${setupPrompt(site!)}
 \`\`\`
 
-## Your machines
+## Personal runners
 
-Run \`npx relayrunner connect\` on a laptop, Mac mini or home server and it starts taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries on, a job cut off mid-run starts again on the next free runner. Share it with your team or keep it private.
+Run \`npx relayrunner connect\` on a laptop, Mac mini or home server and it starts taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries on, a job cut off mid-run starts again on the next free runner. It's your personal runner, taking only your jobs, until you share it with your team.
 
 On a Mac, [RelayRunner for Mac](${abs("/docs/get-started/mac-app")}) does the same from the menu bar with one switch. [Download it](${abs("/download")}) or run \`brew install --cask relayrunner/tap/relayrunner\`.
 

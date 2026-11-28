@@ -220,10 +220,7 @@ fn describe(server: &str, identity: &Value, notice: Option<&str>) -> String {
         ("Status", status),
     ];
     if let Some(share) = machine["sharing"].as_str().and_then(Share::from_sharing) {
-        rows.push((
-            "Sharing",
-            format!("{}: {}", share.choice(), share.meaning(&scope(&workspaces))),
-        ));
+        rows.push(("Sharing", share.summary(&scope(&workspaces))));
     }
     rows.push(("Gateway", server.to_string()));
     let details = table(
@@ -315,7 +312,7 @@ mod tests {
         assert!(text.starts_with("box (m_1)\n  Workspaces  Acme\n  Platform    macos arm64\n"));
         assert!(text.contains("  Status      online, idle, paused by Pat\n"));
         assert!(text.contains(
-            "  Sharing     anyone: runs any job in Acme, including teammates' and bots'\n"
+            "  Sharing     anyone (shared runner): runs any job in Acme, including teammates' and bots'\n"
         ));
         assert!(text.ends_with("  Gateway     https://app.example"));
     }

@@ -66,8 +66,8 @@ struct WorkspaceSettings: View {
       } footer: {
         Text(
           choice.machine.sharing == .onlyMe
-            ? "Only jobs you started run here."
-            : "Teammates' and bots' jobs run here too."
+            ? "A personal runner: only jobs you started run here."
+            : "A shared runner: teammates' and bots' jobs run here too."
         )
       }
 

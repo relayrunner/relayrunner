@@ -604,11 +604,13 @@ fn ask_sharing(workspaces: &[login::Workspace]) -> Option<Share> {
     let choices = [
         ui::Choice {
             label: "Only me".into(),
-            hint: Some("jobs you started".into()),
+            hint: Some("a personal runner: jobs you started".into()),
         },
         ui::Choice {
             label: format!("Anyone in {}", whoami::scope(workspaces)),
-            hint: Some("teammates' and bots' jobs too, from repos you can open".into()),
+            hint: Some(
+                "a shared runner: teammates' and bots' jobs too, from repos you can open".into(),
+            ),
         },
     ];
     match ui::select("Who can run jobs on this machine?", &choices, 0) {
@@ -630,11 +632,7 @@ async fn apply_sharing(
     let scope = workspaces.map_or_else(|| "your workspaces".to_string(), whoami::scope);
     let c = credentials.clone();
     match tokio::task::spawn_blocking(move || share::set(&c, share)).await {
-        Ok(share::Outcome::Ok(now)) => ui::info(&format!(
-            "Sharing: {}: {}",
-            now.choice(),
-            now.meaning(&scope)
-        )),
+        Ok(share::Outcome::Ok(now)) => ui::info(&format!("Sharing: {}", now.summary(&scope))),
         Ok(share::Outcome::Failed(reason)) => ui::warn(&format!(
             "Couldn't set sharing: {reason}. Run `relayrunner share {}` to try again.",
             share.choice()

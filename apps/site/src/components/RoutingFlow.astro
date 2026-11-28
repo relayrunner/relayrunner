@@ -1,7 +1,7 @@
 ---
 // Homepage flowchart: one job goes through the relay and fans out to each runner in the order.
 const DESTINATIONS = [
-  { name: "Your machines", logo: "/providers/machines.svg" },
+  { name: "Personal runners", logo: "/providers/machines.svg" },
   { name: "Self-hosted runners", logo: "/providers/self-hosted.svg" },
   { name: "Blacksmith", logo: "/providers/blacksmith.svg" },
   { name: "GitHub-hosted", logo: "/providers/github.svg" },
@@ -15,7 +15,7 @@ const ends = Array.from({ length: rows }, (_, i) => ((i + 0.5) / rows) * 100);
 
 <figure
   class="flow wrap"
-  aria-label="Each GitHub Actions job goes through relayrunner to the first free runner in your order: your machines, self-hosted runners, Blacksmith, then GitHub-hosted, or many more runner clouds."
+  aria-label="Each GitHub Actions job goes through relayrunner to the first free runner in your order: personal runners, self-hosted runners, Blacksmith, then GitHub-hosted, or many more runner clouds."
 >
   <div class="flow-job" aria-hidden="true">
     <b class="label">GitHub Actions</b>

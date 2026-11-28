@@ -34,7 +34,7 @@ const SAMPLE_MACHINE: Machine = {
   },
   owner: "Ada",
   mine: true,
-  sharing: "anyone",
+  sharing: "only_me",
   status: {
     online: true,
     state: "idle",
@@ -87,6 +87,7 @@ export const SAMPLE_MACHINES: Machine[] = [
     ...SAMPLE_MACHINE,
     id: "sample-linux",
     name: "ci-box",
+    sharing: "anyone",
     os: "linux",
     arch: "x64",
     device: {
@@ -121,6 +122,26 @@ export const SAMPLE_MACHINES: Machine[] = [
       url: "https://github.com/acme/app/actions",
       startedAt: new Date(Date.now() - (i + 1) * 47_000).toISOString(),
     })),
+  },
+  {
+    ...SAMPLE_MACHINE,
+    id: "sample-grace",
+    name: "grace-mbp",
+    owner: "Grace",
+    mine: false,
+    canRevoke: false,
+    macApp: { version: "0.7.0" },
+    runner: { version: "2.331.0", update: null, updateBy: null },
+    device: {
+      ...SAMPLE_MACHINE.device!,
+      model: "MacBook Air",
+      chip: "Apple M4",
+      cpuCores: 10,
+      memoryMb: 24_576,
+    },
+    status: { ...SAMPLE_MACHINE.status!, state: "idle" },
+    job: null,
+    jobs: [],
   },
   {
     id: "sample-github",

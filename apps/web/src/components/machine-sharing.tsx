@@ -27,13 +27,13 @@ export function sharingLabel(sharing: MachineSharing, mine: boolean) {
 const OPTIONS: { value: MachineSharing; title: string; detail: string }[] = [
   {
     value: "only_me",
-    title: "Only me",
+    title: "Only me (personal runner)",
     detail:
       "Runs jobs you start, and re-runs of them by anyone. Teammates' jobs, bots and scheduled runs skip it.",
   },
   {
     value: "anyone",
-    title: "Any job",
+    title: "Any job (shared runner)",
     detail:
       "Runs any job routed here from repos you can open on GitHub, including teammates', bots and scheduled runs.",
   },

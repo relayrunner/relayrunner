@@ -208,7 +208,7 @@ struct MenuHeader: View {
     NSApp.activate(ignoringOtherApps: true)
     let alert = NSAlert()
     alert.messageText = "Who can run jobs on this Mac?"
-    alert.informativeText = "Your own jobs can always run here. Next, your browser opens to sign this Mac in."
+    alert.informativeText = "Only me makes it your personal runner: just your jobs. Next, your browser opens to sign this Mac in."
     alert.addButton(withTitle: "Only Me")
     alert.addButton(withTitle: "Anyone in My Workspaces")
     alert.addButton(withTitle: "Cancel")

@@ -79,7 +79,7 @@ export function AddRunner({
           <DropdownMenuItem onSelect={onAddExisting} className="items-start">
             <GithubIcon className="mt-0.5" />
             <span className="grid gap-0.5">
-              <span>Existing GitHub runner</span>
+              <span>Shared runner from GitHub</span>
               <span className="text-xs text-muted-foreground">
                 Already registered in your org. Nothing to install.
               </span>
@@ -88,9 +88,9 @@ export function AddRunner({
           <DropdownMenuItem onSelect={() => setLocalOpen(true)} className="items-start">
             <LaptopIcon className="mt-0.5" />
             <span className="grid gap-0.5">
-              <span>Connect a machine</span>
+              <span>Personal runner</span>
               <span className="text-xs text-muted-foreground">
-                The Mac app or the CLI, on a laptop or server.
+                This computer or another, with the Mac app or CLI. Takes your jobs.
               </span>
             </span>
           </DropdownMenuItem>

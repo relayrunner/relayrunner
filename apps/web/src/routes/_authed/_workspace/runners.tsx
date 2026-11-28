@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { AddRunner, GithubRunnersDialog } from "@/components/add-runner";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +30,7 @@ import {
   type Machine,
   type OtherMachine,
 } from "@/lib/machines";
+import { isPersonal } from "@/lib/personal-runner";
 import { PROVIDER_DEFAULT_RANGE, PROVIDER_RANGES, type ProviderSummary } from "@/lib/providers";
 import { canManage } from "@/lib/roles";
 import {
@@ -81,7 +82,7 @@ const NO_OTHERS: OtherMachine[] = [];
 // Stands in for job counts that haven't loaded, so the list doesn't get a new object each render.
 const NO_JOB_TIMES: Record<string, Stat> = {};
 
-// Whether self-hosted runners show as a list instead of cards, kept per browser.
+// Whether personal and shared runners show as a list instead of cards, kept per browser.
 const LIST_KEY = "relayrunner:runners:list";
 
 // Cloud-hosted as one table rather than a card per provider.
@@ -90,7 +91,7 @@ const CLOUD_LIST_KEY = "relayrunner:runners:cloud-list";
 // Whether the user closed the card that shows how to connect their own computer, kept per browser.
 const CONNECT_DISMISSED_KEY = "relayrunner:runners:connect-dismissed";
 
-// Whether self-hosted cards show their hardware and typical job, kept per browser.
+// Whether personal and shared runner cards show their hardware and typical job, kept per browser.
 const SHOW_SPECS_KEY = "relayrunner:runners:show-specs";
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
@@ -110,7 +111,7 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
   component: RunnersPage,
 });
 
-// The runners the workspace supplies, grouped as Self-hosted. Where jobs go is the Router's job;
+// The runners the workspace supplies, grouped as Personal and Shared. Where jobs go is the Router's job;
 // the line at the top says what it means right now.
 function RunnersPage() {
   const { current } = Route.useRouteContext();
@@ -179,7 +180,7 @@ function RunnersPage() {
   // it. Null until it answers, so runners added from GitHub aren't hidden as inactive meanwhile.
   const jobTimes: Record<string, Stat> | null =
     useQuery(machineJobTimesQuery(INACTIVE_DAYS)).data ?? null;
-  // Self-hosted runners narrowed by the filter menu, kept in the URL. Runners that have been
+  // Personal and shared runners narrowed by the filter menu, kept in the URL. Runners that have been
   // offline with no jobs for INACTIVE_DAYS are hidden unless asked for.
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -294,6 +295,103 @@ function RunnersPage() {
     setConnectDismissed(true);
   }
 
+  // Personal runners take only their owner's jobs (yours first); shared ones take any job routed
+  // to them. A section shows while the workspace has any of its kind, even when filters hide them.
+  const { hasPersonal, hasShared, personal, shared } = useMemo(() => {
+    const personal: RunnerRow[] = [];
+    const shared: RunnerRow[] = [];
+    for (const row of shown) (isPersonal(row.machine) ? personal : shared).push(row);
+    personal.sort((a, b) => Number(!!b.machine.mine) - Number(!!a.machine.mine));
+    const kinds = new Set(rows.map((row) => isPersonal(row.machine)));
+    return { hasPersonal: kinds.has(true), hasShared: kinds.has(false), personal, shared };
+  }, [rows, shown]);
+  const showPersonal = hasPersonal || showConnect;
+  const showShared = hasShared || showFound;
+  const controls = (
+    <div className="flex items-center gap-1">
+      <RunnerFilterMenu
+        rows={rows}
+        search={search}
+        count={filters}
+        inactiveCount={inactiveCount}
+        onChange={setSearch}
+      />
+      {!list && (
+        <Button
+          variant="ghost"
+          size="xs"
+          aria-pressed={showSpecs}
+          onClick={() => {
+            saveFlag(SHOW_SPECS_KEY, !showSpecs);
+            setShowSpecs(!showSpecs);
+          }}
+        >
+          {showSpecs ? <ChevronsDownUpIcon aria-hidden /> : <ChevronsUpDownIcon aria-hidden />}
+          {showSpecs ? "Hide specs" : "Show specs"}
+        </Button>
+      )}
+      <ViewToggle
+        list={list}
+        onChange={(next) => {
+          saveFlag(LIST_KEY, next);
+          setList(next);
+        }}
+      />
+    </div>
+  );
+  const footnote = (
+    <RunnerFootnote
+      shown={shown.length}
+      total={rows.length}
+      filtered={filters > 0}
+      inactiveHidden={matching.length - shown.length}
+      showingInactive={(search.inactive ?? false) && inactiveCount > 0}
+      onClearFilters={() => setSearch(CLEARED_FILTERS)}
+      onShowInactive={(show) => setSearch({ inactive: show || undefined })}
+    />
+  );
+  // One section's runners as cards or a list, then its extra card (connect, or found on GitHub).
+  function section(sectionRows: RunnerRow[], extra: ReactNode) {
+    if (list) {
+      return (
+        <div className="grid gap-3">
+          {sectionRows.length > 0 && (
+            <SectionBoundary>
+              <RunnerList
+                rows={sectionRows}
+                jobTimes={jobTimes ?? NO_JOB_TIMES}
+                onRemovedFromWorkspace={dismissOthers}
+              />
+            </SectionBoundary>
+          )}
+          {extra && <div className="max-w-md">{extra}</div>}
+        </div>
+      );
+    }
+    return (
+      <>
+        {sectionRows.map(({ machine, view }) => (
+          <li key={machine.id} className="grid min-w-0">
+            <SectionBoundary>
+              <MachineCard
+                machine={machine}
+                view={view}
+                jobTime={jobTimes?.[machine.id]}
+                specs={showSpecs}
+                onRemovedFromWorkspace={dismissOthers}
+              />
+            </SectionBoundary>
+          </li>
+        ))}
+        {extra && (
+          <li className="grid min-w-0">
+            <SectionBoundary>{extra}</SectionBoundary>
+          </li>
+        )}
+      </>
+    );
+  }
+
   return (
     <section>
       {dialog}
@@ -313,7 +411,7 @@ function RunnersPage() {
           )
         }
       >
-        Self-hosted and cloud runners for your jobs.{" "}
+        Personal, shared and cloud runners for your jobs.{" "}
         <Link to="/settings/agents" className="text-foreground underline underline-offset-2">
           Connect your agent
         </Link>{" "}
@@ -356,11 +454,11 @@ function RunnersPage() {
             />
           )}
           {!machinesLoaded ? (
-            <RunnerGroup title="Self-hosted">
+            <RunnerGroup title="Personal runners">
               <CardSkeletons count={3} />
             </RunnerGroup>
           ) : empty ? (
-            <RunnerGroup title="Self-hosted" bare>
+            <RunnerGroup title="Personal runners" bare>
               <SectionBoundary>
                 <ConnectLanding
                   fallback={order ? fallbackAfterMachine(order.order.steps) : null}
@@ -371,120 +469,47 @@ function RunnersPage() {
               </SectionBoundary>
             </RunnerGroup>
           ) : (
-            <RunnerGroup
-              title="Self-hosted"
-              bare={list}
-              action={
-                <div className="flex items-center gap-1">
-                  <RunnerFilterMenu
-                    rows={rows}
-                    search={search}
-                    count={filters}
-                    inactiveCount={inactiveCount}
-                    onChange={setSearch}
-                  />
-                  {!list && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      aria-pressed={showSpecs}
-                      onClick={() => {
-                        saveFlag(SHOW_SPECS_KEY, !showSpecs);
-                        setShowSpecs(!showSpecs);
-                      }}
-                    >
-                      {showSpecs ? (
-                        <ChevronsDownUpIcon aria-hidden />
-                      ) : (
-                        <ChevronsUpDownIcon aria-hidden />
-                      )}
-                      {showSpecs ? "Hide specs" : "Show specs"}
-                    </Button>
+            <>
+              {/* The filter, specs and view controls sit on the first section; the footnote on the last. */}
+              {showPersonal && (
+                <RunnerGroup
+                  title="Personal runners"
+                  bare={list || (personal.length === 0 && !showConnect)}
+                  action={controls}
+                  footer={showShared ? undefined : footnote}
+                >
+                  {personal.length === 0 && !showConnect ? (
+                    <p className="text-sm text-muted-foreground">No personal runners match.</p>
+                  ) : (
+                    section(personal, showConnect && <ConnectCard onDismiss={dismissConnect} />)
                   )}
-                  <ViewToggle
-                    list={list}
-                    onChange={(next) => {
-                      saveFlag(LIST_KEY, next);
-                      setList(next);
-                    }}
-                  />
-                </div>
-              }
-              footer={
-                <RunnerFootnote
-                  shown={shown.length}
-                  total={rows.length}
-                  filtered={filters > 0}
-                  inactiveHidden={matching.length - shown.length}
-                  showingInactive={(search.inactive ?? false) && inactiveCount > 0}
-                  onClearFilters={() => setSearch(CLEARED_FILTERS)}
-                  onShowInactive={(show) => setSearch({ inactive: show || undefined })}
-                />
-              }
-            >
-              {list ? (
-                <div className="grid gap-3">
-                  <SectionBoundary>
-                    <RunnerList
-                      rows={shown}
-                      jobTimes={jobTimes ?? NO_JOB_TIMES}
-                      onRemovedFromWorkspace={dismissOthers}
-                    />
-                  </SectionBoundary>
-                  {showConnect && (
-                    <div className="max-w-md">
-                      <ConnectCard onDismiss={dismissConnect} />
-                    </div>
-                  )}
-                  {showFound && (
-                    <p className="text-sm text-muted-foreground">
-                      {addable.length} more {addable.length === 1 ? "runner is" : "runners are"}{" "}
-                      already registered on GitHub.{" "}
-                      <button
-                        type="button"
-                        className="rounded-sm font-semibold text-go outline-none hover:text-go-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        onClick={() => setGithubOpen(true)}
-                      >
-                        Review and add
-                      </button>
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {shown.map(({ machine, view }) => (
-                    <li key={machine.id} className="grid min-w-0">
-                      <SectionBoundary>
-                        <MachineCard
-                          machine={machine}
-                          view={view}
-                          jobTime={jobTimes?.[machine.id]}
-                          specs={showSpecs}
-                          onRemovedFromWorkspace={dismissOthers}
-                        />
-                      </SectionBoundary>
-                    </li>
-                  ))}
-                  {showConnect && (
-                    <li className="grid min-w-0">
-                      <ConnectCard onDismiss={dismissConnect} />
-                    </li>
-                  )}
-                  {showFound && (
-                    <li className="grid min-w-0">
-                      <SectionBoundary>
+                </RunnerGroup>
+              )}
+              {showShared && (
+                <RunnerGroup
+                  title="Shared runners"
+                  bare={list || (shared.length === 0 && !showFound)}
+                  action={showPersonal ? undefined : controls}
+                  footer={footnote}
+                >
+                  {shared.length === 0 && !showFound ? (
+                    <p className="text-sm text-muted-foreground">No shared runners match.</p>
+                  ) : (
+                    section(
+                      shared,
+                      showFound && (
                         <FoundCard
                           runners={addable}
                           onAdd={addFound}
                           onReview={() => setGithubOpen(true)}
                           onDismiss={dismissFound}
                         />
-                      </SectionBoundary>
-                    </li>
+                      ),
+                    )
                   )}
-                </>
+                </RunnerGroup>
               )}
-            </RunnerGroup>
+            </>
           )}
           {!cloud && (
             <RunnerGroup title="Cloud-hosted">

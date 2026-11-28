@@ -142,7 +142,7 @@ struct WelcomeView: View {
   private var signIn: some View {
     VStack(spacing: 0) {
       art
-      heading("Who can run jobs on this Mac?", "Your own jobs can always run here. Next, your browser opens to sign this Mac in.")
+      heading("Who can run jobs on this Mac?", "Only me makes it your personal runner: just your jobs. Next, your browser opens to sign this Mac in.")
       if let signIn = connection.signIn {
         SignInBox(signIn: signIn)
           .padding(.top, 22)

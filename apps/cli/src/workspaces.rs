@@ -158,11 +158,7 @@ fn describe(current: &MachineWorkspaces) -> String {
     }
     if let Some(share) = Share::from_sharing(&machine.sharing) {
         lines.push(String::new());
-        lines.push(format!(
-            "Sharing: {}: {}",
-            share.choice(),
-            share.meaning("these workspaces")
-        ));
+        lines.push(format!("Sharing: {}", share.summary("these workspaces")));
     }
     if !others.is_empty() {
         lines.push("Add one with `relayrunner workspaces add <name>`.".into());

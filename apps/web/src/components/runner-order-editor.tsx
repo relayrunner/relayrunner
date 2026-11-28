@@ -306,7 +306,7 @@ const withIds = (steps: RunnerStep[]): StepItem[] =>
   steps.map((step) => ({ id: `step-${nextStepId++}`, step }));
 
 /** What the Self-hosted step covers: runners added from GitHub and machines connected with the CLI. */
-const SELF_HOSTED_NOTE = "Your own runners and CLI-connected machines";
+const SELF_HOSTED_NOTE = "Your personal runners and shared runners";
 /** GitHub's and Blacksmith's byline: free supply first, then pay as you go. */
 const INCLUDED_MINUTES_NOTE = "Your plan's minutes, then billed per minute";
 

@@ -15,11 +15,11 @@ The runner order is your workspace's list of providers, top to bottom. Each job 
 
 ## Steps
 
-| Step                  | Takes the job when                                                                                                                                        |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Self-hosted**       | A connected machine or added runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
-| **GitHub-hosted**     | The relay names a `github` label. With a cap, only while the account is under it.                                                                         |
-| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a cap, only while the account is under it.                                |
+| Step                  | Takes the job when                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Self-hosted**       | A personal or shared runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
+| **GitHub-hosted**     | The relay names a `github` label. With a cap, only while the account is under it.                                                                 |
+| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a cap, only while the account is under it.                        |
 
 A step that can't take the job is skipped with a reason, and the next one is tried. Between two steps, the Router page says what sends a job on, such as "Once 2,400 min are used". Under a step with no cap it warns you, because that provider takes every job it can start and the steps below it rarely run.
 

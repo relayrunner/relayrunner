@@ -43,6 +43,24 @@ impl Share {
         }
     }
 
+    /// What the dashboard calls a machine with this sharing.
+    pub fn kind(self) -> &'static str {
+        match self {
+            Share::OnlyMe => "personal runner",
+            Share::Anyone => "shared runner",
+        }
+    }
+
+    /// Its choice, kind and meaning on one line, as `whoami` and `connect` show it.
+    pub fn summary(self, scope: &str) -> String {
+        format!(
+            "{} ({}): {}",
+            self.choice(),
+            self.kind(),
+            self.meaning(scope)
+        )
+    }
+
     /// What it means, as in "<machine> runs only jobs you started".
     pub fn meaning(self, scope: &str) -> String {
         match self {
@@ -110,7 +128,11 @@ pub fn command(credentials: &Credentials, value: Option<&str>) -> Result<(), Err
     })?;
     match set(credentials, share) {
         Outcome::Ok(now) => {
-            println!("{name} now {}.", now.meaning("your workspaces"));
+            println!(
+                "{name} is now a {}: it {}.",
+                now.kind(),
+                now.meaning("your workspaces")
+            );
             Ok(())
         }
         Outcome::Revoked => Err(revoked(name)),
@@ -149,7 +171,12 @@ fn show(credentials: &Credentials) -> Result<(), Error> {
         Share::OnlyMe => "anyone",
         Share::Anyone => "only-me",
     };
-    println!("{name} {} ({}).", share.meaning(&scope), share.choice());
+    println!(
+        "{name} is a {} ({}): it {}.",
+        share.kind(),
+        share.choice(),
+        share.meaning(&scope)
+    );
     if workspaces.is_empty() {
         println!("{name} isn't in a workspace yet, so this matters once it is.");
     } else if workspaces.iter().all(|w| w.member_count == Some(1)) {

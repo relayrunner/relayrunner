@@ -1,5 +1,6 @@
 import { type LiveJob, type LiveJobs, matches, waitReason } from "./live-jobs.ts";
 import type { Machine } from "./machines.ts";
+import { isPersonal } from "./personal-runner.ts";
 import { runnerUpdate } from "./runner-update.ts";
 
 /**
@@ -27,7 +28,8 @@ const jobs = (count: number) => (count === 1 ? "1 job" : `${count} jobs`);
  * waiting on (offline or paused), queued jobs no runner has the labels for, and runners added from
  * GitHub that GitHub no longer has, and machines whose runner GitHub will soon stop sending jobs
  * to. A machine that's offline with nothing waiting on it isn't
- * listed, since laptops come and go.
+ * listed, since laptops come and go, and neither is a teammate's personal runner, which only
+ * ever waits on their own jobs.
  */
 export function attentionItems(machines: Machine[], live: LiveJobs): AttentionItem[] {
   const active = machines.filter((machine) => !machine.revokedAt);
@@ -43,6 +45,7 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
   const missing: AttentionItem[] = [];
   const updates: AttentionItem[] = [];
   for (const machine of active) {
+    if (isPersonal(machine) && machine.mine === false) continue;
     if (machine.github?.missing) {
       missing.push({
         key: `missing:${machine.id}`,

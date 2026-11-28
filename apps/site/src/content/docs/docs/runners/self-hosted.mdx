@@ -1,11 +1,11 @@
 ---
-title: Your machines
-description: Turn computers you own into GitHub Actions runners with the CLI.
+title: Personal runners
+description: Turn computers you own into GitHub Actions runners with the CLI or the Mac app.
 ---
 
 import Screenshot from "@/components/Screenshot.astro";
 
-Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins the self-hosted step of every workspace you're in.
+Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI or the [Mac app](/docs/get-started/mac-app) and it becomes your personal runner: it takes only your jobs, in the self-hosted step of every workspace you're in.
 
 ## Connect a machine
 
@@ -45,13 +45,13 @@ Every machine has the label `self-hosted`, plus the OS and architecture its jobs
 
 ## Who can run jobs on it
 
-A new machine only runs jobs you started (**only me**), including a teammate's re-run of your run. To let teammates' and bots' jobs run on it too, share it with **anyone** in the workspace:
+A new machine is a personal runner: it only runs jobs you started (**only me**), including a teammate's re-run of your run. To let teammates' and bots' jobs run on it too, share it with **anyone** in the workspace, which makes it a shared runner:
 
 ```sh
 relayrunner share anyone    # or only-me
 ```
 
-You can also change it from the sharing icon on the machine's card on the **Runners** page. Only the machine's owner can change it.
+You can also change it from the sharing icon on the machine's card on the **Runners** page, which lists personal and shared runners in their own sections. Only the machine's owner can change it.
 
 "Anyone" only covers jobs from repos the machine's owner can open on GitHub, so sharing a machine never gives it code you couldn't already see. See [Share your team's machines](/docs/guides/team-machines).
 
@@ -136,7 +136,7 @@ If you already run self-hosted runners, you can route jobs to them as they are, 
 
 A runner registered on a repo only takes that repo's jobs. The list checks up to 100 private repos. If you have more, type a repo's name in the dialog to look there.
 
-Added runners share the self-hosted step with your connected machines, and are picked the same way: online, idle, and with every label in the relay's `machine` input. Removing one from RelayRunner leaves it registered on GitHub.
+Added runners are shared runners. They share the self-hosted step with personal runners, and are picked the same way: online, idle, and with every label in the relay's `machine` input. Removing one from RelayRunner leaves it registered on GitHub.
 
 ## Public repos
 
