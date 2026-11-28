@@ -30,6 +30,7 @@ import { type Db, isMissingTable, schema } from "../db/index.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { BILLED_MINUTES, DURATION_MS, RAN_ON_RUNNER } from "./job-sql.ts";
 import type { Window } from "./report-window.ts";
+import { cached, LIVE_MS, roundDown } from "../report-cache.ts";
 import { cents, pricePeriods, rateFor, runnerClass, tenths } from "./runner-rates.ts";
 
 const job = schema.jobTiming;
@@ -61,6 +62,29 @@ export async function pullRequestReport(
   }: PullRequestQuery = {},
   now = Date.now(),
 ): Promise<PullRequestReport> {
+  // Each page, and each new sort, reads the whole window again, so the list is kept for a little
+  // while (src/report-cache.ts). Pages ask a moment apart, so windows within the same minute share it.
+  const key = JSON.stringify([
+    "pull-requests",
+    installationId,
+    roundDown(from, 60_000),
+    roundDown(to, 60_000),
+    repository,
+  ]);
+  const { all, outsideRows, repositories } = await cached(key, LIVE_MS, () =>
+    pullRequestRows(db, installationId, { from, to }, repository, now),
+  );
+  return { ...pullRequestPage(all, outsideRows, { sort, offset, limit }), repositories };
+}
+
+/** Every pull request's minutes in the window, and the repos that ran jobs in it. */
+async function pullRequestRows(
+  db: Db,
+  installationId: number,
+  { from, to }: Window,
+  repository: string | undefined,
+  now: number,
+) {
   const book = await loadPriceBook(db, now);
   const prices = pricePeriods(book, job.completedAt, from, to);
   const inWindow = and(
@@ -222,8 +246,5 @@ export async function pullRequestReport(
     repository,
     minutes: tenths(minutes),
   }));
-  return {
-    ...pullRequestPage(all, outsideRows, { sort, offset, limit }),
-    repositories: repositories.sort(),
-  };
+  return { all, outsideRows, repositories: repositories.sort() };
 }

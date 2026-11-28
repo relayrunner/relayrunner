@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,7 +44,8 @@ import { useLiveRefresh } from "@/lib/live-refresh";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
-import { type FreeMinutesByProvider, getAllFreeMinutes } from "@/lib/free-minutes";
+import { allFreeMinutesQuery } from "@/lib/free-minutes";
+import { queryClient } from "@/lib/query";
 import { formatTime } from "@/lib/time-zone";
 import { getProviderSpend } from "@/lib/provider-spend";
 import { listConnections } from "@/lib/provider-connections";
@@ -52,14 +54,14 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts, freeMinutes, spend, boatConnected] = await Promise.all([
+    // Free minutes aren't either: Groundbox's are read from its API, so they fill in after.
+    void queryClient.prefetchQuery(allFreeMinutesQuery);
+    const [order, accounts, spend, boatConnected] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
         .then((usage) => usage.accounts)
         .catch((): AccountUsage[] => []),
-      // Likewise Blacksmith's and Groundbox's free minutes, for their steps' limits.
-      getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
       // And this month's spend per provider, for the spend caps' bars.
       getProviderSpend().catch(() => null),
       // And whether Boat is connected, so its step passes jobs on at its start limits.
@@ -73,7 +75,6 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
       ...order,
       machines: null as Machine[] | null,
       accounts,
-      freeMinutes,
       spend,
       boatConnected,
     };
@@ -84,6 +85,8 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
 // Where jobs go: the runner order. The runners themselves live on the Runners page.
 function RouterPage() {
   const loaded = Route.useLoaderData();
+  // Blacksmith's and Groundbox's free minutes, for their steps' limits.
+  const freeMinutes = useQuery(allFreeMinutesQuery).data;
   const { current } = Route.useRouteContext();
   // Owners and admins change the order (#134); members read it. The API refuses a member's save.
   const editable = canManage(current.role);
@@ -146,7 +149,7 @@ function RouterPage() {
             editable={editable}
             machines={machines}
             accounts={loaded.accounts}
-            freeMinutes={loaded.freeMinutes}
+            freeMinutes={freeMinutes}
             installedApps={installedApps}
             spend={loaded.spend}
             boatConnected={loaded.boatConnected ?? false}

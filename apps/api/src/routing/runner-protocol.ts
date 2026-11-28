@@ -1,5 +1,6 @@
 // A minimal client for GitHub's self-hosted runner protocol, which has no public spec. It uses only
 import { desc } from "drizzle-orm";
+import { edgeCache } from "../report-cache.ts";
 import { log } from "../log.ts";
 import { type Db, schema } from "../db/index.ts";
 import { GitHubError } from "../github/github-api.ts";
@@ -377,10 +378,6 @@ export function resetRunnerVersionCache() {
 }
 
 // The location's cache (Cache API), shared by the isolates there. It is missing outside workerd.
-function locationCache(): Cache | undefined {
-  return (globalThis as { caches?: CacheStorage & { default?: Cache } }).caches?.default;
-}
-
 async function readLocationCache(cache: Cache | undefined) {
   try {
     const response = await cache?.match(RELEASES_LATEST_URL);
@@ -420,7 +417,7 @@ export async function latestRunnerVersion({
   now = Date.now(),
 }: { db?: Db; now?: number } = {}) {
   if (known && now - known.fetchedAt < RUNNER_VERSION_TTL_MS) return known.version;
-  const cache = locationCache();
+  const cache = edgeCache();
   const cached = await readLocationCache(cache);
   if (cached && (!known || cached.fetchedAt > known.fetchedAt)) known = cached;
   if (known && now - known.fetchedAt < RUNNER_VERSION_TTL_MS) return known.version;
