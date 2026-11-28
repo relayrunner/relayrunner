@@ -9,7 +9,7 @@ You can stop using RelayRunner at any time. Here's how to undo each part.
 
 ## 1. Switch your jobs back
 
-For each routed job, delete its `relay-<job>` job and put the label from the relay's `github` (or `blacksmith`) input back in `runs-on`:
+For each routed job, delete its `relay-<job>` job and put a label back in `runs-on`:
 
 ```yaml
 jobs:
@@ -20,7 +20,7 @@ jobs:
 
 Do this before uninstalling the App. A relay job with nobody to answer it stays queued until GitHub cancels it after 24 hours.
 
-To pause routing without editing workflows, stop every machine and keep GitHub-hosted in the runner order. Jobs then run on their old labels.
+To pause routing without editing workflows, stop every machine and keep GitHub-hosted in the runner order. Jobs then run on GitHub.
 
 ## 2. Disconnect your machines
 

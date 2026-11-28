@@ -91,8 +91,12 @@ The Router also reads your Groundbox account before it sends a job there. Ground
 
 You can also set a minutes limit on a Groundbox step, such as 90% of its free minutes. Without a connection, or if Groundbox stops accepting the key or can't be reached, a Groundbox step takes every job it can, and the cap never blocks.
 
+## Job sizes
+
+Each routed job has a size, such as 2 or 4 vCPU, and every hosted step uses its runner of that size. To change one, find the workflow under **Workflows** on the Router page and pick a new size for the job. New jobs get the workspace's **Default size**, which starts at 2 vCPU. See [Auto sizes](/docs/reference/relay-inputs#auto-sizes).
+
+The same panel can send one job to a provider first. The rest of the order stays as its fallback.
+
 ## Changes take effect at once
 
-The order applies to the next relay. Nothing in your workflows changes.
-
-A job whose relay uses `auto` can also try one provider first, set from its workflow under **Workflows** on the Router page. The rest of the order stays as its fallback.
+A new order or size applies to the next relay. Nothing in your workflows changes.

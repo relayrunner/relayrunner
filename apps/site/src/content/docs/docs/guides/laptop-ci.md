@@ -23,7 +23,7 @@ In your repo's checkout:
 npx relayrunner init
 ```
 
-Pick the jobs to route. Each keeps its old label, such as `ubuntu-latest`, as the fallback. Commit and push.
+Pick the jobs to route, then commit and push.
 
 ## 3. Check the runner order
 

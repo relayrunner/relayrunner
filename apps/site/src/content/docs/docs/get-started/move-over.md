@@ -87,4 +87,4 @@ Push the change. The check keeps its name in GitHub, so required checks and bran
 
 ## Undo
 
-Delete the relay job and put the old label back in `runs-on`. Or leave the change in place: with no machine online and GitHub in your runner order, jobs run on their old label anyway.
+Delete the relay job and put the old label back in `runs-on`. Or leave the change in place: with no machine online and GitHub in your runner order, jobs run on GitHub anyway.

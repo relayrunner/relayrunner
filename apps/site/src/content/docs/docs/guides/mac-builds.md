@@ -31,11 +31,10 @@ npx relayrunner init
 relay-build:
   uses: relayrunner/actions/.github/workflows/relay.yml@v1
   with:
-    machine: macOS
-    github: macos-latest
+    os: macos
 ```
 
-`machine: macOS` means only Macs take it, never a Linux machine. Use `macOS, ARM64` to require Apple silicon.
+`os: macos` means only Macs take it: yours when it's free, a hosted Mac otherwise. Add `arch: arm64` to require Apple silicon.
 
 ## 3. Set the order
 

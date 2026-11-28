@@ -50,6 +50,8 @@ Each provider is a step in your runner order. Add, reorder or remove them in the
 
 Try a new provider, move work onto your machines, or send everything back to GitHub. You change the order in the dashboard, without a commit or pull request, and it applies to the next job.
 
+Runner sizes work the same way. Move a job from 2 vCPU to 4 on the Router page, and its next run gets the bigger runner on whichever provider takes it.
+
 ## Minutes
 
 Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you reach it, jobs go to the next runner in your order.

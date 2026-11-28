@@ -22,8 +22,8 @@ const check = "M5 12l5 5 9-10";
 >
   <Fragment slot="lede">
     Add a relay to each job once. After that, you pick where jobs go from the dashboard: your
-    machines, your self-hosted runners, a hosted provider or GitHub. A change applies from the next
-    job.
+    machines, your self-hosted runners, a hosted provider or GitHub. You change a
+    job's runner size there too. A change applies from the next job.
   </Fragment>
 
   <div class="sol-card" slot="visual">
@@ -90,7 +90,6 @@ const check = "M5 12l5 5 9-10";
     uses: relayrunner/actions/.github/workflows/relay.yml@v1
     with:
       <mark>os: linux</mark>
-      <mark>cpus: 4</mark>
   test:
     needs: relay-test
     runs-on: {"${{ needs.relay-test.outputs.runner }}"}</pre>
@@ -98,8 +97,12 @@ const check = "M5 12l5 5 9-10";
     <div class="feature-copy">
       <h2>Each job runs on the first free runner its relay allows.</h2>
       <p class="body">
-        The relay answers in about a second, needs no runner and uses no minutes. Say what the job
-        needs, like Linux with 4 CPUs, and each runner in your order offers its smallest one that fits.
+        The relay answers in about a second, needs no runner and uses no minutes. It says what the
+        job needs, like Linux, and any runner in your order can take it.
+      </p>
+      <p class="body">
+        The job's size stays out of the file. Move it from 2 vCPU to 4 on the Router page, and the
+        next run gets the bigger runner on whichever provider takes it.
       </p>
       <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
     </div>
@@ -142,6 +145,13 @@ const check = "M5 12l5 5 9-10";
           The relay fails right away with one line that says why each provider couldn't take it, and
           your pull request's checks show the same reason. Keep GitHub-hosted at the end of your order
           and a job always has somewhere to go.
+        </p>
+      </details>
+      <details>
+        <summary>Can I change a job's runner size without a commit?</summary>
+        <p>
+          Yes. Pick the job's size on the Router page, such as 4 vCPU instead of 2, and it applies from
+          the next run. See <a href="/docs/reference/relay-inputs#auto-sizes">auto sizes</a>.
         </p>
       </details>
       <details>

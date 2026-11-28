@@ -7,7 +7,7 @@ RelayRunner sits between your workflows and the places they can run. These are t
 
 ## Your workflows don't change
 
-Opting a job in is one change: a relay job and a `runs-on`. After that, everything else happens in the dashboard or the CLI: changing the runner order, adding a machine, pausing one, switching providers. None of it needs a commit.
+Opting a job in is one change: a relay job and a `runs-on`. After that, everything else happens in the dashboard or the CLI: changing the runner order, giving a job a bigger runner, adding a machine, pausing one, switching providers. None of it needs a commit.
 
 ## Hosted runners stay the fallback
 
