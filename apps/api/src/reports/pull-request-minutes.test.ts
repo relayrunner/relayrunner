@@ -103,6 +103,22 @@ describe("pull request minutes", () => {
       for (const job of jobs) await db.insert(schema.jobTiming).values(job);
     }
 
+    // #12 has had a pull_request delivery; #13 hasn't.
+    const opened = Date.now() - 7 * HOUR_MS;
+    const merged = Date.now() - 2 * HOUR_MS;
+    await db.insert(schema.pullRequest).values({
+      repositoryId: REPO_ID,
+      number: 12,
+      installationId: INSTALLATION,
+      repositoryFullName: "acme/app",
+      openedAt: new Date(opened),
+      mergedAt: new Date(merged),
+      closedAt: new Date(merged),
+      githubUpdatedAt: new Date(merged),
+    });
+    // Each one's first job: #12's is the branch push before it opened.
+    const firstRun = (index: number) => runs[index]!.jobs[0]!.startedAt!.getTime();
+
     const now = Date.now();
     const report = await pullRequestReport(db, INSTALLATION, { from: now - DAY_MS, to: now }, now);
 
@@ -116,6 +132,10 @@ describe("pull request minutes", () => {
           rerunMinutes: 3,
           cost: 0.09,
           commits: 2,
+          openedAt: opened,
+          mergedAt: merged,
+          closedAt: merged,
+          firstRunAt: firstRun(2),
         },
         {
           repository: "acme/app",
@@ -125,6 +145,10 @@ describe("pull request minutes", () => {
           rerunMinutes: 0,
           cost: 0.006,
           commits: 1,
+          openedAt: null,
+          mergedAt: null,
+          closedAt: null,
+          firstRunAt: firstRun(3),
         },
       ],
       outside: [{ repository: "acme/app", minutes: 6.5 }],

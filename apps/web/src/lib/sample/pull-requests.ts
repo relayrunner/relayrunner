@@ -29,6 +29,9 @@ export function samplePullRequests({ from, to }: { from: number; to: number }): 
     const commits = 1 + Math.floor(random() ** 2 * 9);
     const perCommit = repository === "acme/site" ? 3 + random() * 4 : 12 + random() * 30;
     const minutes = tenths(commits * perCommit);
+    // Newer pull requests have higher numbers; most of the older ones have merged.
+    const openedAt = from + ((count - i) / count) * (to - from) - random() * DAY_MS;
+    const mergedAt = random() < 0.7 ? Math.min(to, openedAt + random() * 3 * DAY_MS) : null;
     return {
       repository,
       number: 900 - i,
@@ -37,6 +40,10 @@ export function samplePullRequests({ from, to }: { from: number; to: number }): 
       rerunMinutes: random() < 0.3 ? tenths(minutes * random() * 0.4) : 0,
       cost: Math.round(Math.ceil(minutes * 1.15) * 6) / 1000,
       commits,
+      openedAt,
+      mergedAt,
+      closedAt: mergedAt,
+      firstRunAt: Math.max(from, openedAt),
     };
   }).sort((a, b) => b.minutes - a.minutes);
   return {

@@ -1,4 +1,4 @@
-import { GitPullRequestIcon } from "lucide-react";
+import { GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestIcon } from "lucide-react";
 import { useMemo } from "react";
 import { TipRow } from "@/components/chart-parts";
 import { Count } from "@/components/count";
@@ -10,25 +10,37 @@ import { RepoSelect, repositoriesOf } from "@/components/repo-select";
 import { minutesText } from "@/lib/job-times";
 import {
   bucketPosition,
+  dateOf,
   minuteBuckets,
   PULL_REQUEST_RANGES,
   type PullRequestMinutes,
   type PullRequestReport,
+  stateOf,
   summarize,
 } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
-import type { ExportColumn } from "@/lib/table-export";
+import { type Sort, sortOf, sortParam } from "@/lib/search-params";
+import { isoTime, type ExportColumn } from "@/lib/table-export";
 import type { TimeRange } from "@/lib/time-range";
+import { formatDate, shortDate } from "@/lib/time-zone";
 import { money } from "@/lib/usage";
 import { percent } from "@/lib/utils";
 
 const minutesOf = (minutes: number) => minutesText(minutes * 60_000);
 const min = (minutes: number) => `${minutesOf(minutes)} min`;
 
+// The table's columns `?sort=` can name, and its sort without one: the most minutes first.
+const SORTABLE = ["number", "date", "minutes", "rerunMinutes", "commits", "cost"];
+const DEFAULT_SORT: Sort = { id: "minutes", desc: true };
+
+/** The table's sort from its `?sort=`. */
+export const pullRequestSortOf = (value: unknown) => sortOf(value, SORTABLE);
+
 /**
  * Usage › Pull requests: CI minutes per pull request across its pushes and re-runs, the typical
  * pull request over the range, and each one's estimated spend. `repository` narrows it all to one
- * repo ("all" for every one), worked out here since the report holds the whole range.
+ * repo ("all" for every one), worked out here since the report holds the whole range. `sort` is
+ * the table's, kept in the URL (undefined at the default, the most minutes first).
  */
 export function PullRequestUsage({
   report,
@@ -36,12 +48,16 @@ export function PullRequestUsage({
   onRange,
   repository,
   onRepository,
+  sort = DEFAULT_SORT,
+  onSort,
 }: {
   report: PullRequestReport;
   range: TimeRange;
   onRange: (range: TimeRange) => void;
   repository: string;
   onRepository: (repository: string) => void;
+  sort?: Sort;
+  onSort: (sort: string | undefined) => void;
 }) {
   const repositories = useMemo(
     () => repositoriesOf([...report.pullRequests, ...report.outside]),
@@ -55,9 +71,9 @@ export function PullRequestUsage({
     return {
       pullRequests,
       summary: summarize(pullRequests, report.outside.filter(keep)),
-      table: { most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)) },
+      table: { most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)), showRepository },
     };
-  }, [report, repository]);
+  }, [report, repository, showRepository]);
 
   return (
     <div className="grid gap-6">
@@ -95,10 +111,14 @@ export function PullRequestUsage({
 
           <TableContext value={table}>
             <DataTable
-              columns={showRepository ? columns : withoutRepository}
+              columns={columns}
               data={pullRequests}
               getRowId={(pr) => `${pr.repository}#${pr.number}`}
-              initialSorting={[{ id: "minutes", desc: true }]}
+              sorting={[sort]}
+              // Sorting a column a third time goes back to the default, rather than to no sort.
+              onSortingChange={([next = DEFAULT_SORT]) =>
+                onSort(next.id === DEFAULT_SORT.id && next.desc ? undefined : sortParam(next))
+              }
               exportAs={{
                 name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
                 columns: EXPORT_COLUMNS,
@@ -111,8 +131,8 @@ export function PullRequestUsage({
       <p className="max-w-[62ch] text-sm text-muted-foreground">
         Minutes are the time each pull request's jobs ran, over every push and re-run in the range.
         Pushes to a branch before its pull request opened count toward it. Typical is the median
-        pull request. Spend uses the same per-minute estimates as the Overview, after GitHub rounds
-        each job up to a whole minute.
+        pull request. Date is when it merged, or opened if it hasn't merged. Spend uses the same
+        per-minute estimates as the Overview, after GitHub rounds each job up to a whole minute.
       </p>
     </div>
   );
@@ -169,7 +189,10 @@ function Spread({
 }
 
 // The most minutes any pull request in the table used, for the bars beside each one's minutes.
-const [TableContext, useTableContext] = createCellContext<{ most: number }>("Pull requests");
+const [TableContext, useTableContext] = createCellContext<{
+  most: number;
+  showRepository: boolean;
+}>("Pull requests");
 
 /** A pull request's minutes as a bar against the most, its re-run part in a lighter shade. */
 function MinutesBar({ pr }: { pr: PullRequestMinutes }) {
@@ -195,39 +218,74 @@ const EXPORT_COLUMNS: ExportColumn<PullRequestMinutes>[] = [
   { header: "Number", value: (pr) => pr.number },
   { header: "Title", value: (pr) => pr.title },
   { header: "URL", value: (pr) => pullRequestUrl(pr.repository, pr.number) },
+  { header: "Opened", value: (pr) => isoTime(pr.openedAt) },
+  { header: "Merged", value: (pr) => isoTime(pr.mergedAt) },
   { header: "Minutes", value: (pr) => pr.minutes },
   { header: "Re-run minutes", value: (pr) => pr.rerunMinutes },
   { header: "Commits", value: (pr) => pr.commits },
   { header: "Est. spend (USD)", value: (pr) => pr.cost },
 ];
 
+const STATE_ICON = {
+  open: GitPullRequestIcon,
+  merged: GitMergeIcon,
+  closed: GitPullRequestClosedIcon,
+};
+
+// What the Date column shows for a pull request, for its hover text.
+function dateTitle(pr: PullRequestMinutes) {
+  if (pr.mergedAt !== null) return `Merged ${formatDate(pr.mergedAt)}`;
+  if (pr.openedAt !== null) return `Opened ${formatDate(pr.openedAt)}`;
+  return `First CI run ${formatDate(pr.firstRunAt)}`;
+}
+
+/** A pull request's title over two lines at most, with its number (and repo) under it. */
+function PullRequestCell({ pr }: { pr: PullRequestMinutes }) {
+  const { showRepository } = useTableContext();
+  const Icon = STATE_ICON[stateOf(pr)];
+  return (
+    <a
+      href={pullRequestUrl(pr.repository, pr.number)}
+      target="_blank"
+      rel="noreferrer"
+      title="Open the pull request on GitHub"
+      className="group flex min-w-0 items-start gap-1.5"
+    >
+      <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+      <span className="grid min-w-0">
+        {pr.title && (
+          <span className="line-clamp-2 font-medium underline-offset-4 group-hover:underline">
+            {pr.title}
+          </span>
+        )}
+        <span className="truncate text-xs text-muted-foreground">
+          #{pr.number}
+          {showRepository && <span className="font-mono"> · {pr.repository}</span>}
+        </span>
+      </span>
+    </a>
+  );
+}
+
 const column = dataTableColumns<PullRequestMinutes>();
 const columns = column.columns([
-  column.accessor((pr) => pr.title ?? `#${pr.number}`, {
-    id: "pullRequest",
+  column.accessor("number", {
+    id: "number",
     header: "Pull request",
-    sortFn: "text",
-    // Takes the room the numbers leave, so a long title truncates instead of widening the table.
+    sortFn: "basic",
+    sortDescFirst: true,
+    // Takes the room the numbers leave, so a long title wraps or truncates instead of widening
+    // the table.
     meta: { className: "w-full max-w-0" },
-    cell: ({ row: { original: pr } }) => (
-      <a
-        href={pullRequestUrl(pr.repository, pr.number)}
-        target="_blank"
-        rel="noreferrer"
-        title="Open the pull request on GitHub"
-        className="flex min-w-0 items-center gap-1.5 underline-offset-4 hover:underline"
-      >
-        <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        {pr.title && <span className="truncate font-medium">{pr.title}</span>}
-        <span className="shrink-0 text-muted-foreground">#{pr.number}</span>
-      </a>
-    ),
+    cell: ({ row: { original: pr } }) => <PullRequestCell pr={pr} />,
   }),
-  column.accessor("repository", {
-    id: "repository",
-    header: "Repo",
-    sortFn: "text",
-    meta: { className: "font-mono text-muted-foreground", hideOnPhone: true },
+  column.accessor(dateOf, {
+    id: "date",
+    header: "Date",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { ...NUM, info: "When it merged, or opened if it hasn't merged." },
+    cell: ({ row: { original: pr } }) => <span title={dateTitle(pr)}>{shortDate(dateOf(pr))}</span>,
   }),
   column.accessor("minutes", {
     header: "Minutes",
@@ -237,7 +295,11 @@ const columns = column.columns([
     cell: ({ row: { original: pr } }) => (
       <span className="flex items-center justify-end gap-2">
         <MinutesBar pr={pr} />
-        {minutesOf(pr.minutes)}
+        <span className="grid">
+          {minutesOf(pr.minutes)}
+          {/* Phones leave out the spend column, so it shows here. */}
+          <span className="text-xs text-muted-foreground sm:hidden">{money(pr.cost)}</span>
+        </span>
       </span>
     ),
   }),
@@ -259,8 +321,7 @@ const columns = column.columns([
     header: "Est. spend",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ getValue }) => money(getValue()),
   }),
 ]);
-const withoutRepository = columns.filter((c) => c.id !== "repository");

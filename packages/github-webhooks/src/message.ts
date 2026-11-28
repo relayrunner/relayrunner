@@ -82,6 +82,11 @@ export interface PullRequest {
   // For an `edited` action, the fields that changed, as GitHub names them ("title", "body").
   // Null for other actions.
   changed: string[] | null;
+  // When it opened, merged and closed, and GitHub's updated_at, as ISO strings (null when not).
+  openedAt: string | null;
+  mergedAt: string | null;
+  closedAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface InstallationRepo {
@@ -165,9 +170,10 @@ export type WebhookMessage =
   // has no installation. The only action is `revoked`.
   | (Base & { event: "github_app_authorization"; senderId: number });
 
-// The pull_request actions that give a PR a new title, description or head commit. `edited` counts
-// only when the title or description changed (not the base branch).
-const PULL_REQUEST_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited"]);
+// The pull_request actions that give a PR a new title, description or head commit, and `closed`,
+// which says whether and when it merged. `edited` counts only when the title or description
+// changed (not the base branch).
+const PULL_REQUEST_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited", "closed"]);
 
 // The check_suite actions that ask the App to run its checks. `completed` is only a report.
 const CHECK_SUITE_ACTIONS = new Set(["requested", "rerequested"]);
@@ -343,6 +349,10 @@ export function toWebhookMessage(
           body: typeof pr.body === "string" ? pr.body : "",
           headSha: pr.head.sha,
           changed,
+          openedAt: stringOrNull(pr.created_at),
+          mergedAt: stringOrNull(pr.merged_at),
+          closedAt: stringOrNull(pr.closed_at),
+          updatedAt: stringOrNull(pr.updated_at),
         },
       };
     }

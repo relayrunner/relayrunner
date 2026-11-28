@@ -1,7 +1,7 @@
 // A page's range and filters live in its URL, so a view can be linked to. Each is left out of the
 // URL while it's at its default, so a plain link shows the page as it always has.
 import { useNavigate } from "@tanstack/react-router";
-import { type RangeOptions, rangeOrDaysParam, type TimeRange } from "@/lib/time-range";
+import { type RangeOptions, rangeOrDaysParam, type TimeRange } from "./time-range";
 
 /** `?days=` when it's one of the page's ranges other than its default. */
 export function rangeParam(value: unknown, ranges: readonly number[], fallback: number) {
@@ -32,6 +32,18 @@ export function useSetSearch<S>() {
       // The page stays where it is: only part of it changes.
       resetScroll: false,
     });
+}
+
+/** One column a table sorts by, as `?sort=`: its id, with `-asc` when it sorts ascending. */
+export type Sort = { id: string; desc: boolean };
+
+export const sortParam = ({ id, desc }: Sort) => (desc ? id : `${id}-asc`);
+
+/** The sort a `?sort=` names, when it's one of the table's `ids`. */
+export function sortOf(value: unknown, ids: readonly string[]): Sort | undefined {
+  if (typeof value !== "string") return undefined;
+  const id = value.replace(/-asc$/, "");
+  return ids.includes(id) ? { id, desc: id === value } : undefined;
 }
 
 /** The value to put in the URL: nothing for the default. */

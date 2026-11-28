@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   bucketPosition,
+  dateOf,
   minuteBuckets,
   type PullRequestMinutes,
   spreadOf,
+  stateOf,
   summarize,
 } from "./pull-requests";
 
@@ -15,6 +17,10 @@ const pr = (minutes: number, rerunMinutes = 0): PullRequestMinutes => ({
   rerunMinutes,
   cost: minutes * 0.006,
   commits: 1,
+  openedAt: null,
+  mergedAt: null,
+  closedAt: null,
+  firstRunAt: 100,
 });
 
 describe("pull request summary", () => {
@@ -60,5 +66,19 @@ describe("pull request minute bars", () => {
     expect(bucketPosition(buckets, 15)).toBe(1.5);
     expect(bucketPosition(buckets, 500)).toBe(7.5);
     expect(minuteBuckets([])).toEqual([]);
+  });
+});
+
+describe("pull request date", () => {
+  test("is when it merged, else opened, else its first run", () => {
+    expect(dateOf(pr(1))).toBe(100);
+    expect(dateOf({ ...pr(1), openedAt: 50 })).toBe(50);
+    expect(dateOf({ ...pr(1), openedAt: 50, mergedAt: 300, closedAt: 300 })).toBe(300);
+  });
+
+  test("says whether it merged or closed", () => {
+    expect(stateOf(pr(1))).toBe("open");
+    expect(stateOf({ ...pr(1), mergedAt: 3, closedAt: 3 })).toBe("merged");
+    expect(stateOf({ ...pr(1), closedAt: 3 })).toBe("closed");
   });
 });

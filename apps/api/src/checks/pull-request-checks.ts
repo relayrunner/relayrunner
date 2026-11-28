@@ -118,7 +118,8 @@ export function pullRequestCheckRuns(
 /** Posts the check runs for a pull request that opened, was edited or got new commits. */
 export async function checkPullRequest(env: Env, message: PullRequestMessage) {
   const { installationId } = message;
-  if (!installationId) return;
+  // A closed pull request has nothing left to check.
+  if (!installationId || message.action === "closed") return;
   const repo = message.repository.fullName;
   const token = await appInstallationToken(env, installationId);
   const config = await loadRepoConfig(token, repo);

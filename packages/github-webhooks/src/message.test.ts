@@ -212,7 +212,36 @@ describe("toWebhookMessage", () => {
         receivedAt: "t",
         event: "pull_request",
         repository: { id: 1, fullName: "acme/app" },
-        pullRequest: { number: 3, title: "feat: x", body: "long", headSha: "abc", changed: null },
+        pullRequest: {
+          number: 3,
+          title: "feat: x",
+          body: "long",
+          headSha: "abc",
+          changed: null,
+          openedAt: null,
+          mergedAt: null,
+          closedAt: null,
+          updatedAt: null,
+        },
+      });
+    });
+
+    test("keeps when it opened, merged and closed", () => {
+      const at = (day: number) => `2026-11-${day}T00:00:00Z`;
+      const message = toWebhookMessage("pull_request", "d", {
+        ...payload("closed"),
+        pull_request: {
+          number: 3,
+          title: "feat: x",
+          head: { sha: "abc" },
+          created_at: at(20),
+          merged_at: at(22),
+          closed_at: at(22),
+          updated_at: at(23),
+        },
+      });
+      expect(message).toMatchObject({
+        pullRequest: { openedAt: at(20), mergedAt: at(22), closedAt: at(22), updatedAt: at(23) },
       });
     });
 
@@ -224,8 +253,7 @@ describe("toWebhookMessage", () => {
       expect(message).toMatchObject({ pullRequest: { body: "" } });
     });
 
-    test("drops actions that don't change the title, description or head commit", () => {
-      expect(toWebhookMessage("pull_request", "d", payload("closed"))).toBeNull();
+    test("drops actions that don't change the title, description, head commit or state", () => {
       expect(toWebhookMessage("pull_request", "d", payload("labeled"))).toBeNull();
       expect(
         toWebhookMessage("pull_request", "d", payload("edited", { changes: { base: {} } })),

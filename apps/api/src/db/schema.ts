@@ -796,6 +796,31 @@ export const workflowRun = sqliteTable(
   ],
 );
 
+// When each pull request opened, merged and closed, from the main App's pull_request deliveries,
+// for the Usage page's Pull requests table. Pull requests with no delivery since this table began
+// have no row.
+export const pullRequest = sqliteTable(
+  "pull_request",
+  {
+    repositoryId: integer("repository_id").notNull(),
+    number: integer("number").notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    repositoryFullName: text("repository_full_name").notNull(),
+    openedAt: integer("opened_at", { mode: "timestamp_ms" }),
+    mergedAt: integer("merged_at", { mode: "timestamp_ms" }),
+    closedAt: integer("closed_at", { mode: "timestamp_ms" }),
+    // The pull request's updated_at on GitHub. Deliveries are unordered, so a row only takes a newer one.
+    githubUpdatedAt: integer("github_updated_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.repositoryId, table.number] }),
+    index("pull_request_installation_idx").on(table.installationId),
+  ],
+);
+
 // What the Signals page reports (src/reports/signals.ts), summed per UTC day, repo and subject (a workflow,
 // or a workflow's job), so its 90-day range reads a few rows per day instead of every run. The
 // hourly cron recomputes each active installation's current day from job_timing and

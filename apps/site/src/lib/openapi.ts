@@ -431,7 +431,7 @@ export const openApi = {
     "/usage/pull-requests": read(
       "getPullRequestMinutes",
       "Get minutes per pull request",
-      "CI minutes per pull request, across its pushes and re-runs, with re-run minutes, estimated cost and commits, the most minutes first.",
+      "CI minutes per pull request, across its pushes and re-runs, with re-run minutes, estimated cost, commits and when each opened and merged, the most minutes first.",
       object("Minutes per pull request.", { pullRequests: list, outside: list }),
       [daysQuery(RAW_RETENTION_DAYS, 30)],
     ),

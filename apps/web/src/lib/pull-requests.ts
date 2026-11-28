@@ -12,6 +12,12 @@ export type PullRequestMinutes = {
   rerunMinutes: number;
   cost: number;
   commits: number;
+  /** When it opened, merged and closed, epoch ms. Null when not, or not known. */
+  openedAt: number | null;
+  mergedAt: number | null;
+  closedAt: number | null;
+  /** When its first job in the range started, epoch ms. */
+  firstRunAt: number;
 };
 
 export type PullRequestReport = {
@@ -29,6 +35,16 @@ export const PULL_REQUEST_RANGES: RangeOptions = {
 export function getPullRequests(range: TimeRange) {
   return api<PullRequestReport>(`/usage/pull-requests?${rangeQuery(range)}`);
 }
+
+/**
+ * The date the table shows and sorts by: when it merged, or when it opened while it hasn't. For a
+ * pull request RelayRunner hasn't seen open, its first job in the range stands in.
+ */
+export const dateOf = (pr: PullRequestMinutes) => pr.mergedAt ?? pr.openedAt ?? pr.firstRunAt;
+
+/** Merged, closed without merging, or open (or not known: shown as open). */
+export const stateOf = (pr: PullRequestMinutes) =>
+  pr.mergedAt !== null ? "merged" : pr.closedAt !== null ? "closed" : "open";
 
 const total = (values: number[]) => values.reduce((sum, value) => sum + value, 0);
 

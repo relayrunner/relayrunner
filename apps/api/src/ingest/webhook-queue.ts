@@ -33,6 +33,7 @@ import { recordJobTiming, withTimeout } from "./job-timings.ts";
 import { lintTarget, startLintChecks } from "../checks/lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { containerRunnerAllowed, usesContainerRunner } from "../routing/container-runner.ts";
+import { recordPullRequest } from "./pull-requests.ts";
 import { checkPullRequest } from "../checks/pull-request-checks.ts";
 import {
   recordRepositoryEvent,
@@ -317,8 +318,12 @@ export async function processWebhook(
       return { handler: "authorization_revoked" };
     }
     case "pull_request":
-      // Throws to retry: a check run that never posts leaves the PR without its check.
-      await checkPullRequest(env, message);
+      // When it opened and merged, for the Usage page's Pull requests table. Throws to retry: a
+      // check run that never posts leaves the PR without its check.
+      await Promise.all([
+        recordPullRequest(createDb(env.DB), message),
+        checkPullRequest(env, message),
+      ]);
       return { handler: "pull_request" };
   }
   return { handler: "ignored" };

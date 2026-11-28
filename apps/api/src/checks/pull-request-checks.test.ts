@@ -85,7 +85,17 @@ describe("prDescriptionCheckRun", () => {
 
 describe("pullRequestCheckRuns", () => {
   const both = config("checks:\n  pr-title: true\n  pr-description: true\n");
-  const pr = { number: 3, title: "feat: x", body: "Adds x.", headSha: "abc", changed: null };
+  const pr = {
+    number: 3,
+    title: "feat: x",
+    body: "Adds x.",
+    headSha: "abc",
+    changed: null,
+    openedAt: null,
+    mergedAt: null,
+    closedAt: null,
+    updatedAt: null,
+  };
   const names = (checks: { name: string }[]) => checks.map((check) => check.name);
 
   test("posts nothing without a config", () => {

@@ -122,6 +122,8 @@ export function DataTable<TData extends RowData>({
   getRowId,
   search = "",
   initialSorting = [],
+  sorting: shownSorting,
+  onSortingChange,
   caption,
   empty = "Nothing to show.",
   rowHeight = 45,
@@ -139,6 +141,9 @@ export function DataTable<TData extends RowData>({
   /** Keeps rows where any searchable column contains this text. */
   search?: string;
   initialSorting?: SortingState;
+  /** The sort, for a page that keeps it itself (in its URL), with what to call when it changes. */
+  sorting?: SortingState;
+  onSortingChange?: (sorting: SortingState) => void;
   caption?: ReactNode;
   empty?: ReactNode;
   /** A typical row's height in pixels, used to place rows before they're measured. */
@@ -164,7 +169,8 @@ export function DataTable<TData extends RowData>({
    */
   exportAs?: { name: string; columns: ExportColumn<TData>[] };
 }) {
-  const [sorting, setSorting] = useState(initialSorting);
+  const [ownSorting, setOwnSorting] = useState(initialSorting);
+  const sorting = shownSorting ?? ownSorting;
   const table = useTable({
     features,
     columns,
@@ -172,7 +178,11 @@ export function DataTable<TData extends RowData>({
     getRowId,
     getSubRows,
     state: { sorting, globalFilter: search, ...(expanded && { expanded }) },
-    onSortingChange: setSorting,
+    onSortingChange: (change) => {
+      const next = typeof change === "function" ? change(sorting) : change;
+      if (onSortingChange) onSortingChange(next);
+      else setOwnSorting(next);
+    },
     onExpandedChange,
     globalFilterFn: "includesString",
     // Missing values (no runs yet, no price) sort after real ones either way.
