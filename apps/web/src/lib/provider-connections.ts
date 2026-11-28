@@ -22,8 +22,16 @@ export type TestResult = {
 };
 
 export function listConnections() {
-  return api<{ connections: ProviderConnection[] }>("/providers/connections");
+  return api<{
+    connections: ProviderConnection[];
+    /** Providers that connect in one trip through their own sign-in, besides a pasted token. */
+    signIn?: BillingProviderId[];
+  }>("/providers/connections");
 }
+
+/** The full-page trip to Groundbox's sign-in ("Connect with Groundbox"), coming back to `next`. */
+export const groundboxConnectUrl = (next: string) =>
+  `/api/providers/groundbox/connect?${new URLSearchParams({ next })}`;
 
 export function connectProvider(provider: string, token: string, options: Record<string, string>) {
   return api<ProviderConnection>(`/providers/${provider}/connection`, {

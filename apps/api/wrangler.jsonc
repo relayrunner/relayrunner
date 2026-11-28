@@ -72,6 +72,10 @@
     // The "RelayRunner" OAuth app on Boat (boat app list), for "Connect Boat" in Evaluate. Its redirect
     // URI is <BETTER_AUTH_URL>/api/providers/boat/callback. Empty: Boat connects by pasted key only.
     "BOAT_OAUTH_CLIENT_ID": "boatapp_MYFNPQAP4Ktm3PFehqVWfQXH",
+    // The "RelayRunner" partner app on Groundbox (gbc_..., from Groundbox), for "Connect with
+    // Groundbox" in Settings › Providers. Its redirect URI is
+    // <BETTER_AUTH_URL>/api/providers/groundbox/callback. Empty: Groundbox connects by pasted key only.
+    "GROUNDBOX_OAUTH_CLIENT_ID": "gbc_oF6Kj06yHehfCxVC3fN7aXyM",
     // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
     // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"

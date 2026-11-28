@@ -121,6 +121,10 @@ export interface Env extends AccessEnv {
   // with a pasted API key, as before.
   BOAT_OAUTH_CLIENT_ID?: string;
   BOAT_OAUTH_CLIENT_SECRET?: SecretsStoreSecret;
+  // The "RelayRunner" partner app on Groundbox (src/providers/groundbox-oauth.ts): connecting
+  // Groundbox in one click. Groundbox's apps are public clients, so there's no secret. Without the
+  // id, Groundbox connects only with a pasted API key, as before.
+  GROUNDBOX_OAUTH_CLIENT_ID?: string;
   // Logging (src/log.ts). The version every line carries, and optional overrides: LOG_LEVEL
   // (debug, info, warn or error; info by default), LOG_FORMAT (json, or pretty for a terminal) and
   // LOG_ENV (production by default).

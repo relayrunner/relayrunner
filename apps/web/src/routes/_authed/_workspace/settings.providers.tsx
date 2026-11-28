@@ -7,7 +7,7 @@ import {
   isFreeMinutesProvider,
   RUNNER_LABELS,
 } from "@relayrunner/runner-order";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { FreeMinutesMeter } from "@/components/free-minutes-meter";
@@ -35,6 +35,7 @@ import {
 import { providerInfo } from "@/lib/provider-catalog";
 import {
   connectProvider,
+  groundboxConnectUrl,
   listConnections,
   type ProviderConnection,
   removeConnection,
@@ -46,19 +47,19 @@ import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
   loader: async () => {
-    const [{ connections }, freeMinutes] = await Promise.all([
+    const [{ connections, signIn }, freeMinutes] = await Promise.all([
       listConnections(),
       // Only for the Blacksmith and Groundbox cards' free-minutes lines, so the page loads without.
       getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
     ]);
-    return { connections, freeMinutes };
+    return { connections, signIn: signIn ?? [], freeMinutes };
   },
   component: ProviderSettingsPage,
 });
 
 function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
-  const { connections, freeMinutes } = Route.useLoaderData();
+  const { connections, signIn, freeMinutes } = Route.useLoaderData();
   const manager = canManage(current.role);
   const organization = current.installations[0]?.accountLogin ?? null;
 
@@ -75,6 +76,7 @@ function ProviderSettingsPage() {
               first={connection}
               manager={manager}
               organization={organization}
+              signIn={signIn.includes(connection.provider)}
               freeMinutes={
                 isFreeMinutesProvider(connection.provider)
                   ? (freeMinutes[connection.provider] ?? null)
@@ -88,23 +90,36 @@ function ProviderSettingsPage() {
   );
 }
 
+/** What "Connect with Groundbox" came back with (?groundbox=<outcome>), in words. */
+const SIGN_IN_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: "Connected. The first sync starts in a moment." },
+  cancelled: { ok: false, text: "The connection was cancelled in Groundbox. Nothing changed." },
+  failed: { ok: false, text: "Groundbox couldn't be connected. Try again, or paste an API key." },
+};
+
 function ProviderCard({
   first,
   manager,
   organization,
+  signIn,
   freeMinutes,
 }: {
   first: ProviderConnection;
   manager: boolean;
   /** The GitHub organization this workspace is installed on. */
   organization: string | null;
+  /** The provider connects through its own sign-in here ("Connect with Groundbox"). */
+  signIn: boolean;
   /** Blacksmith's and Groundbox's cards only: this month's free minutes, null when unread. */
   freeMinutes?: FreeMinutesCount | null;
 }) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
   const [pending, setPending] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const outcome: Record<string, string | undefined> = useSearch({ strict: false });
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(
+    () => SIGN_IN_OUTCOMES[outcome[first.provider] ?? ""] ?? null,
+  );
   const { provider, connected } = connection;
   const { name } = providerInfo(provider);
   const billing = BILLING_PROVIDERS[provider];
@@ -187,6 +202,23 @@ function ProviderCard({
             organization={billing.githubOrganization ? organization : null}
           />
         )}
+        {manager && signIn && (!connected || replacing) && (
+          <div className="grid gap-2">
+            <div>
+              <Button size="sm" asChild>
+                <a href={groundboxConnectUrl(window.location.pathname)}>
+                  Connect with {name}
+                  <ArrowUpRightIcon aria-hidden className="size-3.5" />
+                </a>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              You sign in to {name} (or create an account), pick the team and approve. {name} gives
+              this workspace a key with the scopes below, which you can revoke in {name} any time.
+              Or paste an API key you made yourself.
+            </p>
+          </div>
+        )}
         {manager && (!connected || replacing) && (
           <TokenForm
             billing={billing}
@@ -239,7 +271,9 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
   const { accountName, tokenHint, lastSyncedAt, failure, error, recent } = connection;
   const facts = [
     accountName,
-    tokenHint && `Token ending ${tokenHint}`,
+    // A key the provider's own sign-in made has no characters to show, only how it was made.
+    tokenHint &&
+      (tokenHint.endsWith("sign-in") ? `Connected with ${tokenHint}` : `Token ending ${tokenHint}`),
     lastSyncedAt ? `Synced ${timeAgo(lastSyncedAt)}` : "Waiting for the first sync",
   ].filter(Boolean);
   return (

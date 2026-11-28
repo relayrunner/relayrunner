@@ -55,12 +55,14 @@ export function sampleRouterFreeMinutes(provider: FreeMinutesProvider): FreeMinu
   return sampleFreeMinutes(provider, sample !== `no-${provider}`);
 }
 
-/** Depot connected and synced, plus Boat with `?sample=boat`. */
+/** Depot connected and synced, plus Boat with `?sample=boat`. Groundbox connects through its sign-in. */
 export function sampleRouterConnections() {
   const { connections } = sampleConnections();
-  if (sampleParam() !== "boat") return { connections };
+  const signIn = ["groundbox" as const];
+  if (sampleParam() !== "boat") return { connections, signIn };
   return {
     connections: connections.map((c) => (c.provider === "boat" ? { ...c, connected: true } : c)),
+    signIn,
   };
 }
 

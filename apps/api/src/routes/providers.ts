@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { blacksmithMinutes } from "../providers/blacksmith-minutes.ts";
-import { createDb } from "../db/index.ts";
+import { createDb, schema } from "../db/index.ts";
 import { groundboxMinutesView, readGroundboxAccount } from "../providers/groundbox-account.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
@@ -27,6 +27,16 @@ import { dashboardPath } from "../github/github.ts";
 import { log } from "../log.ts";
 import { authorizeUrl, boatOAuthConfigured, exchangeCode, pkce } from "../providers/boat-oauth.ts";
 import { boatReadiness, saveBoatGrant } from "../providers/boat-connect.ts";
+import {
+  GROUNDBOX_SIGN_IN_HINT,
+  authorizeUrl as groundboxAuthorizeUrl,
+  exchangeCode as groundboxExchangeCode,
+  groundboxOAuthConfigured,
+  revokeKey,
+  revokeSignInKey,
+  signInKey,
+} from "../providers/groundbox-oauth.ts";
+import { and, eq } from "drizzle-orm";
 import { AppError } from "@relayrunner/errors";
 
 const ConnectBody = z.object({
@@ -50,11 +60,31 @@ const BoatOAuthCookie = z.object({
   next: z.string(),
 });
 
-/** `next` with ?boat=<outcome> added, for the page to say what happened. */
-function landing(next: string, outcome: "connected" | "cancelled" | "failed") {
+// "Connect with Groundbox" (src/providers/groundbox-oauth.ts): the same trip as Boat's, with its own
+// cookie, landing on Settings › Providers by default.
+const GROUNDBOX_OAUTH_COOKIE = "rr_groundbox_oauth";
+const GROUNDBOX_OAUTH_PATH = "/api/providers/groundbox";
+const GROUNDBOX_LANDING = "/settings/providers";
+
+/** `next` with ?<provider>=<outcome> added, for the page to say what happened. */
+function landing(
+  next: string,
+  outcome: "connected" | "cancelled" | "failed",
+  provider: "boat" | "groundbox" = "boat",
+) {
   const url = new URL(next, "https://dashboard.invalid");
-  url.searchParams.set("boat", outcome);
+  url.searchParams.set(provider, outcome);
   return `${url.pathname}${url.search}`;
+}
+
+/** The OAuth trip's cookie, or null when it's missing or not ours. */
+function readTripCookie(raw: string | undefined) {
+  try {
+    const parsed = BoatOAuthCookie.safeParse(JSON.parse(raw ?? ""));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export const providerRoutes = new Hono<AppEnv>()
@@ -66,7 +96,11 @@ export const providerRoutes = new Hono<AppEnv>()
   // Settings → Providers: each provider a workspace can connect, and what it has synced. Any member
   // can look; only owners and admins change them. Tokens never come back.
   .get("/connections", requireUser, requireWorkspace, async (c) =>
-    c.json({ connections: await listConnections(c.var.db, c.var.workspace.id) }),
+    c.json({
+      connections: await listConnections(c.var.db, c.var.workspace.id),
+      // Providers that connect in one trip through their own sign-in here, besides a pasted token.
+      signIn: groundboxOAuthConfigured(c.env) ? ["groundbox"] : [],
+    }),
   )
   // The Router's Blacksmith step: the workspace's free Blacksmith minutes this month, counted from
   // its Blacksmith connection, or why they can't be.
@@ -144,6 +178,75 @@ export const providerRoutes = new Hono<AppEnv>()
     }
     return c.redirect(landing(next, "connected"));
   })
+  // Send the browser to Groundbox's sign-in, to come back to /groundbox/callback and then ?next=.
+  .get("/groundbox/connect", requireUser, requireWorkspace, requireManager, async (c) => {
+    if (!groundboxOAuthConfigured(c.env)) throw new AppError("PROVIDER_SIGN_IN_UNAVAILABLE");
+    // Groundbox comes back to the one registered host, so the cookie has to be set there.
+    const production = new URL(c.env.BETTER_AUTH_URL).origin;
+    const here = new URL(c.req.url);
+    if (here.origin !== production)
+      return c.redirect(`${production}${here.pathname}${here.search}`);
+    const { verifier, challenge, state } = await pkce();
+    const cookie = {
+      state,
+      verifier,
+      workspaceId: c.var.workspace.id,
+      next: dashboardPath(c.req.query("next")) ?? GROUNDBOX_LANDING,
+    } satisfies z.infer<typeof BoatOAuthCookie>;
+    setCookie(c, GROUNDBOX_OAUTH_COOKIE, JSON.stringify(cookie), {
+      path: GROUNDBOX_OAUTH_PATH,
+      httpOnly: true,
+      secure: here.protocol === "https:",
+      // Groundbox's redirect back is a top-level GET, which Lax cookies ride along on.
+      sameSite: "Lax",
+      maxAge: 15 * 60,
+    });
+    return c.redirect(groundboxAuthorizeUrl(c.env, { challenge, state }));
+  })
+  .get("/groundbox/callback", requireUser, requireWorkspace, requireManager, async (c) => {
+    const saved = readTripCookie(getCookie(c, GROUNDBOX_OAUTH_COOKIE));
+    deleteCookie(c, GROUNDBOX_OAUTH_COOKIE, { path: GROUNDBOX_OAUTH_PATH });
+    if (!saved) return c.redirect(landing(GROUNDBOX_LANDING, "failed", "groundbox"));
+    const { state, verifier, workspaceId, next } = saved;
+    if (c.req.query("error") === "access_denied")
+      return c.redirect(landing(next, "cancelled", "groundbox"));
+    const code = c.req.query("code");
+    // The state proves this browser started the trip; the workspace must still be the one it was
+    // for, so a switch meanwhile can't connect Groundbox to another.
+    if (!code || c.req.query("state") !== state || workspaceId !== c.var.workspace.id)
+      return c.redirect(landing(next, "failed", "groundbox"));
+    try {
+      const key = await groundboxExchangeCode(c.env, { code, verifier });
+      // A key an earlier "Connect with Groundbox" made, to end once the new one is saved.
+      const previous = await signInKey(c.env, c.var.db, workspaceId);
+      // Saved as a pasted key would be: one read proves it works, then the first sync is queued.
+      const result = await connectProvider(c.env, c.var.db, {
+        workspaceId,
+        provider: "groundbox",
+        token: key,
+        options: {},
+        userId: c.var.user!.id,
+      });
+      if (!result.ok) throw new Error(result.message);
+      await c.var.db
+        .update(schema.providerConnection)
+        .set({ tokenHint: GROUNDBOX_SIGN_IN_HINT })
+        .where(
+          and(
+            eq(schema.providerConnection.workspaceId, workspaceId),
+            eq(schema.providerConnection.provider, "groundbox"),
+          ),
+        );
+      if (previous && previous !== key) await revokeKey(previous);
+    } catch (error) {
+      log.warn("provider.groundbox_connect_failed", "groundbox oauth connect failed", {
+        workspaceId,
+        error,
+      });
+      return c.redirect(landing(next, "failed", "groundbox"));
+    }
+    return c.redirect(landing(next, "connected", "groundbox"));
+  })
   .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.
   .put("/:provider/connection", async (c) => {
@@ -178,6 +281,8 @@ export const providerRoutes = new Hono<AppEnv>()
   .delete("/:provider/connection", async (c) => {
     const provider = c.req.param("provider");
     if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
+    // A key "Connect with Groundbox" made ends at Groundbox too; a pasted one is left alone.
+    if (provider === "groundbox") await revokeSignInKey(c.env, c.var.db, c.var.workspace.id);
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
   .get("/", requireUser, requireWorkspace, async (c) => {
