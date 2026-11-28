@@ -53,6 +53,7 @@ const run: WorkflowRun = {
   headBranch: "main",
   headSha: "abc123",
   pullRequestNumber: 12,
+  headCommitMessage: null,
   status: "completed",
   conclusion: "success",
   htmlUrl: "https://github.com/acme/app/actions/runs/90",

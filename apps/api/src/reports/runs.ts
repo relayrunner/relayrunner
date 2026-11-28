@@ -13,7 +13,13 @@ import { purgeBefore } from "../ingest/purge.ts";
 import { environmentFor, nameMachines } from "./environments.ts";
 import { inWorkspace, PICK, RAN_ON_RUNNER } from "./job-sql.ts";
 import type { RouteWalk } from "@relayrunner/activity";
-import type { PerformanceReport } from "@relayrunner/api-types";
+import {
+  explicitAgent,
+  type PerformanceReport,
+  type RunAgent,
+  type RunFilters,
+  runAgent,
+} from "@relayrunner/api-types";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
@@ -34,6 +40,7 @@ import { hasTrend, lastDays, type ReportWindow, type Window, windowDays } from "
 import { parseDate } from "../ingest/jobs.ts";
 import { jobKey, picksForJobs } from "../routing/route-decisions.ts";
 import { workflowCosts } from "./workflow-compare.ts";
+import { runMatches } from "./run-filters.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -85,6 +92,10 @@ export function workflowRunValues(message: WorkflowRunMessage) {
     headBranch: run.headBranch,
     headSha: run.headSha,
     pullRequestNumber: run.pullRequestNumber,
+    agent: explicitAgent(
+      [run.startedBy?.login, run.triggeredBy?.login, run.actorLogin],
+      run.headCommitMessage,
+    ),
     status: run.status,
     conclusion: run.conclusion,
     htmlUrl: run.htmlUrl,
@@ -114,6 +125,8 @@ export interface Run {
   /** push, pull_request, schedule, ... Null when only job data is known. */
   event: string | null;
   actor: string | null;
+  /** The coding agent it came from, `likely` when only its branch name says so. */
+  agent: RunAgent | null;
   /** The commit the run is for. Null when only job data is known. */
   sha: string | null;
   branch: string | null;
@@ -258,6 +271,7 @@ function runFields(
     title: row?.displayTitle ?? null,
     event: row?.event ?? null,
     actor: row?.actorLogin ?? null,
+    agent: row ? runAgent(row.agent, row.headBranch) : null,
     sha: row?.headSha ?? null,
     branch: row?.headBranch ?? null,
     pullRequest: row?.pullRequestNumber ?? null,
@@ -271,8 +285,11 @@ function runFields(
 export const workflowKey = (repositoryId: number, workflow: string | null) =>
   `${repositoryId}\u001f${workflow ?? ""}`;
 
-/** Every run that changed in the window: its status, result and wall time, newest first. */
-async function runSummaries(db: Db, workspaceId: string, window: Window) {
+/**
+ * Every run that changed in the window: its status, result and wall time, newest first. With
+ * `filters`, only the runs they match.
+ */
+async function runSummaries(db: Db, workspaceId: string, window: Window, filters: RunFilters = {}) {
   const [groups, rows] = await Promise.all([
     db.all<JobGroup>(jobGroupsQuery(workspaceId, window)),
     db
@@ -299,6 +316,7 @@ async function runSummaries(db: Db, workspaceId: string, window: Window) {
   for (const { group, row } of sources.values()) {
     // A run seen only as a pick (its jobs still running, no workflow_run yet) has nothing to show.
     if (!row && !Number(group?.jobs)) continue;
+    if (!runMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null)) continue;
     const status = runStatus(row?.status);
     const startedAt = row?.runStartedAt?.getTime() ?? group?.first_queued ?? null;
     const completedAt =
@@ -386,6 +404,7 @@ export async function listRuns(
   workspaceId: string,
   window: Window = lastDays(USUAL_DAYS),
   only?: { repository: string; workflow: string },
+  filters: RunFilters = {},
 ): Promise<RunsReport> {
   // Usual times come from at least USUAL_DAYS, so a short window still has enough runs.
   const read = { from: Math.min(window.from, window.to - USUAL_DAYS * DAY_MS), to: window.to };
@@ -393,6 +412,7 @@ export async function listRuns(
   const summaries = all.filter(
     ({ updatedAt, row, group }) =>
       updatedAt >= window.from &&
+      runMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null) &&
       (!only ||
         ((row?.repositoryFullName ?? group?.repository) === only.repository &&
           (row?.workflowName ?? group?.workflow_name) === only.workflow)),
@@ -721,12 +741,13 @@ export async function workflowTimes(
   db: Db,
   workspaceId: string,
   window: ReportWindow,
+  filters: RunFilters = {},
   now = Date.now(),
 ): Promise<Map<string, Stat>> {
   const trend = hasTrend(window, now);
   const [current, prior] = await Promise.all([
-    runSummaries(db, workspaceId, window),
-    trend ? runSummaries(db, workspaceId, window.prior) : [],
+    runSummaries(db, workspaceId, window, filters),
+    trend ? runSummaries(db, workspaceId, window.prior, filters) : [],
   ]);
   const finished = new Map<string, number>();
   for (const summary of current)
@@ -763,11 +784,12 @@ export async function performanceReport(
   db: Db,
   workspaceId: string,
   window: ReportWindow,
+  filters: RunFilters = {},
 ): Promise<PerformanceReport> {
   const [report, walls, costs] = await Promise.all([
-    jobTimesReport(db, workspaceId, window),
-    workflowTimes(db, workspaceId, window),
-    workflowCosts(db, workspaceId, window),
+    jobTimesReport(db, workspaceId, window, filters),
+    workflowTimes(db, workspaceId, window, filters),
+    workflowCosts(db, workspaceId, window, filters),
   ]);
   return {
     ...report,

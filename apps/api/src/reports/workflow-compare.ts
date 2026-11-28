@@ -15,9 +15,11 @@
 import { environmentFor, environmentProvider, nameMachines } from "./environments.ts";
 import { billedMinutes } from "./runner-rates.ts";
 import { inWorkspace, matrixName, RAN, BILLED_MINUTES } from "./job-sql.ts";
+import { jobFilterSql } from "./run-filters.ts";
 import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import type {
   FastestRunner,
+  RunFilters,
   WorkflowCost,
   WorkflowJobStat,
   WorkflowReport,
@@ -75,7 +77,7 @@ interface RunPart {
 }
 
 /** Each run's jobs in the window, a row per runner they ran on. */
-function runPartsQuery(workspaceId: string, { from, to }: Window) {
+function runPartsQuery(workspaceId: string, { from, to }: Window, filters: RunFilters) {
   return sql`
     select ${timing.repositoryId} as repository_id, ${timing.runId} as run_id,
       ${timing.runAttempt} as run_attempt, min(${timing.workflowName}) as workflow_name,
@@ -88,7 +90,7 @@ function runPartsQuery(workspaceId: string, { from, to }: Window) {
       max(${timing.completedAt}) as last_completed
     from ${timing}
     where ${inWorkspace(workspaceId)} and ${timing.completedAt} >= ${from}
-      and ${timing.completedAt} < ${to} and ${RAN}
+      and ${timing.completedAt} < ${to} and ${RAN}${jobFilterSql(filters)}
     group by ${timing.repositoryId}, ${timing.runId}, ${timing.runAttempt}, ${timing.labels},
       ${timing.runnerGroupName}, ${timing.machineId}`;
 }
@@ -145,9 +147,10 @@ export async function workflowCosts(
   db: Db,
   workspaceId: string,
   window: Window,
+  filters: RunFilters = {},
 ): Promise<Map<string, WorkflowCost>> {
   const [parts, book] = await Promise.all([
-    db.all<RunPart>(runPartsQuery(workspaceId, window)),
+    db.all<RunPart>(runPartsQuery(workspaceId, window, filters)),
     loadPriceBook(db),
   ]);
   const privacy = await repoPrivacy(db, [...new Set(parts.map((part) => part.repository_id))]);

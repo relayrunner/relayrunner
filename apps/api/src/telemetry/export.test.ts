@@ -212,6 +212,7 @@ describe("exporting", () => {
         headBranch: "main",
         headSha: "abc",
         pullRequestNumber: null,
+        headCommitMessage: null,
         status: "completed",
         conclusion: "success",
         htmlUrl: null,

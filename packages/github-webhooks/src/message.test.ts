@@ -30,6 +30,9 @@ describe("toWebhookMessage", () => {
           triggering_actor: { login: "rerunner", id: 2 },
           head_branch: "fix-picks",
           head_sha: "abc123",
+          head_commit: {
+            message: "fix: keep picks\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+          },
           pull_requests: [{ number: 12, head: {} }],
           status: "completed",
           conclusion: "failure",
@@ -63,6 +66,7 @@ describe("toWebhookMessage", () => {
         headBranch: "fix-picks",
         headSha: "abc123",
         pullRequestNumber: 12,
+        headCommitMessage: "fix: keep picks\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
         status: "completed",
         conclusion: "failure",
         htmlUrl: "https://github.com/acme/app/actions/runs/42/attempts/2",

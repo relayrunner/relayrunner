@@ -15,9 +15,12 @@ import type {
   EnvironmentSummary,
   JobRow,
   JobTimesReport,
+  RunAgent,
+  RunFilters,
   Stat,
   WorkflowRow,
 } from "@relayrunner/api-types";
+import { runAgent } from "@relayrunner/api-types";
 import { type Db, schema } from "../db/index.ts";
 import {
   before,
@@ -30,6 +33,7 @@ import {
   windowWhere,
 } from "./job-sql.ts";
 import { environmentFor, MACHINE, nameMachines } from "./environments.ts";
+import { jobFilterSql } from "./run-filters.ts";
 import { type Part, type SetupItem, sortSteps } from "./step-phases.ts";
 import {
   hasTrend,
@@ -173,25 +177,35 @@ interface WindowRow {
  * is. A single statement over a MATERIALIZED window with row_number() caps reads more, since D1
  * also counts the temp table and the window sorts, so the SAMPLE_CAP cut happens in TypeScript.
  */
-export function windowQuery(workspaceId: string, since: Date, until?: number) {
+export function windowQuery(
+  workspaceId: string,
+  since: Date,
+  until?: number,
+  filters: RunFilters = {},
+) {
   return sql`
     select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,
       ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
       count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
-    from ${table} where ${windowWhere(workspaceId, since, until)}
+    from ${table} where ${windowWhere(workspaceId, since, until)}${jobFilterSql(filters)}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
 }
 
 /** The window's missed jobs (NOT_PICKED_UP) by where they were sent, from the same index range. */
-export function missedQuery(workspaceId: string, since: Date, until?: number) {
+export function missedQuery(
+  workspaceId: string,
+  since: Date,
+  until?: number,
+  filters: RunFilters = {},
+) {
   return sql`
     select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       ${table.machineId} as machine_id, count(*) as missed
     from ${table}
     where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}
-      ${before(until)} and ${NOT_PICKED_UP}
+      ${before(until)} and ${NOT_PICKED_UP}${jobFilterSql(filters)}
     group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`;
 }
 
@@ -296,21 +310,24 @@ export async function jobTimesReport(
   db: Db,
   workspaceId: string,
   window: ReportWindow = withPrior(lastDays(DEFAULT_DAYS)),
+  filters: RunFilters = {},
   now = Date.now(),
 ): Promise<JobTimesReport> {
   const since = new Date(window.from);
   const trend = hasTrend(window, now);
   const [rows, missedRows, priorRows] = await Promise.all([
-    db.all<WindowRow>(windowQuery(workspaceId, since, window.to)),
+    db.all<WindowRow>(windowQuery(workspaceId, since, window.to, filters)),
     db.all<{
       labels: string;
       runner_group_name: string | null;
       machine_id: string | null;
       missed: number;
-    }>(missedQuery(workspaceId, since, window.to)),
+    }>(missedQuery(workspaceId, since, window.to, filters)),
     // The window before, for each time's trend: the same read again, a range just as long.
     trend
-      ? db.all<WindowRow>(windowQuery(workspaceId, new Date(window.prior.from), window.prior.to))
+      ? db.all<WindowRow>(
+          windowQuery(workspaceId, new Date(window.prior.from), window.prior.to, filters),
+        )
       : Promise.resolve([]),
   ]);
 
@@ -470,6 +487,8 @@ export interface HistoryJob extends JobRun {
   /** The run's commit and who started the run, from workflow_run. Null for runs without one. */
   sha: string | null;
   actor: string | null;
+  /** The coding agent the run came from, `likely` when only its branch name says so. */
+  agent: RunAgent | null;
   /** The run's branch and pull request, and the PR or commit title GitHub shows for it. */
   branch: string | null;
   pullRequest: number | null;
@@ -508,6 +527,7 @@ export function jobListQuery(db: Db, where: SQL, limit: number) {
       branch: workflowRun.headBranch,
       pullRequest: workflowRun.pullRequestNumber,
       title: workflowRun.displayTitle,
+      agent: workflowRun.agent,
     })
     .from(jobs)
     .leftJoin(
@@ -524,8 +544,13 @@ export function historyJobOf(row: JobListRow, env?: Environment): HistoryJob | n
   const run = jobRunOf(row, env);
   if (!run) return null;
   // The run's converted fields replace the raw ones; labels and the like only made `run`.
-  const { labels: _l, runnerGroupName: _g, machineId: _m, usage, ...rest } = row;
-  return { ...rest, ...run, ...(usage && { usage }) };
+  const { labels: _l, runnerGroupName: _g, machineId: _m, usage, agent, ...rest } = row;
+  return {
+    ...rest,
+    ...run,
+    agent: runAgent(agent, row.branch),
+    ...(usage && { usage }),
+  };
 }
 
 /** Most jobs the job list returns. */
@@ -539,8 +564,9 @@ export async function recentJobs(
   db: Db,
   workspaceId: string,
   window: Window = lastDays(DEFAULT_DAYS),
+  filters: RunFilters = {},
 ): Promise<{ days: number; environments: Environment[]; jobs: HistoryJob[]; truncated: boolean }> {
-  const where = windowWhere(workspaceId, new Date(window.from), window.to);
+  const where = sql`${windowWhere(workspaceId, new Date(window.from), window.to)}${jobFilterSql(filters)}`;
   const rows = await jobListQuery(db, where, JOB_LIMIT + 1);
   const days = windowDays(window);
 

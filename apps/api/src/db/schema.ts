@@ -772,6 +772,9 @@ export const workflowRun = sqliteTable(
     headBranch: text("head_branch"),
     headSha: text("head_sha").notNull(),
     pullRequestNumber: integer("pull_request_number"),
+    // The coding agent the run came from (AgentId in @relayrunner/api-types), from the account that
+    // started it or a trailer in its head commit's message. Null for none, and for runs stored before it was read.
+    agent: text("agent"),
     // 'requested', 'queued', 'in_progress' or 'completed'.
     status: text("status").notNull(),
     conclusion: text("conclusion"),

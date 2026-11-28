@@ -63,6 +63,8 @@ export interface WorkflowRun {
   headSha: string;
   // The first open pull request for the head commit, if any.
   pullRequestNumber: number | null;
+  // The head commit's message, to spot a coding agent's trailer. Read, never stored.
+  headCommitMessage: string | null;
   status: string;
   conclusion: string | null;
   htmlUrl: string | null;
@@ -265,6 +267,9 @@ export function toWebhookMessage(
           headSha: String(run.head_sha ?? ""),
           pullRequestNumber:
             typeof pullRequests[0]?.number === "number" ? pullRequests[0].number : null,
+          headCommitMessage: isRecord(run.head_commit)
+            ? stringOrNull(run.head_commit.message)
+            : null,
           status: String(run.status ?? ""),
           conclusion: stringOrNull(run.conclusion),
           htmlUrl: stringOrNull(run.html_url),

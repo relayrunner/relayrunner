@@ -238,6 +238,7 @@ describe("retryFailedRun", () => {
         headBranch: "main",
         headSha: "abc",
         pullRequestNumber: null,
+        headCommitMessage: null,
         status: "completed",
         conclusion: "failure",
         htmlUrl: `https://github.com/acme/app/actions/runs/${runId}`,

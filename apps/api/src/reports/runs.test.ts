@@ -119,6 +119,7 @@ function runMessage(
       headBranch: "runs-page",
       headSha: "abc",
       pullRequestNumber: 12,
+      headCommitMessage: null,
       status: "completed",
       conclusion: "success",
       htmlUrl: `https://github.com/acme/app/actions/runs/${run.id}`,

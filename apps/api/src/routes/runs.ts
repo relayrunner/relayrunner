@@ -7,6 +7,7 @@ import { recentJobs } from "../reports/job-times.ts";
 import { workflowJobSteps } from "../github/actions-api.ts";
 import { appInstallationToken } from "../github/github-app.ts";
 import { jobSource, listRuns, liveJobs, runJobs } from "../reports/runs.ts";
+import { parseRunFilters, runFilterOptions } from "../reports/run-filters.ts";
 import { jobFailure, runFailures } from "../reports/job-failures.ts";
 import { jobWindow } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
@@ -15,7 +16,8 @@ const Id = z.coerce.number().int().positive();
 const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 
 // The History page: the workspace's workflow runs in a window (?from=&to=, or the last ?days=N,
-// default 14), newest first; ?repo=&workflow= narrows it to one workflow.
+// default 14), newest first; ?repo=&workflow= narrows it to one workflow. It and /jobs also take the
+// run filters (src/reports/run-filters.ts); /filters is what each can be set to over the window.
 // /live is the jobs still going, running or queued, for the Runners page.
 // /:repositoryId/:runId/:runAttempt/jobs is one run attempt's jobs, for its expanded row. /jobs is
 // every job a runner finished in a window (as above, default 14 days), newest first, for the Jobs view.
@@ -28,13 +30,22 @@ export const runRoutes = new Hono<AppEnv>()
     // `repo` and `workflow` together narrow it to one workflow, for its panel.
     const { repo, workflow } = c.req.query();
     const only = repo && workflow ? { repository: repo, workflow } : undefined;
-    return c.json(await listRuns(c.var.db, c.var.workspace.id, jobWindow(c.req.query()), only));
+    const query = c.req.query();
+    return c.json(
+      await listRuns(c.var.db, c.var.workspace.id, jobWindow(query), only, parseRunFilters(query)),
+    );
   })
+  .get("/filters", requireUser, requireWorkspace, async (c) =>
+    c.json(await runFilterOptions(c.var.db, c.var.workspace.id, jobWindow(c.req.query()))),
+  )
   .get("/live", requireUser, requireWorkspace, async (c) =>
     c.json(await liveJobs(c.var.db, c.var.workspace.id)),
   )
   .get("/jobs", requireUser, requireWorkspace, async (c) => {
-    return c.json(await recentJobs(c.var.db, c.var.workspace.id, jobWindow(c.req.query())));
+    const query = c.req.query();
+    return c.json(
+      await recentJobs(c.var.db, c.var.workspace.id, jobWindow(query), parseRunFilters(query)),
+    );
   })
   .get("/jobs/:jobId/steps", requireUser, requireWorkspace, async (c) => {
     const jobId = Id.safeParse(c.req.param("jobId"));

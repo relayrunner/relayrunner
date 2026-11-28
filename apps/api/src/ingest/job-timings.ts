@@ -5,6 +5,8 @@ import type { PriceBook } from "@relayrunner/providers";
 import { type Db, schema } from "../db/index.ts";
 import { purgeBefore } from "./purge.ts";
 import { BILLED_MINUTES, DURATION_MS } from "../reports/job-sql.ts";
+import { hasRunFilters, jobFilterSql } from "../reports/run-filters.ts";
+import type { RunFilters } from "@relayrunner/api-types";
 import {
   classRate,
   cents,
@@ -420,12 +422,16 @@ export async function usageReport(
   db: Db,
   workspaceId: string,
   window: Window,
+  filters: RunFilters = {},
 ): Promise<UsageReport> {
   const now = Date.now();
   const book = await loadPriceBook(db, now);
+  // The daily sums don't know who or what started a job, so a filtered report reads jobs' own rows
+  // only, the last RAW_RETENTION_DAYS.
+  const filtered = hasRunFilters(filters);
   const [recent, older] = await Promise.all([
-    recentUsage(db, book, workspaceId, window),
-    dailyUsage(db, book, workspaceId, window),
+    recentUsage(db, book, workspaceId, window, filters),
+    filtered ? [] : dailyUsage(db, book, workspaceId, window),
   ]);
   // Only job_timing's own rows have lengths: jobs under each edge, less those under the one before.
   const under = [
@@ -497,7 +503,13 @@ export async function usageReport(
 
 // The usage report's sums from job_timing, for jobs that finished in the window, with the moment
 // their prices are read at.
-async function recentUsage(db: Db, book: PriceBook, workspaceId: string, { from, to }: Window) {
+async function recentUsage(
+  db: Db,
+  book: PriceBook,
+  workspaceId: string,
+  { from, to }: Window,
+  filters: RunFilters,
+) {
   const prices = pricePeriods(book, table.completedAt, from, to);
   const durationMs = DURATION_MS;
   const billed = BILLED_MINUTES;
@@ -533,6 +545,7 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, { from,
         isNotNull(table.startedAt),
         isNotNull(table.runnerName),
         ne(sql`coalesce(${table.conclusion}, '')`, "skipped"),
+        sql`1${jobFilterSql(filters)}`,
       ),
     )
     .groupBy(

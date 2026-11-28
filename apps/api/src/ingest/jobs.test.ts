@@ -769,6 +769,7 @@ describe("Activity: who started a job", () => {
         headBranch: "main",
         headSha: "abc123",
         pullRequestNumber: null,
+        headCommitMessage: null,
         status: "in_progress",
         conclusion: null,
         htmlUrl: null,

@@ -6,6 +6,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { jobTypeTimes } from "../reports/job-type-times.ts";
 import { performanceReport } from "../reports/runs.ts";
+import { parseRunFilters } from "../reports/run-filters.ts";
 import { workflowReport } from "../reports/workflow-compare.ts";
 import { MAX_RANGE_MS, runnerReport } from "../reports/runner-report.ts";
 import { Epoch, requireWindow } from "../reports/report-window.ts";
@@ -53,13 +54,15 @@ const RunnerQuery = z
   .refine(({ from, to = Date.now() }) => from < to && to - from <= MAX_RANGE_MS);
 
 // The Performance page: how long each workflow and job usually takes on each runner environment in
-// a window: ?from=&to= (with ?priorFrom= for the trend), or the last ?days=N (default 14). /runs is one job's runs, for its detail chart. /workflow is one workflow on every runner it ran on. /machines is
+// a window: ?from=&to= (with ?priorFrom= for the trend), or the last ?days=N (default 14), narrowed
+// by the run filters (src/reports/run-filters.ts). /runs is one job's runs, for its detail chart. /workflow is one workflow on every runner it ran on. /machines is
 // each machine's typical job, for the Runners page. /runner is one runner's detail panel. /types
 // is each job's run time by day with its type, for the Job types tab.
 export const jobTimesRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, async (c) => {
-    const window = jobWindow(c.req.query());
-    return c.json(await performanceReport(c.var.db, c.var.workspace.id, window));
+    const query = c.req.query();
+    const filters = parseRunFilters(query);
+    return c.json(await performanceReport(c.var.db, c.var.workspace.id, jobWindow(query), filters));
   })
   .get("/runs", requireUser, requireWorkspace, async (c) => {
     const parsed = RunsQuery.safeParse(c.req.query());
