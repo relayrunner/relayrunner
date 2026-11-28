@@ -41,6 +41,7 @@ import { parseDate } from "../ingest/jobs.ts";
 import { jobKey, picksForJobs } from "../routing/route-decisions.ts";
 import { workflowCosts } from "./workflow-compare.ts";
 import { rowMatches } from "./run-filters.ts";
+import { cached, SETTLED_MS, settledWindow } from "../report-cache.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -261,9 +262,50 @@ const runKey = (repositoryId: number, runId: number, runAttempt: number) =>
 
 type WorkflowRunRow = typeof table.$inferSelect;
 
+// What run lists read of every workflow_run row in the window: enough for status, order, usual
+// times and the filters. The rest of a row (title, links, commit) is read for the runs shown only.
+const summaryColumns = {
+  id: table.id,
+  runAttempt: table.runAttempt,
+  repositoryId: table.repositoryId,
+  repositoryFullName: table.repositoryFullName,
+  workflowName: table.workflowName,
+  status: table.status,
+  conclusion: table.conclusion,
+  runStartedAt: table.runStartedAt,
+  githubUpdatedAt: table.githubUpdatedAt,
+  headBranch: table.headBranch,
+  event: table.event,
+  actorLogin: table.actorLogin,
+  startedByLogin: table.startedByLogin,
+  agent: table.agent,
+};
+
+const detailColumns = {
+  id: table.id,
+  runAttempt: table.runAttempt,
+  repositoryId: table.repositoryId,
+  displayTitle: table.displayTitle,
+  headSha: table.headSha,
+  pullRequestNumber: table.pullRequestNumber,
+  htmlUrl: table.htmlUrl,
+};
+
+type DetailRow = Pick<
+  WorkflowRunRow,
+  | "displayTitle"
+  | "event"
+  | "actorLogin"
+  | "agent"
+  | "headBranch"
+  | "headSha"
+  | "pullRequestNumber"
+  | "htmlUrl"
+>;
+
 /** A run's fields that come from its workflow_run row, when there is one. */
 function runFields(
-  row: WorkflowRunRow | undefined,
+  row: Partial<DetailRow> | undefined,
   run: { repository: string; runId: number; runAttempt: number },
 ) {
   return {
@@ -293,7 +335,7 @@ async function runSummaries(db: Db, workspaceId: string, window: Window, filters
   const [groups, rows] = await Promise.all([
     db.all<JobGroup>(jobGroupsQuery(workspaceId, window)),
     db
-      .select()
+      .select(summaryColumns)
       .from(table)
       .where(
         and(
@@ -305,7 +347,7 @@ async function runSummaries(db: Db, workspaceId: string, window: Window, filters
   ]);
 
   // First the cheap parts of every run: enough for the usual times and the order.
-  const sources = new Map<string, { group?: JobGroup; row?: WorkflowRunRow }>();
+  const sources = new Map<string, { group?: JobGroup; row?: SummaryRow }>();
   for (const group of groups)
     sources.set(runKey(group.repository_id, group.run_id, group.run_attempt), { group });
   for (const row of rows) {
@@ -348,6 +390,25 @@ async function runSummaries(db: Db, workspaceId: string, window: Window, filters
 }
 
 type RunSummary = Awaited<ReturnType<typeof runSummaries>>[number];
+type SummaryRow = { [K in keyof typeof summaryColumns]: WorkflowRunRow[K] };
+
+/** The rest of each run's workflow_run row (detailColumns), by runKey. */
+async function runDetails(db: Db, workspaceId: string, rows: SummaryRow[]) {
+  if (rows.length === 0) return new Map<string, DetailOf>();
+  // One bound value for every run: D1 takes at most 100.
+  const keys = JSON.stringify(rows.map((row) => [row.id, row.runAttempt]));
+  const details = await db
+    .select(detailColumns)
+    .from(table)
+    .where(
+      sql`(${table.id}, ${table.runAttempt}) in (select value ->> 0, value ->> 1 from json_each(${keys}))
+        and ${inWorkspace(workspaceId, table.installationId)}`,
+    );
+  return new Map(
+    details.map((detail) => [runKey(detail.repositoryId, detail.id, detail.runAttempt), detail]),
+  );
+}
+type DetailOf = { [K in keyof typeof detailColumns]: WorkflowRunRow[K] };
 
 // How long after a run ended a newer run's start still counts as what cancelled it, for clock skew
 // between GitHub's run and job times.
@@ -395,6 +456,30 @@ function successfulWalls(summaries: RunSummary[]) {
   return walls;
 }
 
+/** Each workflow's usual time: the p90 of its successful runs, with at least FEW_RUNS of them. */
+function usualTimes(summaries: RunSummary[]) {
+  const usual = new Map<string, number | null>();
+  for (const [workflow, runs] of successfulWalls(summaries))
+    if (runs.length >= FEW_RUNS)
+      usual.set(
+        workflow,
+        quantile(
+          runs.map((run) => run.wallMs!).sort((a, b) => a - b),
+          0.9,
+        ),
+      );
+  return usual;
+}
+
+/** How long usual times read over a window are kept (src/report-cache.ts). */
+const USUAL_KEPT_MS = 10 * 60_000;
+
+/** Usual times' cache key: windows on the same 10-minute marks share them. */
+function usualKey(workspaceId: string, read: Window) {
+  const { from, to } = settledWindow(read);
+  return JSON.stringify(["usual-times", workspaceId, from, to]);
+}
+
 /**
  * The workspace's runs that changed in the window, newest first, at most RUN_LIMIT. With `only`,
  * just that workflow's runs, so a quiet one isn't crowded out of the limit by busier ones.
@@ -406,9 +491,18 @@ export async function listRuns(
   only?: { repository: string; workflow: string },
   filters: RunFilters = {},
 ): Promise<RunsReport> {
-  // Usual times come from at least USUAL_DAYS, so a short window still has enough runs.
+  // Usual times come from at least USUAL_DAYS, so a short window still has enough runs. They barely
+  // move from one minute to the next, so they're kept a while, and a load that finds them reads
+  // only its own window. One that doesn't reads the longer range once, for both.
   const read = { from: Math.min(window.from, window.to - USUAL_DAYS * DAY_MS), to: window.to };
-  const all = await runSummaries(db, workspaceId, read);
+  let all: RunSummary[] | undefined;
+  const usual = new Map(
+    await cached(usualKey(workspaceId, read), USUAL_KEPT_MS, async () => {
+      all = await runSummaries(db, workspaceId, read);
+      return [...usualTimes(all)];
+    }),
+  );
+  all ??= await runSummaries(db, workspaceId, window);
   const summaries = all.filter(
     ({ updatedAt, row, group }) =>
       updatedAt >= window.from &&
@@ -417,26 +511,13 @@ export async function listRuns(
         ((row?.repositoryFullName ?? group?.repository) === only.repository &&
           (row?.workflowName ?? group?.workflow_name) === only.workflow)),
   );
-  // Each workflow's usual time, from its successful runs over everything read.
-  const usual = new Map<string, number | null>();
-  for (const [workflow, runs] of successfulWalls(all))
-    if (runs.length >= FEW_RUNS)
-      usual.set(
-        workflow,
-        quantile(
-          runs.map((run) => run.wallMs!).sort((a, b) => a - b),
-          0.9,
-        ),
-      );
-
   // Then the whole run, for the newest RUN_LIMIT only.
   const shown = summaries.slice(0, RUN_LIMIT);
   const superseded = supersedingRuns(summaries, shown);
   const envs = new Map<string, Environment>();
   const envUse = new Map<string, number>();
   const parsed = new Map<string, Environment>();
-  const runs = shown.map((summary): Run => {
-    const { group, row } = summary;
+  const envKeys = shown.map(({ group }) => {
     const keys = new Set<string>();
     for (const raw of splitEnvs(group?.envs ?? null)) {
       let env = parsed.get(raw);
@@ -449,11 +530,31 @@ export async function listRuns(
       keys.add(env.key);
     }
     for (const key of keys) envUse.set(key, (envUse.get(key) ?? 0) + 1);
+    return keys;
+  });
+  const [details] = await Promise.all([
+    runDetails(
+      db,
+      workspaceId,
+      shown.flatMap(({ row }) => (row ? [row] : [])),
+    ),
+    nameMachines(db, workspaceId, envs),
+  ]);
+  const runs = shown.map((summary, i): Run => {
+    const { group, row } = summary;
+    const keys = envKeys[i]!;
     const repository = row?.repositoryFullName ?? group?.repository ?? "";
     const runId = row?.id ?? group?.run_id ?? 0;
     const runAttempt = row?.runAttempt ?? group?.run_attempt ?? 1;
     return {
-      ...runFields(row, { repository, runId, runAttempt }),
+      ...runFields(
+        row && { ...row, ...details.get(runKey(row.repositoryId, row.id, row.runAttempt)) },
+        {
+          repository,
+          runId,
+          runAttempt,
+        },
+      ),
       repositoryId: row?.repositoryId ?? group?.repository_id ?? 0,
       runId,
       runAttempt,
@@ -469,7 +570,6 @@ export async function listRuns(
       supersededBy: superseded.get(summary) ?? null,
     };
   });
-  await nameMachines(db, workspaceId, envs);
   return {
     days: windowDays(read),
     environments: [...envs.values()].sort(
@@ -747,13 +847,13 @@ export async function workflowTimes(
   const trend = hasTrend(window, now);
   const [current, prior] = await Promise.all([
     runSummaries(db, workspaceId, window, filters),
-    trend ? runSummaries(db, workspaceId, window.prior, filters) : [],
+    trend ? priorWalls(db, workspaceId, window.prior, filters) : new Map<string, Wall[]>(),
   ]);
   const finished = new Map<string, number>();
   for (const summary of current)
     if (summary.status === "completed" && summary.conclusion !== "cancelled")
       finished.set(summary.workflow, (finished.get(summary.workflow) ?? 0) + 1);
-  const bucket = (runs: RunSummary[] = [], total = runs.length) => ({
+  const bucket = (runs: Wall[] = [], total = runs.length) => ({
     runs: total,
     successes: runs.length,
     samples: runs.map((run) => ({
@@ -763,13 +863,34 @@ export async function workflowTimes(
     })),
   });
   const walls = successfulWalls(current);
-  const priorWalls = successfulWalls(prior);
   return new Map(
     [...finished].map(([key, total]) => [
       key,
-      statOf(bucket(walls.get(key), total), trend ? bucket(priorWalls.get(key)) : undefined),
+      statOf(bucket(walls.get(key), total), trend ? bucket(prior.get(key)) : undefined),
     ]),
   );
+}
+
+/** What a run's time trend needs of it, small enough to cache. */
+type Wall = Pick<RunSummary, "updatedAt" | "wallMs" | "waitMs">;
+
+/**
+ * Each workflow's successful runs in the window before, for trends. That window has ended, so
+ * they're kept a while (src/report-cache.ts) rather than read again on every load.
+ */
+async function priorWalls(db: Db, workspaceId: string, prior: Window, filters: RunFilters) {
+  const window = settledWindow(prior);
+  const key = JSON.stringify(["prior-walls", workspaceId, window.from, window.to, filters]);
+  const entries = await cached(key, SETTLED_MS, async () =>
+    [...successfulWalls(await runSummaries(db, workspaceId, window, filters))].map(
+      ([workflow, runs]) =>
+        [
+          workflow,
+          runs.map(({ updatedAt, wallMs, waitMs }) => ({ updatedAt, wallMs, waitMs })),
+        ] as const,
+    ),
+  );
+  return new Map<string, Wall[]>(entries);
 }
 
 export type { PerformanceReport };

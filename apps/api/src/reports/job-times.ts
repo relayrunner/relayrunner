@@ -22,6 +22,7 @@ import type {
 } from "@relayrunner/api-types";
 import { interpolate, runAgent } from "@relayrunner/api-types";
 import { type Db, schema } from "../db/index.ts";
+import { cachedPrior } from "../report-cache.ts";
 import {
   before,
   inWorkspace,
@@ -320,11 +321,12 @@ export async function jobTimesReport(
       missed: number;
     }>(missedQuery(workspaceId, since, window.to, filters)),
     // The window before, for each time's trend: the same read again, a range just as long.
+    // It has ended, so its rows are kept a while (src/report-cache.ts).
     trend
-      ? db.all<WindowRow>(
-          windowQuery(workspaceId, new Date(window.prior.from), window.prior.to, filters),
+      ? cachedPrior<WindowRow>(db, window.prior, ({ from, to }) =>
+          windowQuery(workspaceId, new Date(from), to, filters),
         )
-      : Promise.resolve([]),
+      : [],
   ]);
 
   const envs = new Map<string, Environment>();

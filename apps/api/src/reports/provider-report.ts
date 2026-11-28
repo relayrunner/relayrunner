@@ -29,6 +29,7 @@ import {
 } from "@relayrunner/providers";
 import { type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
+import { cachedPrior } from "../report-cache.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { isCatalogProvider } from "../providers/provider-catalog.ts";
 import {
@@ -400,7 +401,12 @@ async function providerMinutes(
   const bar = sql`cast((${table.completedAt} - ${buckets.origin}) / ${buckets.bucketMs} as integer)`;
   const [rows, priorRows] = await Promise.all([
     db.all<MinuteRow>(minutesQuery(workspaceId, window, bar)),
-    trend ? db.all<MinuteRow>(minutesQuery(workspaceId, window.prior, sql`0`)) : [],
+    // That window has ended, so its sums are kept a while (src/report-cache.ts).
+    trend
+      ? cachedPrior<MinuteRow>(db, window.prior, (prior) =>
+          minutesQuery(workspaceId, prior, sql`0`),
+        )
+      : [],
   ]);
   const bars: ShareBucket[] = bucketStarts(window, buckets).map((start) => ({
     start,

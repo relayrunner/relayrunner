@@ -1,3 +1,4 @@
+import { queryOptions } from "@tanstack/react-query";
 import type { HeldReason } from "@relayrunner/activity";
 import { FREE_MINUTES_PROVIDERS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { api } from "./api";
@@ -59,3 +60,13 @@ export async function getAllFreeMinutes(): Promise<FreeMinutesByProvider> {
 /** Whether the count is there to stop at: connected, and synced or read. */
 export const counted = (minutes: FreeMinutes | null | undefined): minutes is FreeMinutes =>
   minutes?.status === "ok";
+
+/**
+ * Every provider's free minutes, as a query: a step's limit shows once they're back, so a page
+ * doesn't wait on a provider's API for them. None when they can't be read.
+ */
+export const allFreeMinutesQuery = queryOptions({
+  queryKey: ["free-minutes"],
+  queryFn: () => getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
+  staleTime: 30_000,
+});
