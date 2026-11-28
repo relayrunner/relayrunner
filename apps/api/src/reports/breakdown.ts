@@ -14,7 +14,7 @@
  * day. Reads job_timing's own rows, so the route keeps the window within RAW_RETENTION_DAYS.
  */
 import {
-  BREAKDOWN_MAX_ROWS,
+  BREAKDOWN_DEFAULT_ROWS,
   type BreakdownBy,
   type BreakdownSort,
   runAgent,
@@ -32,14 +32,20 @@ import {
   BILLED_MINUTES,
   DURATION_MS,
   FAILED,
-  inWorkspace,
   matrixName,
-  RAN,
   RUNNER_FAILED,
   WAIT_MS,
+  windowWhere,
 } from "./job-sql.ts";
 import type { Window } from "./report-window.ts";
-import { cents, pricePeriods, rateFor, runnerClass } from "./runner-rates.ts";
+import {
+  cents,
+  pricePeriods,
+  rateFor,
+  type RunnerClass,
+  runnerClass,
+  tenths,
+} from "./runner-rates.ts";
 import { jobFilterSql, PERSON } from "./run-filters.ts";
 
 const job = schema.jobTiming;
@@ -150,8 +156,6 @@ function addSums(into: Sums, from: Sums) {
   for (const key of Object.keys(into) as (keyof Sums)[]) into[key] += from[key];
 }
 
-const tenths = (value: number) => Math.round(value * 10) / 10;
-
 function counts(sums: Sums, runLevel: boolean): BreakdownCounts {
   return {
     runs: runLevel ? sums.runs : null,
@@ -196,7 +200,7 @@ export async function breakdown(
     perDay = false,
     utcOffset = 0,
     sort = "minutes",
-    limit = 20,
+    limit = BREAKDOWN_DEFAULT_ROWS,
     now = Date.now(),
   }: BreakdownOptions,
 ): Promise<Breakdown> {
@@ -210,107 +214,123 @@ export async function breakdown(
     ? sql`cast((${job.completedAt} + ${offsetMs}) / ${DAY_MS} as integer)`
     : sql`0`;
   const columns = COLUMNS[by];
+  const byRunner = by === "provider" || by === "runner";
   const selected = columns.map((column, i) => sql`${column} as ${sql.raw(`d${i}`)}`);
-  const where = sql`${inWorkspace(workspaceId)}
-    and ${job.completedAt} >= ${from} and ${job.completedAt} < ${to}
-    and ${RAN} and ${jobFilterSql(filters)}`;
+  const where = sql`${windowWhere(workspaceId, new Date(from), to)} and ${jobFilterSql(filters)}`;
   const from_ = sql`${job}
     left join ${run} on ${run.id} = ${job.runId} and ${run.runAttempt} = ${job.runAttempt}`;
   const groupBy = (extra: SQL[]) => sql.join([...columns, sql`day`, ...extra], sql`, `);
   const lead = (parts: SQL[]) => (parts.length ? sql`${sql.join(parts, sql`, `)}, ` : sql``);
   const runLevel = RUN_LEVEL.has(by);
+  // What prices a job, and for the provider and runner cuts the machine it ran on too.
+  const priced = [
+    ...prices.groupBy,
+    sql`${job.labels}`,
+    sql`${job.runnerGroupName}`,
+    sql`${repo.private}`,
+    ...(byRunner ? [sql`${job.machineId}`] : []),
+  ];
 
   const [rows, runRows, types, access] = await Promise.all([
     db.all<Row>(sql`
       select ${lead(selected)}${day} as day, ${prices.period} as period,
         ${job.labels} as labels, ${job.runnerGroupName} as runner_group_name,
-        ${job.machineId} as machine_id, ${repo.private} as private,
+        ${byRunner ? sql`${job.machineId}` : sql`null`} as machine_id, ${repo.private} as private,
         count(*) as jobs, sum(${DURATION_MS}) as run_ms, sum(${BILLED_MINUTES}) as billed,
         sum(${FAILED}) as failures, sum(${RUNNER_FAILED}) as runner_failures,
         sum(${WAIT_MS}) as wait_ms, count(${WAIT_MS}) as waits
       from ${from_} left join ${repo} on ${repo.id} = ${job.repositoryId}
       where ${where}
-      group by ${groupBy([...prices.groupBy, sql`${job.labels}`, sql`${job.runnerGroupName}`, sql`${job.machineId}`, sql`${repo.private}`])}`),
+      group by ${groupBy(priced)}`),
     // Runs don't add up across what prices a job (one run's jobs can run on several runners), so
     // they're counted on their own, and only for the cuts a whole run falls in.
     runLevel
       ? db.all<RunRow>(sql`
           select ${lead(selected)}${day} as day, count(distinct ${job.runId}) as runs
           from ${from_} where ${where} group by ${groupBy([])}`)
-      : Promise.resolve([] as RunRow[]),
-    by === "job_type" ? readJobTypes(db, workspaceId) : Promise.resolve(null),
-    by === "job_type" ? aiAccess(db, workspaceId, "job_type", now) : Promise.resolve(null),
+      : [],
+    by === "job_type" ? readJobTypes(db, workspaceId) : null,
+    by === "job_type" ? aiAccess(db, workspaceId, "job_type", now) : null,
   ]);
 
-  // The row each group adds to, by its cut's columns.
+  // A group's key and what its row shows, from its cut's columns (or, for the provider and runner
+  // cuts, the runner environment).
+  type Meta = Omit<BreakdownRow, keyof BreakdownCounts>;
   const envs = new Map<string, Environment>();
-  const keyOf = (
-    values: (string | number | null)[],
-    row?: Row,
-  ): Omit<BreakdownRow, keyof BreakdownCounts> => {
+  const metaOf = (values: (string | number | null)[], env?: Environment): [string, Meta] => {
+    const text = (i: number) => (values[i] === null ? null : String(values[i]));
     switch (by) {
-      case "repository":
-        return { key: String(values[0]) };
       case "workflow":
-        return {
-          key: `${values[0]}\0${values[1] ?? ""}`,
-          repository: String(values[0]),
-          workflow: values[1] as string | null,
-        };
+        return [
+          `${values[0]}\0${values[1] ?? ""}`,
+          { key: text(1) ?? "(unnamed)", repository: String(values[0]), workflow: text(1) },
+        ];
       case "job": {
         const name = String(values[2]);
-        return {
-          key: `${values[0]}\0${values[1] ?? ""}\0${matrixName(name) ?? name}`,
-          repository: String(values[0]),
-          workflow: values[1] as string | null,
-        };
+        const job = matrixName(name) ?? name;
+        return [
+          `${values[0]}\0${values[1] ?? ""}\0${job}`,
+          { key: job, repository: String(values[0]), workflow: text(1) },
+        ];
       }
-      case "agent":
-        return {
-          key: runAgent(values[0] as string | null, values[1] as string | null)?.id ?? "none",
-        };
-      case "job_type":
-        return {
-          key:
-            types?.get(
-              jobTypeKey(Number(values[0]), values[1] as string | null, String(values[2])),
-            ) ?? "unknown",
-        };
-      case "provider":
-      case "runner": {
-        const env = environmentFor(
-          JSON.parse(row!.labels),
-          row!.runner_group_name,
-          row!.machine_id,
-        );
-        if (by === "provider") return { key: environmentProvider(env) };
-        envs.set(env.key, envs.get(env.key) ?? env);
-        return { key: env.key };
+      case "agent": {
+        const key = runAgent(text(0), text(1))?.id ?? "none";
+        return [key, { key }];
       }
-      default:
-        return { key: values[0] === null ? "(none)" : String(values[0]) };
+      case "job_type": {
+        const key =
+          types?.get(jobTypeKey(Number(values[0]), text(1), String(values[2]))) ?? "unknown";
+        return [key, { key }];
+      }
+      case "provider": {
+        const key = environmentProvider(env!);
+        return [key, { key }];
+      }
+      case "runner":
+        envs.set(env!.key, envs.get(env!.key) ?? env!);
+        return [env!.key, { key: env!.key }];
+      default: {
+        const key = text(0) ?? "(none)";
+        return [key, { key }];
+      }
     }
   };
 
-  type Group = { meta: Omit<BreakdownRow, keyof BreakdownCounts>; sums: Sums; days: Sums[] | null };
+  type Group = { meta: Meta; sums: Sums; days: Sums[] | null };
   const groups = new Map<string, Group>();
   const total = emptySums();
-  const groupFor = (meta: Group["meta"]) => {
-    let group = groups.get(meta.key);
+  const groupFor = ([key, meta]: [string, Meta]) => {
+    let group = groups.get(key);
     if (!group) {
       group = {
         meta,
         sums: emptySums(),
         days: perDay ? Array.from({ length: dayCount }, emptySums) : null,
       };
-      groups.set(meta.key, group);
+      groups.set(key, group);
     }
     return group;
   };
   const dayOf = (group: Group, value: number) => group.days?.[Number(value) - firstDay];
 
+  // Label sets repeat across many groups: read each once.
+  const runners = new Map<string, { cls: RunnerClass; env?: Environment }>();
+  const runnerOf = (row: Row) => {
+    const id = `${row.labels}\0${row.runner_group_name ?? ""}\0${row.machine_id ?? ""}`;
+    let found = runners.get(id);
+    if (!found) {
+      const labels = JSON.parse(row.labels) as string[];
+      found = {
+        cls: runnerClass(labels, row.runner_group_name),
+        env: byRunner ? environmentFor(labels, row.runner_group_name, row.machine_id) : undefined,
+      };
+      runners.set(id, found);
+    }
+    return found;
+  };
+
   for (const row of rows) {
-    const labels = JSON.parse(row.labels) as string[];
+    const { cls, env } = runnerOf(row);
     const sums: Sums = {
       ...emptySums(),
       jobs: Number(row.jobs),
@@ -320,7 +340,7 @@ export async function breakdown(
         Number(row.billed) *
         rateFor(
           book,
-          runnerClass(labels, row.runner_group_name),
+          cls,
           row.private === null ? null : Boolean(row.private),
           prices.at(Number(row.period)),
         ),
@@ -329,14 +349,15 @@ export async function breakdown(
       waitMs: Math.max(0, Number(row.wait_ms ?? 0)),
       waits: Number(row.waits),
     };
-    const group = groupFor(keyOf(dims(row, columns.length), row));
+    const group = groupFor(metaOf(dims(row, columns.length), env));
     addSums(group.sums, sums);
     addSums(total, sums);
     const bucket = dayOf(group, row.day);
     if (bucket) addSums(bucket, sums);
   }
+  // Only run-level cuts, which never need the environment.
   for (const row of runRows) {
-    const group = groupFor(keyOf(dims(row, columns.length)));
+    const group = groupFor(metaOf(dims(row, columns.length)));
     const runs = Number(row.runs);
     group.sums.runs += runs;
     total.runs += runs;
@@ -346,10 +367,9 @@ export async function breakdown(
 
   await nameMachines(db, workspaceId, envs);
   const sorted = [...groups.values()].sort(
-    (a, b) =>
-      (b.sums[sort] as number) - (a.sums[sort] as number) || b.sums.minutes - a.sums.minutes,
+    (a, b) => b.sums[sort] - a.sums[sort] || b.sums.minutes - a.sums.minutes,
   );
-  const shown = sorted.slice(0, Math.min(limit, BREAKDOWN_MAX_ROWS));
+  const shown = sorted.slice(0, limit);
   const left = sorted.slice(shown.length);
   const rest = emptySums();
   for (const group of left) addSums(rest, group.sums);
@@ -368,12 +388,6 @@ export async function breakdown(
       const env = by === "runner" ? envs.get(meta.key) : undefined;
       return {
         ...meta,
-        key:
-          by === "workflow"
-            ? (meta.workflow ?? "(unnamed)")
-            : by === "job"
-              ? meta.key.split("\0")[2]!
-              : meta.key,
         ...(env && { label: env.label, detail: env.detail }),
         ...counts(sums, runLevel),
         ...(days && {

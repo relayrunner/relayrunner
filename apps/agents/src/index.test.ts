@@ -482,9 +482,18 @@ describe("mcp server", () => {
     expect(usage.morePullRequests).toBe(1);
 
     await call("get_breakdown", { by: "workflow", perDay: true, trigger: "push" });
-    expect(asked).toContain(
-      "/api/usage/breakdown?by=workflow&sort=minutes&days=30&perDay=1&limit=20&utcOffset=0&trigger=push @w1",
-    );
+    const breakdown = asked.find((path) => path.startsWith("/api/usage/breakdown?"))!;
+    expect(
+      Object.fromEntries(new URLSearchParams(breakdown.split("?")[1]!.replace(/ @w1$/, ""))),
+    ).toEqual({
+      by: "workflow",
+      sort: "minutes",
+      days: "30",
+      perDay: "1",
+      limit: "20",
+      utcOffset: "0",
+      trigger: "push",
+    });
 
     const providers = await call("get_providers", {});
     expect(providers.providers[0]).toMatchObject({

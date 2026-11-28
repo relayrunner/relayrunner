@@ -1,6 +1,7 @@
 // A report's time window, from the URL: a calendar range the dashboard worked out in the reader's
 // time zone (`?from=&to=`), or the last few days (`?days=N`, as older links and agents send), and
 // the window its trend compares against.
+import { MAX_UTC_OFFSET_MINUTES } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 import { z } from "zod";
 import { DAY_MS, HOUR_MS, RAW_RETENTION_DAYS } from "../time.ts";
@@ -41,6 +42,14 @@ export const hasTrend = ({ prior }: ReportWindow, now = Date.now()) =>
 
 /** A moment in epoch ms, from the URL. */
 export const Epoch = z.coerce.number().int().min(0);
+
+/** Minutes east of UTC, so days end at the reader's midnight. */
+export const UtcOffset = z.coerce
+  .number()
+  .int()
+  .min(-MAX_UTC_OFFSET_MINUTES)
+  .max(MAX_UTC_OFFSET_MINUTES)
+  .default(0);
 
 /** A chart's bars over a window: each `bucketMs` long, the first starting at `origin`. */
 export interface Buckets {

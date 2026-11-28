@@ -7,11 +7,16 @@ import {
   type ActivityPage,
 } from "@relayrunner/activity";
 import {
-  AGENTS,
+  AGENT_FILTERS,
   BREAKDOWN_BY,
+  BREAKDOWN_DEFAULT_ROWS,
   BREAKDOWN_MAX_ROWS,
   BREAKDOWN_SORTS,
+  hasRunFilters,
+  MAX_UTC_OFFSET_MINUTES,
   RAW_RETENTION_DAYS,
+  RUN_FILTER_HELP,
+  type RunFilterKey,
 } from "@relayrunner/api-types";
 import { z } from "zod";
 import type { Api } from "./api.ts";
@@ -43,37 +48,16 @@ const days = (max: number, fallback: number) =>
 
 // Who and what started the runs a report counts: the dashboard's filter bar on History,
 // Performance and Usage. The API matches each exactly.
+const filterArg = (key: RunFilterKey) => z.string().optional().describe(RUN_FILTER_HELP[key]);
 const runFilterArgs = {
-  workflow: z.string().optional().describe("Only runs of the workflow with this exact name."),
-  person: z
-    .string()
-    .optional()
-    .describe('Only runs this GitHub login started, or "bots" for every [bot] account.'),
-  branch: z.string().optional().describe("Only runs on this branch."),
-  trigger: z
-    .string()
-    .optional()
-    .describe(
-      "Only runs from this event, such as push, pull_request, schedule or workflow_dispatch.",
-    ),
-  agent: z
-    .enum(["any", "none", ...AGENTS.map((agent) => agent.id)])
-    .optional()
-    .describe(
-      "Only runs a coding agent made (by the account that started it, a commit trailer, or a branch prefix like claude/), by id, or any agent, or none.",
-    ),
+  workflow: filterArg("workflow"),
+  person: filterArg("person"),
+  branch: filterArg("branch"),
+  trigger: filterArg("trigger"),
+  agent: z.enum(AGENT_FILTERS).optional().describe(RUN_FILTER_HELP.agent),
 };
-
-type RunFilterArgs = { [K in keyof typeof runFilterArgs]?: string };
-
-/** The run filters as query params; zod already dropped the ones left out. */
-const filterQuery = ({ workflow, person, branch, trigger, agent }: RunFilterArgs) => ({
-  workflow,
-  person,
-  branch,
-  trigger,
-  agent,
-});
+// get_job_times matches `workflow` by part of its name itself.
+const { workflow: _, ...runnerFilterArgs } = runFilterArgs;
 
 export function registerTools(server: McpServer, context: ToolContext) {
   const { request, workspaces, workspaceId, workspacePath } = context;
@@ -207,7 +191,7 @@ export function registerTools(server: McpServer, context: ToolContext) {
         const report = await scoped(workspace)<{
           runs: (Record<string, unknown> & { repository: string })[];
           truncated: boolean;
-        }>("/runs", { days: days, ...filterQuery(filters) });
+        }>("/runs", { days, ...filters });
         const runs = report.runs.filter(
           (run) =>
             contains(run.repository, repository) &&
@@ -289,7 +273,7 @@ export function registerTools(server: McpServer, context: ToolContext) {
     {
       title: "Usage",
       description:
-        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, each connected GitHub account's Actions minutes this billing cycle with when they'll run out at this pace (an org in a GitHub enterprise shows its enterprise's shared minutes, named by `enterprise`), and the pull requests that used the most CI minutes (pullRequests: minutes, re-run minutes, estimated cost and commits each; outsidePullRequests is minutes no pull request could be found for). The run filters narrow the job counts to those runs (the last 62 days only) and leave out optimized checks; pull requests stay unfiltered.",
+        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, each connected GitHub account's Actions minutes this billing cycle with when they'll run out at this pace (an org in a GitHub enterprise shows its enterprise's shared minutes, named by `enterprise`), and, with `pullRequests`, the pull requests that used the most CI minutes (minutes, re-run minutes, estimated cost and commits each; outsidePullRequests is minutes no pull request could be found for). The run filters narrow the job counts to those runs (the last 62 days only) and leave out optimized checks; pull requests stay unfiltered.",
       inputSchema: z.object({
         workspace: workspaceArg,
         days: days(90, 30),
@@ -299,19 +283,18 @@ export function registerTools(server: McpServer, context: ToolContext) {
           .int()
           .min(0)
           .max(50)
-          .default(10)
-          .describe("How many pull requests to list, the most minutes first (0 for none)."),
+          .default(0)
+          .describe("How many pull requests to list, the most minutes first."),
       }),
       annotations: READ_ONLY,
     },
     ({ workspace, days, pullRequests, ...filters }) =>
       answer(async () => {
         const api = scoped(workspace);
-        const query = filterQuery(filters);
-        const filtered = Object.values(query).some(Boolean);
+        const filtered = hasRunFilters(filters);
         const [jobs, checks, actions, prs] = await Promise.all([
-          api("/usage", { days: days, ...query }),
-          filtered ? undefined : api("/usage/checks", { days: days }),
+          api("/usage", { days, ...filters }),
+          filtered ? undefined : api("/usage/checks", { days }),
           api("/usage/actions"),
           pullRequests > 0
             ? api<{ pullRequests: unknown[]; outside: unknown[] }>("/usage/pull-requests", {
@@ -346,19 +329,16 @@ export function registerTools(server: McpServer, context: ToolContext) {
           .optional()
           .describe("Only workflows in repositories whose owner/name contains this."),
         workflow: z.string().optional().describe("Only workflows whose name contains this."),
-        person: runFilterArgs.person,
-        branch: runFilterArgs.branch,
-        trigger: runFilterArgs.trigger,
-        agent: runFilterArgs.agent,
+        ...runnerFilterArgs,
       }),
       annotations: READ_ONLY,
     },
     ({ workspace, days, repository, workflow, ...filters }) =>
       answer(async () =>
-        compactJobTimes(
-          await scoped(workspace)("/job-times", { days: days, ...filterQuery(filters) }),
-          { repository, workflow },
-        ),
+        compactJobTimes(await scoped(workspace)("/job-times", { days, ...filters }), {
+          repository,
+          workflow,
+        }),
       ),
   );
 
@@ -420,31 +400,22 @@ export function registerTools(server: McpServer, context: ToolContext) {
         days: days(RAW_RETENTION_DAYS, 30),
         perDay: z.boolean().default(false).describe("Also give each row's numbers per day."),
         sort: z.enum(BREAKDOWN_SORTS).default("minutes").describe("What the rows are ordered by."),
-        limit: z.number().int().min(1).max(BREAKDOWN_MAX_ROWS).default(20),
+        limit: z.number().int().min(1).max(BREAKDOWN_MAX_ROWS).default(BREAKDOWN_DEFAULT_ROWS),
         utcOffset: z
           .number()
           .int()
-          .min(-840)
-          .max(840)
+          .min(-MAX_UTC_OFFSET_MINUTES)
+          .max(MAX_UTC_OFFSET_MINUTES)
           .default(0)
           .describe("Minutes east of UTC, so perDay's days end at the person's midnight."),
         ...runFilterArgs,
       }),
       annotations: READ_ONLY,
     },
-    ({ workspace, days, perDay, limit, utcOffset, ...rest }) =>
-      answer(() => {
-        const { by, sort, ...filters } = rest;
-        return scoped(workspace)("/usage/breakdown", {
-          by,
-          sort,
-          days: days,
-          perDay: perDay ? "1" : undefined,
-          limit: limit,
-          utcOffset: utcOffset,
-          ...filterQuery(filters),
-        });
-      }),
+    ({ workspace, perDay, ...query }) =>
+      answer(() =>
+        scoped(workspace)("/usage/breakdown", { ...query, perDay: perDay ? "1" : undefined }),
+      ),
   );
 
   server.registerTool(
@@ -463,7 +434,7 @@ export function registerTools(server: McpServer, context: ToolContext) {
     ({ workspace, days, provider }) =>
       answer(async () => {
         const api = scoped(workspace);
-        const query = { days: days };
+        const query = { days };
         if (provider) {
           const id = encodeURIComponent(provider);
           const [report, trends] = await Promise.all([

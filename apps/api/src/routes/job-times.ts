@@ -9,7 +9,7 @@ import { performanceReport } from "../reports/runs.ts";
 import { parseRunFilters } from "@relayrunner/api-types";
 import { workflowReport } from "../reports/workflow-compare.ts";
 import { MAX_RANGE_MS, runnerReport } from "../reports/runner-report.ts";
-import { Epoch, requireWindow } from "../reports/report-window.ts";
+import { Epoch, requireWindow, UtcOffset } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -19,9 +19,6 @@ const Days = z.coerce.number().int().min(1).max(MAX_DAYS).default(DEFAULT_DAYS);
 /** A report's window (`?from=&to=` or `?days=N`), as far back as single jobs go. */
 const JOB_WINDOW = { maxDays: RAW_RETENTION_DAYS, defaultDays: DEFAULT_DAYS };
 export const jobWindow = (query: Record<string, string>) => requireWindow(query, JOB_WINDOW);
-
-/** Minutes east of UTC, so days end at the reader's midnight. */
-const UtcOffset = z.coerce.number().int().min(-840).max(840).default(0);
 
 const DaysQuery = z.object({ days: Days });
 

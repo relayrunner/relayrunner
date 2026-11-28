@@ -2,7 +2,7 @@
 // query params (apps/api/src/reports/run-filters.ts), and the dashboard keeps them in the URL. The
 // parsing and matching live here so the API, the dashboard and its sample data agree.
 
-import { type AgentId, agentById, type RunAgent } from "./agents.ts";
+import { AGENTS, type AgentId, type RunAgent } from "./agents.ts";
 
 /** Every GitHub login ending in `[bot]`, as one person. */
 export const BOTS = "bots";
@@ -14,6 +14,12 @@ export const RAW_RETENTION_DAYS = 62;
 
 /** Runs from any agent, or from none. */
 export type AgentFilter = AgentId | "any" | "none";
+
+/** Every value the agent filter takes. */
+export const AGENT_FILTERS = ["any", "none", ...AGENTS.map((agent) => agent.id)] as [
+  AgentFilter,
+  ...AgentFilter[],
+];
 
 export interface RunFilters {
   /** A workflow's name, in any repo. */
@@ -36,11 +42,21 @@ export const RUN_FILTER_KEYS = [
 
 export type RunFilterKey = (typeof RUN_FILTER_KEYS)[number];
 
+/** What each filter matches, for the API's docs and the MCP server's tool arguments. */
+export const RUN_FILTER_HELP: Record<RunFilterKey, string> = {
+  workflow: "Only runs of the workflow with this exact name.",
+  person: 'Only runs this GitHub login started, or "bots" for every [bot] account.',
+  branch: "Only runs on this branch.",
+  trigger: "Only runs from this event, such as push, pull_request, schedule or workflow_dispatch.",
+  agent:
+    "Only runs a coding agent made (by the account that started it, a commit trailer, or a branch prefix like claude/), by id, or any agent, or none.",
+};
+
 /** Longest value a filter takes, so a query param can't grow a statement without bound. */
 const MAX_LENGTH = 200;
 
 const isAgentFilter = (value: string): value is AgentFilter =>
-  value === "any" || value === "none" || agentById(value) !== undefined;
+  (AGENT_FILTERS as string[]).includes(value);
 
 /**
  * The filters in a query or a page's URL, only `keys` of them; anything empty, too long or unknown

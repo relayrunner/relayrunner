@@ -7,9 +7,10 @@ import { JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS } from "../time.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { pullRequestReport } from "../reports/pull-request-minutes.ts";
-import { requireWindow } from "../reports/report-window.ts";
+import { requireWindow, UtcOffset } from "../reports/report-window.ts";
 import {
   BREAKDOWN_BY,
+  BREAKDOWN_DEFAULT_ROWS,
   BREAKDOWN_MAX_ROWS,
   BREAKDOWN_SORTS,
   parseRunFilters,
@@ -21,10 +22,12 @@ import { breakdown } from "../reports/breakdown.ts";
 const BreakdownQuery = z.object({
   by: z.enum(BREAKDOWN_BY),
   sort: z.enum(BREAKDOWN_SORTS).default("minutes"),
-  limit: z.coerce.number().int().min(1).max(BREAKDOWN_MAX_ROWS).default(20),
-  perDay: z.enum(["0", "1"]).default("0"),
-  // Minutes east of UTC, so days end at the reader's midnight.
-  utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
+  limit: z.coerce.number().int().min(1).max(BREAKDOWN_MAX_ROWS).default(BREAKDOWN_DEFAULT_ROWS),
+  perDay: z
+    .enum(["0", "1"])
+    .default("0")
+    .transform((value) => value === "1"),
+  utcOffset: UtcOffset,
 });
 
 // The Usage page: how many of the workspace's jobs ran under a minute, and what GitHub's round-up
@@ -54,11 +57,9 @@ export const usageRoutes = new Hono<AppEnv>()
     const parsed = BreakdownQuery.safeParse(query);
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const window = requireWindow(query, { ...USAGE_RANGE, maxDays: RAW_RETENTION_DAYS });
-    const { perDay, ...options } = parsed.data;
     return c.json(
       await breakdown(c.var.db, c.var.workspace.id, window, {
-        ...options,
-        perDay: perDay === "1",
+        ...parsed.data,
         filters: parseRunFilters(query),
       }),
     );

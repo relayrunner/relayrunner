@@ -99,6 +99,9 @@ export function runnerClass(labels: string[], runnerGroupName?: string | null): 
 export const billedMinutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
 // Keeps sub-cent precision (a 1-core minute is $0.002) without float noise.
+/** Minutes to a tenth. */
+export const tenths = (value: number) => Math.round(value * 10) / 10;
+
 export function cents(value: number) {
   return Math.round(value * 1000) / 1000;
 }

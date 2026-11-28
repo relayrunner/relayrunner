@@ -14,11 +14,15 @@ import {
   FEEDBACK_LIMITS,
 } from "@relayrunner/activity";
 import {
-  AGENTS,
+  AGENT_FILTERS,
   BREAKDOWN_BY,
+  BREAKDOWN_DEFAULT_ROWS,
   BREAKDOWN_MAX_ROWS,
   BREAKDOWN_SORTS,
+  MAX_UTC_OFFSET_MINUTES,
   RAW_RETENTION_DAYS,
+  RUN_FILTER_HELP,
+  RUN_FILTER_KEYS,
 } from "@relayrunner/api-types";
 import { ERRORS } from "@relayrunner/errors";
 import { AUTO_SIZES } from "@relayrunner/providers";
@@ -53,15 +57,9 @@ const stringQuery = (name: string, description: string, extra: object = {}) => (
 });
 
 // Who and what started the runs a report counts, matched exactly.
-const runFilterQueries = [
-  stringQuery("workflow", "Only runs of the workflow with this name."),
-  stringQuery("person", 'Only runs this GitHub login started, or "bots" for every [bot] account.'),
-  stringQuery("branch", "Only runs on this branch."),
-  stringQuery("trigger", "Only runs from this event, such as push or pull_request."),
-  stringQuery("agent", "Only runs this coding agent made, any agent, or none.", {
-    enum: ["any", "none", ...AGENTS.map((agent) => agent.id)],
-  }),
-];
+const runFilterQueries = RUN_FILTER_KEYS.map((key) =>
+  stringQuery(key, RUN_FILTER_HELP[key], key === "agent" ? { enum: AGENT_FILTERS } : {}),
+);
 
 const providerPath = {
   name: "provider",
@@ -458,7 +456,12 @@ export const openApi = {
           name: "limit",
           in: "query",
           required: false,
-          schema: { type: "integer", minimum: 1, maximum: BREAKDOWN_MAX_ROWS, default: 20 },
+          schema: {
+            type: "integer",
+            minimum: 1,
+            maximum: BREAKDOWN_MAX_ROWS,
+            default: BREAKDOWN_DEFAULT_ROWS,
+          },
         },
         {
           name: "perDay",
@@ -472,7 +475,12 @@ export const openApi = {
           in: "query",
           required: false,
           description: "Minutes east of UTC, so days end at the reader's midnight.",
-          schema: { type: "integer", minimum: -840, maximum: 840, default: 0 },
+          schema: {
+            type: "integer",
+            minimum: -MAX_UTC_OFFSET_MINUTES,
+            maximum: MAX_UTC_OFFSET_MINUTES,
+            default: 0,
+          },
         },
         ...runFilterQueries,
       ],

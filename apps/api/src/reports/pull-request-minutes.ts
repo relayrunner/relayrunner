@@ -15,7 +15,7 @@ import { type Db, schema } from "../db/index.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { BILLED_MINUTES, DURATION_MS, RAN_ON_RUNNER } from "./job-sql.ts";
 import type { Window } from "./report-window.ts";
-import { cents, pricePeriods, rateFor, runnerClass } from "./runner-rates.ts";
+import { cents, pricePeriods, rateFor, runnerClass, tenths } from "./runner-rates.ts";
 
 const job = schema.jobTiming;
 const run = schema.workflowRun;
@@ -174,5 +174,3 @@ export async function pullRequestReport(
     })),
   };
 }
-
-const tenths = (value: number) => Math.round(value * 10) / 10;

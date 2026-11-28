@@ -18,5 +18,9 @@ export type BreakdownBy = (typeof BREAKDOWN_BY)[number];
 export const BREAKDOWN_SORTS = ["minutes", "runs", "jobs", "cost", "failures"] as const;
 export type BreakdownSort = (typeof BREAKDOWN_SORTS)[number];
 
-/** Most rows a breakdown lists; the rest are added up. */
+/** Rows a breakdown lists unless asked for more, and the most it lists; the rest are added up. */
+export const BREAKDOWN_DEFAULT_ROWS = 20;
 export const BREAKDOWN_MAX_ROWS = 100;
+
+/** The furthest a reader's time zone is from UTC, in minutes, for a report's `utcOffset`. */
+export const MAX_UTC_OFFSET_MINUTES = 840;
