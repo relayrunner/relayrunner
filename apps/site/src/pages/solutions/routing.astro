@@ -63,7 +63,7 @@ const check = "M5 12l5 5 9-10";
         <li>
           <h3>Add relays with one command</h3>
           <p>
-            <code>npx relayrunner init</code> puts a relay in front of each job. The relay lists where
+            One command puts a relay in front of each job. The relay lists where
             that job is allowed to run.
           </p>
         </li>
@@ -76,7 +76,7 @@ const check = "M5 12l5 5 9-10";
         </li>
         <li>
           <h3>See where each job ran</h3>
-          <p>The Activity page shows the runner each job got and why it skipped the runners above it.</p>
+          <p>Each job shows the runner it got and why it skipped the runners above it.</p>
         </li>
       </ol>
     </div>
@@ -101,8 +101,7 @@ const check = "M5 12l5 5 9-10";
         job needs, like Linux, and any runner in your order can take it.
       </p>
       <p class="body">
-        The job's size stays out of the file. Move it from 2 vCPU to 4 on the Router page, and the
-        next run gets the bigger runner on whichever provider takes it.
+        The job's size stays out of the file. Move it from 2 vCPU to 4 and the next run gets the bigger runner.
       </p>
       <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
     </div>
@@ -125,7 +124,7 @@ const check = "M5 12l5 5 9-10";
       <li>
         <h3>Try a new provider</h3>
         <p>
-          Move a provider up for a day, compare job times on the Performance page, and move it back
+          Move a provider up for a day, compare job times, and move it back
           if it's slower.
         </p>
       </li>
@@ -142,24 +141,21 @@ const check = "M5 12l5 5 9-10";
       <details open>
         <summary>What if nothing in my order can take the job?</summary>
         <p>
-          The relay fails right away with one line that says why each provider couldn't take it, and
-          your pull request's checks show the same reason. Keep GitHub-hosted at the end of your order
+          The job fails right away and your pull request's checks say why. Keep GitHub-hosted at the end of your order
           and a job always has somewhere to go.
         </p>
       </details>
       <details>
         <summary>Can I change a job's runner size without a commit?</summary>
         <p>
-          Yes. Pick the job's size on the Router page, such as 4 vCPU instead of 2, and it applies from
-          the next run. See <a href="/docs/reference/relay-inputs#auto-sizes">auto sizes</a>.
+          Yes. Change a job from 2 vCPU to 4 and it applies from the next run. See <a href="/docs/reference/relay-inputs#auto-sizes">auto sizes</a>.
         </p>
       </details>
       <details>
         <summary>What if a runner fails partway through a job?</summary>
         <p>
           Turn on <a href="/docs/concepts/routing#automatic-retries">automatic retries</a>. A job whose
-          runner crashed or went offline runs again from your runner order, and the Activity page
-          shows why.
+          runner crashed or went offline runs again from your runner order.
         </p>
       </details>
       <details>

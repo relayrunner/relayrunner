@@ -217,14 +217,12 @@ const structuredData = {
         <div class="feature-copy">
           <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
           <p class="body">
-            Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
-            taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries
-            on, a job cut off mid-run starts again on the next free runner. It's your personal runner,
+            Connect a laptop, Mac mini or home server and it starts taking jobs. Close the lid and
+            jobs go to the next runner in your order. It's your personal runner,
             taking only your jobs, until you share it with your team.
           </p>
           <p class="body">
-            On a Mac, the menu bar app does the same with one switch, with nothing to keep open in a
-            terminal.
+            On a Mac, the Mac app does the same with one switch.
           </p>
           <a class="feature-link" href="/download">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" /></svg>
@@ -315,8 +313,7 @@ const structuredData = {
             to the next job.
           </p>
           <p class="body">
-            Runner sizes work the same way. Move a job from 2 vCPU to 4 on the Router page, and its
-            next run gets the bigger runner on whichever provider takes it.
+            Runner sizes work the same way. Move a job from 2 vCPU to 4 and its next run gets the bigger runner.
           </p>
           <a class="feature-link" href="/solutions/routing">Routing →</a>
         </div>
@@ -381,8 +378,8 @@ const structuredData = {
             and how much you use each provider.
           </p>
           <p class="body">
-            Signals point out what makes CI slow or costly, like flaky jobs and long waits for a
-            runner, and History says why each failed job failed.
+            See what makes CI slow or costly, like flaky jobs and long waits for a runner, and why
+            each failed job failed.
           </p>
           <a class="feature-link" href="/docs/dashboard/performance">Performance →</a>
         </div>
@@ -441,10 +438,9 @@ const structuredData = {
         <div class="feature-copy">
           <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
           <p class="body">
-            PR title, PR description and lint checks (oxlint, ruff, actionlint and more) finish in
-            seconds, but a hosted runner bills each one as a full minute. Run them as optimized
-            checks instead: they need no runner, post results to your pull request and use no
-            minutes. Lint is in limited preview.
+            PR title, PR description and lint checks finish in seconds, but a hosted runner bills
+            each one as a full minute. Run them as optimized checks instead: they need no runner and
+            use no minutes. Lint is in limited preview.
           </p>
           <a class="feature-link" href="/docs/concepts/optimized-checks">Optimized checks →</a>
         </div>
@@ -455,9 +451,8 @@ const structuredData = {
         <div class="feature-copy">
           <h2>Send every run to <span class="hl">your observability tool.</span></h2>
           <p class="body">
-            Each workflow run goes out as an OpenTelemetry trace: its jobs and steps, where each job
-            ran and how long it waited for a runner. Honeycomb, Grafana, Axiom or your own collector
-            read it as is. Send job logs alongside, or archive them to your own bucket.
+            Each workflow run goes out as an OpenTelemetry trace that Honeycomb, Grafana, Axiom or
+            your own collector can read. Send job logs alongside.
           </p>
           <a class="feature-link" href="/docs/dashboard/telemetry">Telemetry →</a>
         </div>
@@ -500,8 +495,7 @@ const structuredData = {
           <h2>Ask your agent <span class="hl">about your CI.</span></h2>
           <p class="body">
             Connect the MCP server to Claude, Cursor or VS Code. Your agent sees your runners, runs,
-            failures and usage. Where you allow it, it can also change the runner order, pause a
-            runner or set a job's size, and every change shows in Activity.
+            failures and usage. Where you allow it, it can also change the runner order, pause a runner or set a job's size.
           </p>
           <a class="feature-link" href="/docs/reference/mcp">MCP server →</a>
         </div>
@@ -511,8 +505,7 @@ const structuredData = {
       <section class="section wrap" aria-labelledby="dashboard-h">
         <h2 id="dashboard-h">See every runner and queued job <span class="hl">in one place.</span></h2>
         <p class="body">
-          The Runners page shows what's running and waiting right now, how busy each runner is, and
-          anything that needs you, like a machine that went offline with a job waiting.
+          Know what's running and waiting right now, how busy each runner is, and what needs you.
         </p>
         <Screenshot
           name="runners"

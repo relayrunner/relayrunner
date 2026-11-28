@@ -38,9 +38,9 @@ ${setupPrompt(site!)}
 
 ## Personal runners
 
-Run \`npx relayrunner connect\` on a laptop, Mac mini or home server and it starts taking jobs. Close the lid and jobs go to the next runner in your order. With automatic retries on, a job cut off mid-run starts again on the next free runner. It's your personal runner, taking only your jobs, until you share it with your team.
+Connect a laptop, Mac mini or home server and it starts taking jobs. Close the lid and jobs go to the next runner in your order. It's your personal runner, taking only your jobs, until you share it with your team.
 
-On a Mac, [RelayRunner for Mac](${abs("/docs/get-started/mac-app")}) does the same from the menu bar with one switch. [Download it](${abs("/download")}) or run \`brew install --cask relayrunner/tap/relayrunner\`.
+On a Mac, [RelayRunner for Mac](${abs("/docs/get-started/mac-app")}) does the same with one switch. [Download it](${abs("/download")}) or run \`brew install --cask relayrunner/tap/relayrunner\`.
 
 ## Providers
 
@@ -50,7 +50,7 @@ Each provider is a step in your runner order. Add, reorder or remove them in the
 
 Try a new provider, move work onto your machines, or send everything back to GitHub. You change the order in the dashboard, without a commit or pull request, and it applies to the next job.
 
-Runner sizes work the same way. Move a job from 2 vCPU to 4 on the Router page, and its next run gets the bigger runner on whichever provider takes it.
+Runner sizes work the same way. Move a job from 2 vCPU to 4 and its next run gets the bigger runner.
 
 ## Minutes
 
@@ -60,19 +60,19 @@ Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once yo
 
 Every job shows where it ran and why. See how long the same job takes on each runner, and how much you use each provider.
 
-Signals point out what makes CI slow or costly, like flaky jobs and long waits for a runner, and History says why each failed job failed.
+See what makes CI slow or costly, like flaky jobs and long waits for a runner, and why each failed job failed.
 
 ## Optimized checks
 
-PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but a hosted runner bills each one as a full minute. Optimized checks need no runner, post results to your pull request and use no minutes.
+PR title and lint checks finish in seconds, but a hosted runner bills each one as a full minute. Optimized checks need no runner and use no minutes.
 
 ## Telemetry
 
-Each workflow run goes out as an OpenTelemetry trace: its jobs and steps, where each job ran and how long it waited for a runner. Honeycomb, Grafana, Axiom or your own collector read it as is. Send job logs alongside, or archive them to your own bucket. See [Telemetry](${abs("/docs/dashboard/telemetry")}).
+Each workflow run goes out as an OpenTelemetry trace that Honeycomb, Grafana, Axiom or your own collector can read. Send job logs alongside. See [Telemetry](${abs("/docs/dashboard/telemetry")}).
 
 ## Agents
 
-Connect the [MCP server](${abs("/docs/reference/mcp")}) to Claude, Cursor or VS Code. Your agent sees your runners, runs, failures and usage. Where you allow it, it can also change the runner order, pause a runner or set a job's size, and every change shows in Activity.
+Connect the [MCP server](${abs("/docs/reference/mcp")}) to Claude, Cursor or VS Code. Your agent sees your runners, runs, failures and usage. Where you allow it, it can also change the runner order, pause a runner or set a job's size.
 
 ## Security
 

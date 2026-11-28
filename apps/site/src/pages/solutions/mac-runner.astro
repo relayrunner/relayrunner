@@ -58,9 +58,9 @@ import Screenshot from "../../components/Screenshot.astro";
       <div class="ours">
         <h3><img src="/providers/machines.svg" alt="" width="28" height="28" />Your Mac with relayrunner</h3>
         <ol>
-          <li>Run <code>npx relayrunner connect</code> and sign in with GitHub.</li>
-          <li>Nothing to install or update. Stop it with Ctrl-C or <code>relayrunner pause</code>.</li>
-          <li>Run <code>npx relayrunner init</code> once. After that, change where jobs run from the dashboard.</li>
+          <li>Run one command and sign in with GitHub.</li>
+          <li>Nothing to install or update. Stop it any time.</li>
+          <li>Add relays to your workflows once. After that, change where jobs run from the dashboard.</li>
           <li>Each job gets a fresh Linux VM and a one-time runner, and both go away when it's done.</li>
           <li>When your Mac is offline, jobs go to the next runner in your order.</li>
         </ol>
@@ -75,9 +75,9 @@ import Screenshot from "../../components/Screenshot.astro";
         <li>
           <h3>Connect in one command</h3>
           <p>
-            Run <code>npx relayrunner connect</code> on a Mac with Apple silicon. It takes jobs while
-            it's running and stops when you quit or close the lid. Or
-            <a href="/download">download the Mac app</a> and turn it on from the menu bar.
+            Run one command on a Mac with Apple silicon. It takes jobs while it's running and stops
+            when you quit or close the lid. Or <a href="/download">download the Mac app</a> and turn
+            it on there.
           </p>
         </li>
         <li>
@@ -91,8 +91,7 @@ import Screenshot from "../../components/Screenshot.astro";
           <h3>Use hosted runners when your Mac is busy</h3>
           <p>
             Your Mac is one step in your runner order. When it's busy or asleep, the next job goes to
-            GitHub-hosted or another provider, so nothing waits. Close the lid mid-job and automatic
-            retries run it again there.
+            GitHub-hosted or another provider, so nothing waits.
           </p>
         </li>
       </ol>
@@ -117,8 +116,7 @@ import Screenshot from "../../components/Screenshot.astro";
     <div class="feature-copy">
       <h2>Run macOS jobs on your Mac too.</h2>
       <p class="body">
-        macOS minutes on GitHub cost about ten times Linux. Add <code>--macos</code>, or switch on macOS
-        jobs in the Mac app's settings, and your Mac runs them directly, where Xcode is, while Linux
+        macOS minutes on GitHub cost about ten times Linux. Turn on macOS jobs and your Mac runs them directly, where Xcode is, while Linux
         jobs keep running in VMs.
       </p>
       <a class="sol-link" href="/docs/guides/mac-builds">Read the macOS builds guide →</a>
@@ -126,7 +124,7 @@ import Screenshot from "../../components/Screenshot.astro";
   </section>
 
   <section class="section wrap" aria-labelledby="app-h">
-    <h2 id="app-h">Or turn it on from the menu bar.</h2>
+    <h2 id="app-h">Or use the Mac app.</h2>
     <p class="body">
       The Mac app takes jobs with one switch. See what's running, how long it has left and what ran
       this week, without a terminal.
@@ -138,14 +136,14 @@ import Screenshot from "../../components/Screenshot.astro";
   <section class="section wrap" aria-labelledby="speed-h">
     <h2 id="speed-h">Compare your Mac with GitHub-hosted runners.</h2>
     <p class="body">
-      The Performance page compares how long the same jobs take on each runner, so you can see how
-      much faster your Mac is than ubuntu-latest.
+      See how long the same jobs take on each runner, and how much faster your Mac is than
+      ubuntu-latest.
     </p>
     <Screenshot
       name="performance"
       alt="The Performance page's runner table, with a MacBook Pro 2.7 times faster than ubuntu-latest."
     />
-    <a class="sol-link" href="/docs/dashboard/performance">Read about the Performance page →</a>
+    <a class="sol-link" href="/docs/dashboard/performance">Performance →</a>
   </section>
 
   <section class="section wrap sol-faq" aria-labelledby="faq-h">
@@ -154,8 +152,7 @@ import Screenshot from "../../components/Screenshot.astro";
       <details open>
         <summary>Will it slow down my Mac?</summary>
         <p>
-          Set <code>--cpus</code> and <code>--memory</code> to cap what each VM gets. Run
-          <code>relayrunner pause</code> when you need the whole machine.
+          You can cap the CPU and memory each VM gets, and pause when you need the whole machine.
         </p>
       </details>
       <details>
@@ -168,7 +165,7 @@ import Screenshot from "../../components/Screenshot.astro";
       <details>
         <summary>Do I have to change my workflows?</summary>
         <p>
-          Once. <code>npx relayrunner init</code> adds a relay to each job you pick. After that, you
+          Once, to add a relay to each job you pick. After that, you
           change where jobs run in the dashboard. See <a href="/solutions/routing">Routing</a>.
         </p>
       </details>

@@ -77,13 +77,13 @@ const routed = github
       "Jobs run on your machines first, and on GitHub-hosted runners when your machines are busy.",
       "A minutes limit sends jobs to the next runner once you've used a share of your included minutes.",
       "Add a hosted provider ahead of GitHub from the dashboard. No workflow edits.",
-      "The Performance page compares GitHub-hosted job times with your other runners.",
+      "Compare GitHub-hosted job times with your other runners.",
     ]
   : [
       `Jobs run on your machines first, and on ${name} when your machines are busy.`,
       `GitHub-hosted runners stay as the fallback after ${name}.`,
       `Move ${name} up, down or out from the dashboard. No workflow edits.`,
-      `The Performance page compares ${name}'s job times with your machines and GitHub-hosted runners.`,
+      `Compare ${name}'s job times with your machines and GitHub-hosted runners.`,
     ];
 const order = github
   ? "your machines, then GitHub-hosted"
@@ -98,7 +98,7 @@ const faqs = [
   },
   {
     q: `Do I have to change my workflows to use ${name}?`,
-    a: `Once. Run npx relayrunner init in your repo and it adds a relay to each job you pick. After that, you move ${name} up or down in the dashboard.`,
+    a: `Once, to add a relay to each job you pick. After that, you move ${name} up or down in the dashboard.`,
   },
   {
     q: `Which jobs go to ${name}?`,
@@ -237,14 +237,13 @@ const faqData = {
         <li>
           <h3>Add {name} to your runner order</h3>
           <p>
-            On the Router page, put {name} where you want it. A common order is {order}.
+            Put {name} where you want it in your runner order. A common order is {order}.
           </p>
         </li>
         <li>
           <h3>Add relays to your jobs</h3>
           <p>
-            Run <code>npx relayrunner init</code> in your repo. It adds a relay to each job you pick,
-            with what the job needs, so any runner in your order can take it.
+            Run one command in your repo to add a relay to each job you pick.
           </p>
         </li>
       </ol>
@@ -365,7 +364,7 @@ const faqData = {
         <div class="int-billing">
           <h3>{p.billing.limitsOnly ? `Pass jobs on at ${name}'s limits` : `See what ${name} billed`}</h3>
           <p>
-            Paste a read-only {p.billing.token.toLowerCase()} in Settings → Providers.{" "}
+            Connect a read-only {p.billing.token.toLowerCase()}.{" "}
             {p.billing.limitsOnly ? "The Router then checks" : "The dashboard then shows"}{" "}
             {p.billing.reads.charAt(0).toLowerCase() + p.billing.reads.slice(1)}
           </p>
