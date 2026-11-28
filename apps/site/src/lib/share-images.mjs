@@ -192,7 +192,7 @@ function routeCard({ headline, accent, sub, lanes, url, size = 72 }) {
   );
 }
 
-const busyMachines = { id: "machines", name: "Your machines", note: "Busy", state: "off" };
+const busyMachines = { id: "machines", name: "Personal runners", note: "Busy", state: "off" };
 
 /** The home page card. */
 export function homeCard() {
@@ -218,7 +218,7 @@ export function integrationCard({ id, name, url }) {
   const github = id === "github";
   const runner = github ? "GitHub-hosted" : name;
   return routeCard({
-    headline: "Your machines first.",
+    headline: "Personal runners first.",
     accent: [`${name} when`, "they're busy."],
     size: 60,
     sub: `relayrunner sends each job to your own machines and falls back to ${
@@ -242,7 +242,7 @@ export function integrationsCard({ url }) {
   const c = dark;
   const run = "#d29922";
   const included = [
-    { id: "machines", name: "Your machines", pct: 38, tone: c.go },
+    { id: "machines", name: "Personal runners", pct: 38, tone: c.go },
     { id: "blacksmith", name: "Blacksmith", pct: 22, tone: "#2ea043" },
     { id: "github", name: "GitHub-hosted", pct: 14, tone: "#238636" },
   ];
@@ -752,7 +752,7 @@ export function readmeHero(theme) {
       "div",
       { flexDirection: "column", gap: 10, width: 400, flexShrink: 0 },
       h("div", { ...caps(c), marginBottom: 4 }, "Your runner order"),
-      lane(c, { n: 1, id: "machines", name: "Your machines", state: "on" }),
+      lane(c, { n: 1, id: "machines", name: "Personal runners", state: "on" }),
       lane(c, { n: 2, id: "self-hosted", name: "Self-hosted runners" }),
       lane(c, { n: 3, id: "blacksmith", name: "Blacksmith" }),
       lane(c, { n: 4, id: "github", name: "GitHub-hosted" }),
