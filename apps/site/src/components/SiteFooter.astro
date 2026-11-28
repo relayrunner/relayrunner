@@ -49,6 +49,13 @@ const columns = [
       { href: "/terms", label: "Terms" },
     ],
   },
+  {
+    title: "More from Build Internet",
+    links: [
+      { href: "https://releases.sh", label: "Release Notes Index", title: "A registry of release notes from across the web" },
+      { href: "https://uploads.sh", label: "uploads.sh", title: "The upload tool for coding agents" },
+    ],
+  },
 ];
 ---
 
@@ -80,6 +87,7 @@ const columns = [
               <li>
                 <a
                   href={link.href}
+                  title={"title" in link ? link.title : undefined}
                   aria-current={
                     path === link.href
                       ? "page"

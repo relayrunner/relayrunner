@@ -888,7 +888,7 @@ button {
 }
 .footer-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.6fr) repeat(5, minmax(0, 1fr));
   gap: 32px 24px;
   padding-block: 48px 56px;
 }
