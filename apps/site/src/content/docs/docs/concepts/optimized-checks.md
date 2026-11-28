@@ -26,7 +26,9 @@ checks:
   lint: [oxlint, typos]
 ```
 
-You change a repo's checks in this file, not in the dashboard. The dashboard's **Settings › GitHub** page lists which checks each repo has on. Checks read it from the default branch, so a pull request can't turn off its own checks. PR title and PR description need only the RelayRunner GitHub App. Lint needs the separate RelayRunner Checks GitHub App, which can read the repo's code. See [Repo config](/docs/reference/repo-config) for every setting.
+You change a repo's checks in this file, and the dashboard's **Settings › GitHub** page lists which checks each repo has on. Checks read the file from the default branch, so a pull request can't turn off its own checks.
+
+Lint needs the separate RelayRunner Checks GitHub App, which can read the repo's code. See [Repo config](/docs/reference/repo-config) for every setting.
 
 ## As a job
 

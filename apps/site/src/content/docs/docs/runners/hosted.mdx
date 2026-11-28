@@ -22,13 +22,15 @@ relay-test:
     github: ubuntu-latest
 ```
 
-Each job has its own relay, so each job picks its own size, such as `blacksmith-2vcpu-ubuntu-2404` for a lint job and `blacksmith-4vcpu-ubuntu-2404` for tests. Or write `auto`, such as `depot: auto`, and pick each job's size on the Router page instead (see [Auto sizes](/docs/reference/relay-inputs#auto-sizes)). `relayrunner init` keeps a job's existing provider label as its fallback, so a job already on a hosted provider stays there whenever no machine is free.
+Each job has its own relay, so each job picks its own size, such as `blacksmith-2vcpu-ubuntu-2404` for lint and `blacksmith-4vcpu-ubuntu-2404` for tests. Or write `auto`, such as `depot: auto`, and pick each job's size on the Router page. See [Auto sizes](/docs/reference/relay-inputs#auto-sizes).
+
+`relayrunner init` keeps a job's existing provider label as its fallback, so a job already on a hosted provider stays there whenever no machine is free.
 
 ## Where it sits in the order
 
 A provider's step always takes a job that names one of its labels. There's no way to see a provider's capacity, so steps below it only run for jobs that don't name one. A common order is your machines, then a hosted provider, then GitHub-hosted.
 
-Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat, and BerryBox, which runs private repos only. RelayRunner skips both for public repos. StarSling, Monk CI, Latchkey, BerryBox and Lizard only run organizations' repos, so RelayRunner skips them for a personal account's jobs.
+Unlike machines, hosted providers also run public repos' jobs. The Router skips a provider where it would refuse the job: Boat and BerryBox for public repos, and StarSling, Monk CI, Latchkey, BerryBox and Lizard for personal accounts.
 
 ## The providers
 
@@ -107,9 +109,9 @@ Lizard runs Linux x64 in three sizes: `lizard-small-ubuntu-2404` (2 vCPU), `liza
 
 Groundbox runs Linux x64 in four sizes: `groundbox-2vcpu`, `groundbox-4vcpu`, `groundbox-8vcpu` and `groundbox-16vcpu`, each of which can end in `-ubuntu-2404`. The bare `groundbox` label lets Groundbox pick a size for each job from its earlier runs, so the dashboard can't tell its size or price. `groundbox-flex` (4 vCPU) and `groundbox-flex-2vcpu` through `-16vcpu` cost half as much but only run in spare room, so jobs on them may wait.
 
-Groundbox runs Windows Server 2025 Datacenter, x64, in four sizes: `groundbox-windows-2vcpu`, `groundbox-windows-4vcpu`, `groundbox-windows-8vcpu` and `groundbox-windows-16vcpu`, with 4 GB of memory a vCPU; the bare `groundbox-windows` is 4 vCPU. Each job gets a fresh VM, deleted when it ends, and starts about 30 seconds after it's picked up. It's $0.006, $0.012, $0.022 and $0.042 a minute, billed per second, and boot time isn't billed. On the Free plan a Windows minute uses free minutes at 2x its size, so a 4 vCPU minute uses 4.
+Windows Server 2025 (x64) runs on `groundbox-windows-2vcpu`, `-4vcpu`, `-8vcpu` and `-16vcpu`, at $0.006, $0.012, $0.022 and $0.042 a minute. The bare `groundbox-windows` is 4 vCPU. On the Free plan a Windows minute uses free minutes at 2x its size, so a 4 vCPU minute uses 4.
 
-`groundbox-macos` runs each job in a fresh macOS VM, in one size: 12 vCPU on Apple silicon M6, with 12 GB of memory, macOS 26 Tahoe and Xcode 27.2. It's $0.05 a minute, billed per second. On the Free plan a macOS minute uses 15 free minutes, so the 3,000 a month are 200 macOS minutes.
+`groundbox-macos` runs macOS 26 with Xcode 27.2 in one size, 12 vCPU on Apple silicon with 12 GB of memory, at $0.05 a minute. On the Free plan a macOS minute uses 15 free minutes.
 
 ## Good to know
 

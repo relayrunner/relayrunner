@@ -21,7 +21,7 @@ The runner order is your workspace's list of providers, top to bottom. Each job 
 | **GitHub-hosted**     | The relay names a `github` label. With a cap, only while the account is under it.                                                                         |
 | **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a cap, only while the account is under it.                                |
 
-A step that can't take the job is skipped with a reason, and the next one is tried. Between two steps, the Router page says what sends a job on, such as "Once 2,400 min are used". Under a step with no cap it warns you, because that provider takes every job it can start and the steps below it rarely run.
+A step that can't take the job is skipped with a reason, and the next one is tried. The Router page says what sends a job from one step to the next, such as "Once 2,400 min are used". It also warns under a step with no cap, since the steps below it rarely run.
 
 ## Common orders
 
@@ -49,7 +49,7 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 3. Blacksmith, capped at 90% of its free minutes
 4. GitHub-hosted, no cap
 
-Self-hosted can appear once. If a step repeats a provider with the same kind of cap set no higher than an earlier one, no job reaches it, and the Router page marks it "Never reached".
+Self-hosted can appear once. A repeated provider needs a higher cap than its earlier step, or the Router page marks it "Never reached".
 
 ## Caps
 
@@ -89,7 +89,7 @@ Connect Groundbox under **Settings › Providers** with a Groundbox API key that
 
 The Router also reads your Groundbox account before it sends a job there. Groundbox holds jobs at the spend caps you set in its dashboard, and on Free once the free minutes and credit are both used. When Groundbox would hold a job, the Router sends it to the next step so it doesn't wait.
 
-You can also set a minutes limit on a Groundbox step, such as 90% of its free minutes, to budget them. The count is Groundbox's own, read live and reused for about a minute. Without a connection, or if Groundbox stops accepting the key or can't be reached, a Groundbox step takes every job it can, and the cap never blocks.
+You can also set a minutes limit on a Groundbox step, such as 90% of its free minutes. Without a connection, or if Groundbox stops accepting the key or can't be reached, a Groundbox step takes every job it can, and the cap never blocks.
 
 ## Changes take effect at once
 

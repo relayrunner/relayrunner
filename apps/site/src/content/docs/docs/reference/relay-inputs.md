@@ -41,7 +41,10 @@ with:
 
 ## Exact labels
 
-To use a specific runner, give the provider's input. With `os`, `arch` or `cpus` set, that provider uses your label as written and the other providers are still sized for the job; a `machine` label must also have the OS and arch you set. Without them, only the providers you name can take the job, and a provider you leave out is never used, even if it's in your runner order.
+To use a specific runner, name its label in the provider's input.
+
+- **With `os`, `arch` or `cpus` set**, that provider uses your label as written, and the other providers are still sized for the job.
+- **Without them**, only the providers you name can take the job, even if others are in your runner order.
 
 Any input can say `auto` instead of a label. The Router then picks that provider's label for the job's size, which you set on the dashboard's Router page. See [Auto sizes](#auto-sizes).
 
@@ -89,7 +92,7 @@ jobs:
 
 - **The size** is the one you picked for the job on the Router page, or the workspace's **Default size** under **Settings** there. It starts at 2 vCPU. To pick one, find the workflow under **Workflows** and click its auto jobs. For a repo that isn't routed yet, pick sizes in **Route a repo** on the same page; they apply from the first run.
 - **A provider without that size** uses its next size up. If it has nothing that big, the job skips it, and the Activity page says why. GitHub-hosted has standard runners up to 2 vCPU.
-- **Try first**, next to the size, sends one job to a provider before the rest of your runner order. When the provider is in the order more than once, only its first step moves up, and its later steps stay where they are.
+- **Try first**, next to the size, sends one job to a provider before the rest of your runner order. If the provider is in the order more than once, only its first step moves up.
 - A workflow whose relays all name their labels shows as **Pinned** under Workflows. Its sizes stay in the file.
 - Auto sizes are Linux x64 unless the relay sets `os` or `arch`.
 

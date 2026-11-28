@@ -5,7 +5,7 @@ description: How long your workflows and jobs usually take, and which runner sui
 
 import Screenshot from "@/components/Screenshot.astro";
 
-The **Performance** page, under Analytics, shows how long your workflows and jobs usually take over the past 24 hours, 7, 14 or 30 days, this week, last week, this month or last month. Times come from successful runs only, since a failed run stops early. The ⓘ beside each column explains how it's worked out.
+The **Performance** page, under Analytics, shows how long your workflows and jobs usually take over the range you pick, from the past 24 hours to last month. Times come from successful runs only, since a failed run stops early. The ⓘ beside each column explains how it's worked out.
 
 ## Workflows
 
@@ -39,9 +39,9 @@ Jobs the model hasn't read yet, or wasn't sure about, count as **Not sorted**. T
 
 ### Setup, build and test
 
-GitHub sends the start and end of each step when a job finishes, and the dashboard sorts each step by its name. **Setup** is what every run does to get the machine ready: starting the runner, checkout, tools such as `setup-node`, packages (`npm ci`, `pip install`), system packages (`apt-get install`), browsers (`playwright install`), container images and cache steps. The rest is the job's own work: **Build**, **Test**, or **Other work** when a step's name doesn't say and the job's type doesn't either. Each type gets a bar in minutes; hover it to see what's inside.
+The dashboard sorts each step by its name. **Setup** gets the machine ready: starting the runner, checkout, tools such as `setup-node`, installing packages and browsers, container images and cache steps. The rest is the job's own work: **Build**, **Test**, or **Other work** when the step's name doesn't say. Each type gets a bar in minutes. Hover it to see what's inside.
 
-Setup with a cache step that names what it holds, such as "Cache Playwright browsers", or `setup-node` with caching on, shows solid. A cache step means a cache is set up, not that it hit. Everything else reads as **No cache we can see**, though a runner can also cache in ways step names don't show.
+Setup shows solid when a cache step names what it holds, such as "Cache Playwright browsers", or when `setup-node` has caching on. That means a cache is set up, and it may still have missed. Everything else reads as **No cache we can see**, though a runner can also cache in ways step names don't show.
 
 Open a job on the **Jobs** tab to see its average successful run step by step.
 

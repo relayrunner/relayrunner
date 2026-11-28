@@ -11,7 +11,9 @@ The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it w
 relayrunner connect
 ```
 
-Puts this machine online and runs the jobs it's sent until you stop it. On a Mac with Apple silicon and Apple's container tool, each job runs in its own Linux VM; elsewhere jobs run on the machine itself. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume. While it stays open, it checks for a newer GitHub runner every few hours and switches to it between jobs.
+Puts this machine online and runs the jobs it's sent until you stop it. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
+
+On a Mac with Apple silicon and Apple's container tool, each job runs in its own Linux VM. Elsewhere jobs run on the machine itself. While `connect` stays open, it switches to newer GitHub runners between jobs.
 
 Run inside a repo with no routed jobs, it offers to route them, the same as `init`.
 
@@ -52,7 +54,21 @@ With `--events`, `connect` writes one JSON object per line to stdout and nothing
 }
 ```
 
-Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `job-result`, `job-end` (the job's line in [`history`](#history)), `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`, `waiting`. `waiting` (also in `state`) is how many jobs are queued for a slot on this machine: jobs it could run whose machines are all busy. `queue` lists the longest-waiting of them (repo, since when in ms, and the job's name and workflow once GitHub has said which job it is), and `spilled` holds when jobs in the last hour went to another runner because every slot was busy. `state` also has `slots`, how many jobs it runs at once. A `run` event carries `job` when the gateway knows which job it is: its name, workflow, repo, GitHub link and `typicalMs`, how long it usually takes on this machine.
+Event types:
+
+- `sign-in`: the page and code to approve.
+- `machine`, `state`, `offline` and `error`.
+- `job-repo`, `job-result` and `job-end`, which is the job's line in [`history`](#history).
+- The connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused` and `waiting`.
+
+A `state` event has:
+
+- `waiting`: how many jobs are queued for a slot on this machine. It's also an event of its own.
+- `queue`: the longest-waiting of them, each with its repo, `since` in ms, and the job's name and workflow once GitHub has said which job it is.
+- `spilled`: when jobs in the last hour went to another runner because every slot was busy.
+- `slots`: how many jobs the machine runs at once.
+
+A `run` event carries `job` when the job is known: its name, workflow, repo, GitHub link and `typicalMs`, how long it usually takes on this machine.
 
 ## `login`
 
@@ -111,9 +127,7 @@ relayrunner workspaces add acme       # run jobs from Acme here too
 relayrunner workspaces remove acme    # stop running Acme's jobs here
 ```
 
-You pick the machine's workspaces when you approve it; this changes them later. `add` and `remove` take a workspace's name, slug or id, or show a list to pick from when you leave it out. Adding a workspace while sharing is `anyone` warns that anyone who can push to its private repos can run jobs on the machine.
-
-See the [changelog](/docs/changelog) for what's new.
+You pick the machine's workspaces when you approve it, and this command changes them later. `add` and `remove` take a workspace's name, slug or id, or show a list to pick from when you leave it out. Adding a workspace while sharing is `anyone` warns that anyone who can push to its private repos can run jobs on the machine.
 
 ## `history`
 
@@ -136,11 +150,17 @@ relayrunner benchmark list --provider depot                  # the last 30 days
 relayrunner benchmark stop <id>
 ```
 
-Evaluates a hosted provider on one of your workflows: it runs the whole workflow five times on that provider from the default branch, on the same commit (a cold cache first, then warm), and compares it with the workflow's last 20 passing runs. It's the same evaluation as the provider's Evaluate page in the dashboard, so the command prints a link where you can follow it, and `benchmark watch` follows one you started in the dashboard. The runs bill to your account with the provider. `relayrunner eval`, its old name, still works.
+Evaluates a hosted provider on one of your workflows. It runs the whole workflow five times on that provider, on the same commit from the default branch (a cold cache first, then warm), and compares it with the workflow's last 20 passing runs. The runs bill to your account with the provider.
 
-In a clone, the command uses that repo and the workspace on its GitHub account; `--repo` and `--workspace` pick others. It walks through the same steps as the dashboard. If the provider's GitHub App isn't on your organization yet, it shows how to install it and waits until it's there. On a personal account, where GitHub doesn't show which apps are installed, you confirm that yourself. A workflow whose jobs don't go through a relay needs `relayrunner init` first, and one without `workflow_dispatch` shows the line to add and starts after the next push to the default branch.
+It's the same evaluation as the provider's Evaluate page in the dashboard. The command prints a link where you can follow it, and `benchmark watch` follows one you started in the dashboard. `relayrunner eval`, its old name, still works.
 
-While it runs, `s` stops it and keeps the runs that finished, `o` opens it in the dashboard, and Ctrl-C leaves it running. Only workspace owners and admins can start or stop one. If this computer isn't signed in, it signs you in first, and someone new to RelayRunner signs up and installs its GitHub App on the way. RelayRunner sees only runs from after the app was installed, so in a new account route a workflow with `relayrunner init` and push before evaluating it.
+In a clone, the command uses that repo and the workspace on its GitHub account. `--repo` and `--workspace` pick others. Before it starts, it may give you a step to do:
+
+- **Install the provider's GitHub App.** On an organization, the command waits until the App is there. On a personal account, you confirm it yourself.
+- **Route the workflow** with `relayrunner init`, if its jobs don't go through a relay.
+- **Add `workflow_dispatch`** to the workflow. The command shows the line to add, and starts after the next push to the default branch.
+
+While it runs, `s` stops it and keeps the runs that finished, `o` opens it in the dashboard, and Ctrl-C leaves it running. Only workspace owners and admins can start or stop one. If this computer isn't signed in, the command signs you in first. An evaluation only sees runs from after the RelayRunner GitHub App was installed, so in a new account, route a workflow and push before evaluating it.
 
 | Exit code | When                                                                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -157,11 +177,13 @@ relayrunner blacksmith connect
 relayrunner blacksmith connect --workspace acme   # when you run more than one workspace
 ```
 
-Connects your Blacksmith organization so Settings › Providers shows its real usage: billable minutes and cost per day, and each job's billable minutes. Blacksmith has no usage API, so RelayRunner reads it with Blacksmith's own CLI and an org token.
+Connects your Blacksmith organization so Settings › Providers shows its real usage: billable minutes and cost per day, and each job's billable minutes. You must own or administer the workspace, and the computer must be signed in (`relayrunner login`).
 
-The command runs `blacksmith org-token create`, which opens your browser for you to approve as an admin of the Blacksmith organization. It sends only the token it prints to RelayRunner, encrypted at rest, and never signs in to Blacksmith or reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin` (`--yes` skips the question), checked against the SHA-256 Blacksmith publishes.
+The command runs `blacksmith org-token create`, which opens your browser. Approve it as an admin of the Blacksmith organization, for the GitHub organization your workspace is on. A token for any other organization is refused.
 
-In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, else the one with its name, or the one you name or pick when that isn't clear. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
+Only the token goes to RelayRunner, where it's stored encrypted. The command never reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, the command offers to download it into `~/.relayrunner/bin`, checked against the SHA-256 Blacksmith publishes (`--yes` skips the question).
+
+To disconnect, remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`.
 
 ## `feedback`
 
@@ -182,3 +204,5 @@ relayrunner firewall off
 ```
 
 Turns on a firewall on your Mac for [isolated jobs](/docs/runners/self-hosted#isolated-jobs-on-a-mac). Job VMs can reach the internet, not your Mac or your local network, and no job can remove it. It stays on after a restart.
+
+See the [changelog](/docs/changelog) for what's new.

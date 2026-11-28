@@ -13,7 +13,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 - **Runs and jobs**: repo, workflow and job names, who triggered them, status, timings, and where each job was routed and why.
 - **Machines**: name, OS and hardware, and when each was last online.
 - **Actions usage**: minutes and amounts per repo from GitHub billing, where the App has permission.
-- **Feedback and crash reports**: what you send us. After a crash, the Mac app asks before sending a report and shows all of it first: versions, macOS, the error and where in the code it happened, with no repos, paths or logs. It goes without your name or email unless you tick the box to include them.
+- **Feedback and crash reports**: what you send us. After a crash, the Mac app shows you the whole report and asks before sending it. A report holds versions, the error and where in the code it happened, with no repos, paths or logs, and no name or email unless you include them.
 
 ## What it never gets
 

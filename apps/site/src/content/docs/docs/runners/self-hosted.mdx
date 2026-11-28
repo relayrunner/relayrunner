@@ -24,7 +24,7 @@ Where a job runs depends on the machine:
 - **On a Mac with Apple silicon**, each job runs in its own Linux VM, away from your files. See [Isolated jobs on a Mac](#isolated-jobs-on-a-mac).
 - **On Linux or an Intel Mac**, jobs run on the machine itself, as the user who started `connect`.
 
-The dashboard's **Runners** page shows each connected machine, the jobs running on it and anything that needs you, like a machine that went offline with jobs waiting. Each running job shows about how long it has left, from how long it usually takes on that runner. Past its usual time the note goes away, and comes back in orange once the job is clearly slower than usual: past 9 in 10 of its runs, and at least 30 seconds and a quarter over its usual time.
+The dashboard's **Runners** page shows each connected machine, the jobs running on it and anything that needs you, like a machine that went offline with jobs waiting. Each running job shows about how long it has left, based on its usual time on that runner, and turns orange once it's clearly slower than usual.
 
 <Screenshot
   name="runners"
@@ -106,7 +106,7 @@ To give every job a fixed size, like a hosted runner's, set it:
 npx relayrunner connect --cpus 4 --memory 16
 ```
 
-That runs as many 4 CPU, 16 GB jobs at once as fit. `--concurrency` still sets the number yourself. A core on an Apple silicon Mac is faster than a hosted runner's vCPU, so the same size usually finishes sooner here.
+The Mac then runs as many 4 CPU, 16 GB jobs at once as fit, or the number you set with `--concurrency`. A core on an Apple silicon Mac is faster than a hosted runner's vCPU, so the same size usually finishes sooner here.
 
 ### Your network
 

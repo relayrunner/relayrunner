@@ -29,15 +29,15 @@ While it's on, the Mac takes jobs, each in its own Linux VM. The head is faded w
 
 The menu has a switch to turn the Mac on and off, with a line beside it that says what it's doing: waiting for jobs, how many are running and waiting, or when a pause ends.
 
-Each running job shows its name, workflow and repo, how long it has run and a bar against how long it usually takes on this Mac, with about how long it has left. Once it's clearly slower than usual, at least 30 seconds and a quarter over, the bar turns orange.
+Each running job shows its name, workflow and repo, how long it has run and a bar against how long it usually takes on this Mac, with about how long it has left. The bar turns orange once the job is clearly slower than usual.
 
 Below that are **Pause New Jobs**, **Jobs…**, **Open Dashboard**, **Settings…** and **Quit RelayRunner**.
 
 ### Jobs window
 
-**Jobs…** (⌘J while the menu is open) lists the jobs running or waiting on this Mac, then every job it ran in the last week. Filter by result, repo, workflow and time, or search by name. Pick a job to see its steps on a timeline and, for a failed one, the step that failed, GitHub's annotations, the end of its log and, when the workspace has AI on, the likely cause. Drag the line between the list and the job to resize them.
+**Jobs…** (⌘J while the menu is open) lists the jobs running or waiting on this Mac, then every job it ran in the last week. Filter by result, repo, workflow and time, or search by name. Pick a job to see its steps on a timeline. A failed job also shows the step that failed, GitHub's annotations, the end of its log and, when the workspace has AI on, the likely cause.
 
-When every slot was busy and jobs went to another runner in the last hour, a note above the list says how many. If the Mac has room for more, **Allow N Jobs at Once** raises the number of jobs at once by one: the app pauses new jobs, waits for the running ones to finish and comes back with the extra slot. Otherwise the button opens Settings.
+If jobs went to another runner in the last hour because every slot was busy, a note above the list says how many. When the Mac has room for another job, **Allow N Jobs at Once** adds a slot once the running jobs finish. Otherwise the button opens Settings.
 
 ### Pause
 

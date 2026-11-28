@@ -31,7 +31,7 @@ To use a specific runner instead, the relay takes one input per provider:
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
 - **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted).
 
-Without `os`, `arch` or `cpus`, leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
+With only these inputs, the job runs only on the providers you name. Set one to `auto`, such as `blacksmith: auto`, to pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
 
 ## What happens on a push
 
@@ -65,13 +65,15 @@ The Router page shows each runner type it's skipping, with a **Try again now** b
 
 A hosted provider only runs jobs from repos its GitHub App can access. If its app is installed on **Selected repositories** without this repo, a job sent there would wait with nothing to pick it up.
 
-If a job the Router sent to a hosted provider isn't picked up within a minute, the Router ends it with a message that names the provider, then re-runs the relay once the run finishes, so the job goes to the next step in your runner order. That provider is skipped for that repo until a later job tries it again, on the same schedule as above, and it's back in use as soon as a runner picks one up. The Activity page shows each of these retries. If that provider has already run jobs in the repo, a slow start doesn't count as a miss: the Router gives it up to 10 minutes before moving the job. When every other step in your runner order is skipped, a provider that only missed the repo lately still takes the job rather than the run failing.
+If a hosted provider doesn't pick a job up within a minute, the Router ends the job with a message that names the provider. Once the run finishes, it re-runs the relay, so the job goes to the next step in your runner order. The Activity page shows each of these retries.
+
+The Router then skips that provider for that repo until a later job tries it and a runner picks it up. A provider that has already run jobs in the repo gets up to 10 minutes before the Router moves the job.
 
 The Router also skips Blacksmith and Groundbox for an organization that hasn't installed their GitHub App.
 
 To fix it, give the provider's GitHub App access to the repo in your GitHub settings.
 
-This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** under **Settings** on the Router page.
+Skipping is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** under **Settings** on the Router page.
 
 ## When every machine is busy
 
@@ -79,9 +81,9 @@ If every machine that fits is busy and no later step in your runner order can ta
 
 A waiting job runs as soon as a slot frees, on whichever fitting machine frees first. Cancelling the run takes it out of line, and GitHub cancels a job that waits more than 24 hours.
 
-If the machine a job was sent to goes offline before the job starts, or its runner fails to start, the job goes back in line the same way. It runs on the next fitting machine with room, or on the same machine once it reconnects. A machine that stays offline for a minute counts as gone.
+If the machine a job was sent to goes offline before the job starts, or its runner fails to start, the job goes back in line. A machine that stays offline for a minute counts as gone.
 
-If no machine that fits comes back within 5 minutes, or the job's runner fails to start on three tries, the job fails with a message saying why, so the run finishes instead of waiting 24 hours. With [automatic retries](#automatic-retries) on, the Router re-runs it and routes it again from your runner order.
+If no machine that fits comes back within 5 minutes, or the job's runner fails to start three times, the job fails with the reason instead of waiting 24 hours. With [automatic retries](#automatic-retries) on, the Router re-runs it and routes it again.
 
 To send jobs elsewhere instead of waiting, add a step after your machines, such as `github` or a hosted provider.
 
@@ -91,7 +93,9 @@ The relay fails straight away with one line that names why each provider couldn'
 
 > No runner available: no self-hosted machine is online and idle; `github` isn't set on this relay.
 
-The relay's log and the run's summary page show the same line, with a link to the dashboard page that fixes it, and a **RelayRunner: couldn't route** check on the commit puts the reason in the pull request's checks list. The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback so it doesn't happen again: give the relay a `github` label and keep GitHub-hosted in the runner order.
+The relay's log and the run's summary page show the same line, with a link to the dashboard page that fixes it. On a pull request, a **RelayRunner: couldn't route** check shows the reason too.
+
+The job that needs the relay doesn't start. Re-run it once a machine is back, or add a fallback: give the relay a `github` label and keep GitHub-hosted in the runner order.
 
 ## When a machine goes away mid-job
 

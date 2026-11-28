@@ -15,7 +15,7 @@ npx relayrunner init
 
 It sorts every job into three groups and lets you pick from the first:
 
-- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a hosted provider's label, such as `blacksmith-*` or `depot-*`. Warnings flag what to check first, such as a job that needs Docker or installs Linux packages when your machine runs jobs on itself and not in a VM.
+- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a hosted provider's label, such as `blacksmith-*` or `depot-*`. Warnings flag what to check first, such as a job that needs Docker when your machine doesn't run jobs in a VM.
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 
@@ -67,7 +67,9 @@ The relay gets what the job needs, read from its old label, so any runner on you
 | `macos-13`                     | `os: macos`, `arch: x64`   |
 | `blacksmith-8vcpu-ubuntu-2404` | `os: linux`, `cpus: 8`     |
 
-`cpus` only appears when the label asks for more than a standard 2 CPU runner. Without it, you set the job's size on the Router page, with no commit. See [relay.yml inputs](/docs/reference/relay-inputs). To keep a job on its old label instead, run `init` with `--exact`. `init` keeps your comments and formatting, and never commits.
+`cpus` only appears when the label asks for more than a standard 2 CPU runner. Without it, you set the job's size on the Router page, with no commit. See [relay.yml inputs](/docs/reference/relay-inputs).
+
+`init` keeps your comments and formatting, and never commits.
 
 Push the change. The check keeps its name in GitHub, so required checks and branch protection keep working.
 

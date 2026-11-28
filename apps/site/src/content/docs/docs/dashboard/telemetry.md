@@ -108,7 +108,7 @@ The same size cap, redaction and API limit apply as for [job logs](#job-logs). T
 
 ## When sending fails
 
-If your endpoint or bucket is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending pauses until you save the settings again. A day with nothing to send starts the count over, so a bucket that only gets the occasional failed job doesn't pause over errors days apart. When a job's log can't be sent, for example because GitHub no longer has it, the reason shows there too.
+If your endpoint or bucket is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending pauses until you save the settings again. When a job's log can't be sent, for example because GitHub no longer has it, the reason shows there too.
 
 ## What gets sent
 

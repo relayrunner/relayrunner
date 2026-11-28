@@ -25,7 +25,7 @@ Jobs go to the next step in your runner order, usually GitHub-hosted, with nothi
 
 ## Do I need to keep a terminal open?
 
-Yes, `relayrunner connect` is the on/off switch. While it runs, the machine takes jobs.
+On a Mac, no: [RelayRunner for Mac](/docs/get-started/mac-app) keeps it online from the menu bar. Elsewhere, `relayrunner connect` is the on/off switch, and the machine takes jobs while it runs.
 
 ## Can a job read the files on my computer?
 
