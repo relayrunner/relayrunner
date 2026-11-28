@@ -45,12 +45,16 @@ export const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 
-/** The row's installation (job_timing's unless another column is given) is the workspace's. */
+/**
+ * The row's installation (job_timing's unless another column is given) is the workspace's. An
+ * equality, not `in`: with `in`, SQLite walks the all-workspaces completed_at index for a newest-first
+ * list and reads every workspace's jobs in the window.
+ */
 export function inWorkspace(
   workspaceId: string,
   installationId: SQLiteColumn = table.installationId,
 ): SQL {
-  return sql`${installationId} in (
+  return sql`${installationId} = (
     select ${schema.workspace.installationId} from ${schema.workspace}
     where ${schema.workspace.id} = ${workspaceId})`;
 }
