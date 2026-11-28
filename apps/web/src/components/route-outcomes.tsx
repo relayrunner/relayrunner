@@ -1,7 +1,7 @@
 // The Router page's week of routing, as a small card in the rail beside the order: the share of
 // jobs that took their first choice and a strip a day, each day's breakdown in a tooltip.
 import { useEffect, useState } from "react";
-import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
+import { ChartTip, TipHead, TipRow, useWidth } from "@/components/chart-parts";
 import { Swatch } from "@/components/stacked-bars";
 import {
   getRouteOutcomes,
@@ -11,7 +11,7 @@ import {
   type RouteOutcomes,
 } from "@/lib/route-outcomes";
 import { zoneFormat } from "@/lib/time-zone";
-import { DAY_MS } from "@/lib/job-times";
+import { DAY_MS, plural } from "@/lib/job-times";
 import { cn, count, exact, percent } from "@/lib/utils";
 
 type Outcome = keyof OutcomeCounts;
@@ -150,7 +150,10 @@ function DayStrip({ buckets, series }: { buckets: OutcomeBucket[]; series: typeo
       </div>
       {hover !== null && day && width > 0 && (
         <ChartTip x={(hover + 0.5) * slot} y={0} width={width}>
-          <p className="font-medium">{DAY.format(day.start + DAY_MS / 2)}</p>
+          <TipHead
+            title={DAY.format(day.start + DAY_MS / 2)}
+            aside={plural(totals[hover] ?? 0, "job")}
+          />
           {series.map((s) => (
             <TipRow
               key={s.key}
@@ -159,7 +162,6 @@ function DayStrip({ buckets, series }: { buckets: OutcomeBucket[]; series: typeo
               value={exact(day[s.key])}
             />
           ))}
-          <TipRow label="Total" value={exact(totals[hover] ?? 0)} />
         </ChartTip>
       )}
     </div>

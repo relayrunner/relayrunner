@@ -3,7 +3,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { periodStarts } from "@/lib/chart-trend";
 import { startOfDay, startOfHours, zoneFormat } from "@/lib/time-zone";
-import { count } from "@/lib/utils";
+import { cn, count } from "@/lib/utils";
 
 /** A tooltip line: a label, with its value on the right. */
 export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
@@ -12,6 +12,57 @@ export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string
       {mark}
       {label}
       <span className="ml-auto pl-3 font-medium text-foreground tabular-nums">{value}</span>
+    </p>
+  );
+}
+
+/** A hover card's first line: a swatch and what's under the pointer, with a quiet note on the right. */
+export function TipHead({
+  color,
+  mark,
+  title,
+  aside,
+}: {
+  /** A swatch of this fill before the title. */
+  color?: string;
+  /** Any other mark before the title, in place of a swatch. */
+  mark?: ReactNode;
+  title: string;
+  aside?: string;
+}) {
+  return (
+    <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium">
+      {color && (
+        <span aria-hidden className="size-2 shrink-0 rounded-[3px]" style={{ background: color }} />
+      )}
+      {mark}
+      <span className="min-w-0 truncate">{title}</span>
+      {aside && <span className="ml-auto pl-4 font-normal text-muted-foreground">{aside}</span>}
+    </p>
+  );
+}
+
+/** A hover card's one line on what the numbers mean. */
+export function TipNote({ children }: { children: ReactNode }) {
+  return <p className="mt-0.5 leading-snug text-muted-foreground">{children}</p>;
+}
+
+/** A count for TipStats, its noun made plural to match: { value: "1.2K", unit: "jobs" }. */
+export const countStat = (value: number, noun: string) => ({
+  value: count(value),
+  unit: value === 1 ? noun : `${noun}s`,
+});
+
+/** A hover card's numbers in one row, each a value with its unit after it: "369 jobs  15% of all". */
+export function TipStats({ stats }: { stats: { value: string; unit?: string }[] }) {
+  return (
+    <p className="mt-1.5 flex flex-wrap gap-x-3 tabular-nums">
+      {stats.map(({ value, unit }) => (
+        <span key={unit ?? value}>
+          <span className="font-medium text-foreground">{value}</span>
+          {unit && <span className="text-muted-foreground"> {unit}</span>}
+        </span>
+      ))}
     </p>
   );
 }
@@ -30,6 +81,10 @@ export function topRounded(x: number, bottom: number, width: number, height: num
   ].join("");
 }
 
+/** A hover card's box, positioned by whoever places it. */
+export const TIP_CARD =
+  "pointer-events-none z-10 grid w-max max-w-64 grid-cols-[minmax(0,1fr)] gap-0.5 rounded-lg border bg-popover px-3 py-2.5 text-xs shadow-lg";
+
 /** A tooltip over the plot, kept inside it. */
 export function ChartTip({
   x,
@@ -46,7 +101,7 @@ export function ChartTip({
   return (
     <div
       role="status"
-      className="pointer-events-none absolute z-10 grid gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md"
+      className={cn("absolute", TIP_CARD)}
       style={{
         top: Math.max(y - 12, 0),
         ...(right ? { right: width - x + 12 } : { left: x + 12 }),

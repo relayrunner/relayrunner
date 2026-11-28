@@ -1,7 +1,7 @@
-import { TipRow } from "@/components/chart-parts";
+import { countStat, TipHead, TipNote, TipStats } from "@/components/chart-parts";
 import { Histogram } from "@/components/histogram";
 import type { UsageReport } from "@/lib/usage";
-import { count, percent } from "@/lib/utils";
+import { percent } from "@/lib/utils";
 
 /** "45s" or "12m": a bucket edge on the axis. */
 const edge = (seconds: number) => (seconds < 60 ? `${seconds}s` : `${seconds / 60}m`);
@@ -33,16 +33,21 @@ export function JobLengths({ report }: { report: UsageReport }) {
     const from = lengths[i - 1]?.under ?? 0;
     const label = bucketLabel(from, under);
     const short = under !== null && under <= shortJobSeconds;
+    const color = short ? "var(--rr-run)" : "var(--rr-idle)";
     return {
       label,
       value: jobs,
-      color: short ? "var(--rr-run)" : "var(--rr-idle)",
+      color,
       tip: (
         <>
-          <p className="font-medium">{label.replace(/m\b/g, " min")}</p>
-          <TipRow label="Jobs" value={count(jobs)} />
-          <TipRow label="Share of jobs" value={percent(jobs / counted)} />
-          {short && <TipRow label="Billed" value="1 min each" />}
+          <TipHead
+            color={color}
+            title={`Jobs that ran ${label.replace(/m\b/g, " min").replace("<", "under ")}`}
+          />
+          {short && <TipNote>Each still bills a whole minute.</TipNote>}
+          <TipStats
+            stats={[countStat(jobs, "job"), { value: percent(jobs / counted), unit: "of all" }]}
+          />
         </>
       ),
     };

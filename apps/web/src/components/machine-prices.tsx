@@ -7,13 +7,19 @@ import {
 } from "@relayrunner/providers";
 import { minuteText } from "@relayrunner/providers/runner-table";
 import { useState } from "react";
-import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
+import {
+  ChartTip,
+  countStat,
+  TipHead,
+  TipNote,
+  TipStats,
+  useWidth,
+} from "@/components/chart-parts";
 import { OptionPicker } from "@/components/range-picker";
-import { Swatch } from "@/components/stacked-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { plural } from "@/lib/job-times";
 import { PRICE_VIEWS, type PriceView, type ProviderRunner } from "@/lib/providers";
-import { cn, count } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 // Every runner a provider sells (the catalog in @relayrunner/providers), as a grid of systems by
 // vCPUs, or as a chart of price against vCPUs, one line per system. Runners the workspace's jobs
@@ -464,21 +470,23 @@ function PriceChart({ rows, low, high }: Shown) {
 
 /** A chart dot's runner: its name, system, size, price and the workspace's jobs on it. */
 function DotTip({ cell, system, color }: { cell: Cell; system: string; color: string }) {
+  const note = [cell.name && cell.larger && "Larger runner", cell.note].filter(Boolean).join(" · ");
   return (
     <>
-      <p className={cn("font-medium", cell.name && "font-mono")}>
-        {cell.name ?? "Larger runner, named by your org"}
-      </p>
-      <p className="flex items-center gap-1.5 text-muted-foreground">
-        <Swatch color={color} className="size-2" />
-        {[system, cell.name && cell.larger && "Larger runner", cell.note]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-      <TipRow label="Price a minute" value={priceText(cell.usd)} />
-      {cell.size && <TipRow label="vCPUs" value={String(cell.size.vcpus)} />}
-      {cell.size?.memoryGb && <TipRow label="Memory" value={`${cell.size.memoryGb} GB`} />}
-      {cell.jobs > 0 && <TipRow label="Your jobs" value={count(cell.jobs)} />}
+      <TipHead
+        color={color}
+        title={cell.name ?? "Larger runner, named by your org"}
+        aside={system}
+      />
+      {note && <TipNote>{note}</TipNote>}
+      <TipStats
+        stats={[
+          { value: priceText(cell.usd), unit: "a min" },
+          ...(cell.size ? [{ value: String(cell.size.vcpus), unit: "vCPUs" }] : []),
+          ...(cell.size?.memoryGb ? [{ value: String(cell.size.memoryGb), unit: "GB" }] : []),
+          ...(cell.jobs > 0 ? [countStat(cell.jobs, "job")] : []),
+        ]}
+      />
     </>
   );
 }

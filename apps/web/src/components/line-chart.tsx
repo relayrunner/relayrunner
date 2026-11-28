@@ -1,7 +1,7 @@
 // Lines over days (or weeks), one per series. Where a series has no value, a faint dashed line
 // bridges the gap, unless the chart leaves gaps blank. The provider pages draw each runner type's queue wait, job time or failure rate.
 import { useState } from "react";
-import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
+import { ChartTip, TipHead, TipRow, useWidth } from "@/components/chart-parts";
 import { Swatch } from "@/components/stacked-bars";
 import { DAY_MS } from "@/lib/job-times";
 import { shortDate, zoneFormat } from "@/lib/time-zone";
@@ -176,10 +176,9 @@ export function LineChart({
       )}
       {hover !== null && starts[hover] !== undefined && (
         <ChartTip x={x(hover)} y={PAD.top} width={width}>
-          <p className="font-medium">
-            {bucketMs > DAY_MS ? "Week of " : ""}
-            {zoneFormat(DAY_LABEL).format(noon(starts[hover]))}
-          </p>
+          <TipHead
+            title={`${bucketMs > DAY_MS ? "Week of " : ""}${zoneFormat(DAY_LABEL).format(noon(starts[hover]))}`}
+          />
           {lines.map((line) => (
             <TipRow
               key={line.key}

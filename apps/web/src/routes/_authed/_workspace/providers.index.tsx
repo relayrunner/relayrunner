@@ -6,7 +6,6 @@ import { PageHeader } from "@/components/page-header";
 import { HostedRunnersTable } from "@/components/hosted-runners-table";
 import { ProviderMark } from "@/components/providers";
 import { Change } from "@/components/change";
-import { TipRow } from "@/components/chart-parts";
 import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
@@ -228,7 +227,7 @@ function MinutesChart({
         series={series}
         format={(minutes) => `${minutes.toLocaleString()} min`}
         label={`${title} by provider`}
-        footer={(_, total) => <TipRow label="Total" value={`${total.toLocaleString()} min`} />}
+        totalText={(total) => `${total.toLocaleString()} min`}
       />
       <Legend series={series} />
     </section>

@@ -8,7 +8,10 @@ import {
   OrderAxis,
   roundStep,
   thinLabels,
+  TipHead,
+  TipNote,
   TipRow,
+  TipStats,
   topRounded,
   useWidth,
 } from "@/components/chart-parts";
@@ -656,12 +659,11 @@ function Trend({
     const hy = y(value(point));
     tip = (
       <ChartTip x={hx} y={hy} width={width}>
-        <p className="max-w-56 truncate font-medium">{point.name}</p>
-        <p className="text-muted-foreground">
-          <span className="font-medium text-foreground tabular-nums">{tipText(point)}</span>
-          {` · ${RESULT[point.result].label}`}
-        </p>
-        <p className="text-muted-foreground">{formatTime(point.at, FINISHED_FORMAT)}</p>
+        <TipHead mark={<ResultMark result={point.result} />} title={point.name} />
+        <TipNote>Finished {formatTime(point.at, FINISHED_FORMAT)}</TipNote>
+        <TipStats
+          stats={[{ value: tipText(point) }, { value: RESULT[point.result].label.toLowerCase() }]}
+        />
       </ChartTip>
     );
     highlight = (
@@ -772,7 +774,7 @@ function Bars({
       tip={
         hover && (
           <ChartTip x={plotX(frame, hover.at) + slot / 2} y={PAD.top} width={frame.width}>
-            <p className="font-medium">{bucketText(hover.at, bucketMs)}</p>
+            <TipHead title={bucketText(hover.at, bucketMs)} aside={count(hover.total)} />
             {RESULTS.map((result) => (
               <TipRow
                 key={result}

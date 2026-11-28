@@ -5,6 +5,7 @@ import {
   ChartTip,
   CountGrid,
   countScale,
+  TipHead,
   TipRow,
   topRounded,
   useWidth,
@@ -79,7 +80,7 @@ export function StackedBars({
   format,
   label,
   height = 200,
-  footer,
+  totalText,
   defs,
 }: {
   buckets: StackedBucket[];
@@ -88,7 +89,8 @@ export function StackedBars({
   format: (value: number) => string;
   label: string;
   height?: number;
-  footer?: (bucket: StackedBucket, total: number) => ReactNode;
+  /** The bar's total for the top of its hover card, such as "1.2K min". */
+  totalText?: (total: number) => string;
   /** SVG patterns the series' colours refer to. */
   defs?: ReactNode;
 }) {
@@ -197,7 +199,7 @@ export function StackedBars({
       )}
       {hover !== null && hovered && (
         <ChartTip x={PAD.left + (hover + 0.5) * slot} y={PAD.top} width={width}>
-          <p className="font-medium">{heading(hovered)}</p>
+          <TipHead title={heading(hovered)} aside={totalText?.(totals[hover] ?? 0)} />
           {series.toReversed().map((s) => {
             const value = hovered.values[s.key] ?? 0;
             if (!value) return null;
@@ -210,7 +212,6 @@ export function StackedBars({
               />
             );
           })}
-          {footer?.(hovered, totals[hover] ?? 0)}
         </ChartTip>
       )}
     </div>

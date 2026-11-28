@@ -6,7 +6,8 @@ import { ChevronRightIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Change } from "@/components/change";
 import { Count } from "@/components/count";
-import { TipRow } from "@/components/chart-parts";
+import { countStat, TipHead, TipStats } from "@/components/chart-parts";
+import { ShareBar } from "@/components/share-bar";
 import { Legend, StackedBars, Swatch } from "@/components/stacked-bars";
 import { TypeInside } from "@/components/job-phases";
 import { WorkflowLink } from "@/components/workflow-link";
@@ -112,6 +113,8 @@ function Shares({
   compare: boolean;
 }) {
   const [open, setOpen] = useState<TypeKey | null>(null);
+  // The type under the pointer, in the bar or the table, lit in both.
+  const [lit, setLit] = useState<string | null>(null);
   const cell = cn(NUMBER, "py-2");
 
   return (
@@ -126,19 +129,33 @@ function Shares({
           across <Count value={summary.runs} /> jobs
         </span>
       </p>
-      <div
-        className="mt-3 mb-4 flex h-3.5 gap-0.5"
-        role="img"
-        aria-label="Share of run time by type"
-      >
-        {summary.types.map((type) => (
-          <span
-            key={type.key}
-            title={`${typeLabel(type.key)}: ${share(type.ms, summary.ms)}`}
-            className="h-full min-w-0.5 first:rounded-l last:rounded-r"
-            style={{ width: `${(type.ms / summary.ms) * 100}%`, background: fill(type.key) }}
-          />
-        ))}
+      <div className="mt-3 mb-4">
+        <ShareBar
+          label="Share of run time by type"
+          active={lit}
+          onActive={setLit}
+          parts={summary.types.map((type) => ({
+            key: type.key,
+            value: type.ms,
+            fill: fill(type.key),
+            tip: (
+              <>
+                <TipHead
+                  color={fill(type.key)}
+                  title={typeLabel(type.key)}
+                  aside={share(type.ms, summary.ms)}
+                />
+                <TipStats
+                  stats={[
+                    { value: minutesText(type.ms), unit: "min" },
+                    countStat(type.runs, "job"),
+                    { value: perJob(type.ms, type.runs), unit: "a job" },
+                  ]}
+                />
+              </>
+            ),
+          }))}
+        />
       </div>
       <table className="w-full text-sm">
         <thead>
@@ -163,7 +180,15 @@ function Shares({
             const expanded = open === type.key;
             return (
               <Fragment key={type.key}>
-                <tr className={cn(!expanded && "border-b last:border-0")}>
+                <tr
+                  onPointerEnter={() => setLit(type.key)}
+                  onPointerLeave={() => setLit(null)}
+                  className={cn(
+                    "transition-colors",
+                    !expanded && "border-b last:border-0",
+                    lit === type.key && "bg-muted/40",
+                  )}
+                >
                   <td className="py-2">
                     <button
                       type="button"
@@ -292,7 +317,7 @@ function Daily({ summary }: { summary: TypeSummary }) {
         series={series}
         format={(minutes) => `${minutesText(minutes * 60_000)} min`}
         label="Run minutes on each day, stacked by job type"
-        footer={(_, total) => <TipRow label="Total" value={`${minutesText(total * 60_000)} min`} />}
+        totalText={(total) => `${minutesText(total * 60_000)} min`}
         defs={
           <pattern
             id={HATCH}

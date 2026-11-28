@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import { Count } from "@/components/count";
 import { Legend, type Series, Swatch } from "@/components/stacked-bars";
+import { SHARE_SEGMENT, SHARE_STRIP } from "@/components/share-bar";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   cachedTotal,
@@ -23,7 +24,7 @@ import {
 } from "@/lib/job-phases";
 import { clock, minutesText, plural, type RunStep } from "@/lib/job-times";
 import { typeColor, typeLabel, type TypeSummary } from "@/lib/job-types";
-import { percent } from "@/lib/utils";
+import { cn, percent } from "@/lib/utils";
 
 const HATCH =
   "repeating-linear-gradient(135deg, var(--setup-stripe) 0 2px, var(--setup-ground) 2px 5px)";
@@ -161,13 +162,16 @@ function InsideBar({
         <button
           type="button"
           aria-label={`${label}: ${pieces.map((piece) => `${piece.label} ${format(piece.ms)}`).join(", ")}`}
-          className="flex h-3 min-w-1 cursor-default gap-0.5 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className={cn(
+            SHARE_STRIP,
+            "min-w-1 cursor-default rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          )}
           style={{ width: `${Math.max(width, 0.005) * 100}%` }}
         >
           {pieces.map((piece) => (
             <span
               key={piece.key}
-              className="h-full min-w-0.5 first:rounded-l last:rounded-r"
+              className={SHARE_SEGMENT}
               style={{ width: `${(piece.ms / total) * 100}%`, background: piece.color }}
             />
           ))}

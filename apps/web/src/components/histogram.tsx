@@ -26,7 +26,7 @@ export function Histogram({
   const plotHeight = height - PAD.top - PAD.bottom;
   const { y, ticks } = countScale(max, PAD.top, PAD.top + plotHeight);
   const slot = width ? (width - PAD.left - PAD.right) / bars.length : 0;
-  const barWidth = Math.max(Math.min(slot - Math.min(6, slot / 4), 72), 1);
+  const barWidth = Math.max(Math.min(slot * 0.55, 44), 1);
   const x = (at: number) => PAD.left + at * slot;
   // Labels too close to each other drop the right one, so they never overlap.
   const placed = markers
