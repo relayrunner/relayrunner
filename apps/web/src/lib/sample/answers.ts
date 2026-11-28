@@ -29,7 +29,15 @@ import { sampleProviderTrends } from "./provider-trends";
 import { sampleProviderReport, sampleProvidersOverview } from "./providers";
 import { sampleRouteOutcomes } from "./route-outcomes";
 import { sampleRunnerReport } from "./runner-report";
-import { sampleJobFailure, sampleJobs, sampleJobSteps, sampleRunJobs, sampleRuns } from "./runs";
+import {
+  sampleFilterOptions,
+  sampleJobFailure,
+  sampleJobs,
+  sampleJobSteps,
+  sampleMatches,
+  sampleRunJobs,
+  sampleRuns,
+} from "./runs";
 import { sampleSignalRuns, sampleSignals } from "./signals";
 import { sampleLogBucket, sampleTelemetry } from "./telemetry";
 import { sampleActivityOptions, sampleActivityPage } from "./activity";
@@ -171,13 +179,21 @@ const ANSWERS: [RegExp, Answer][] = [
         (run) =>
           run.updatedAt >= from &&
           run.updatedAt < to &&
-          (!repo || (run.repository === repo && run.workflow === workflow)),
+          (!repo || (run.repository === repo && run.workflow === workflow)) &&
+          sampleMatches(run, q),
       );
       return { ...sample, runs };
     },
   ],
+  [/^\/runs\/filters$/, () => sampleFilterOptions()],
   [/^\/runs\/live$/, () => sampleLiveJobs()],
-  [/^\/runs\/jobs$/, (_, q) => sampleJobs(daysOf(q))],
+  [
+    /^\/runs\/jobs$/,
+    (_, q) => {
+      const sample = sampleJobs(daysOf(q));
+      return { ...sample, jobs: sample.jobs.filter((job) => sampleMatches(job, q)) };
+    },
+  ],
   [/^\/runs\/jobs\/(\d+)\/failure$/, ([, id]) => sampleJobFailure(Number(id))],
   [
     /^\/runs\/jobs\/(\d+)\/steps$/,

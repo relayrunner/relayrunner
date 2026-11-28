@@ -8,6 +8,7 @@ import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
 import { PublicRepoMark } from "@/components/public-repo";
 import { RepoSelect, repositoriesOf } from "@/components/repo-select";
+import { AgentMark, RunFilterBar } from "@/components/run-filters";
 import { HISTORY_TABS as TABS, PageTabs, viewOf } from "@/components/page-tabs";
 import {
   providerStyle,
@@ -54,6 +55,7 @@ import {
   unlessDefault,
   useSetSearch,
 } from "@/lib/search-params";
+import { type RunFilters, runFilterSearch, setFilters } from "@/lib/run-filters";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed } from "@/lib/utils";
 
@@ -72,7 +74,7 @@ type Loaded = { view: "workflows"; runs: RunsReport } | { view: "jobs"; jobs: Jo
 
 // `run` and `job` name the run attempt and job open in the detail panel, in either view. The range
 // and filters are in the URL too, each left out at its default; switching tabs clears them.
-export type HistorySearch = {
+export type HistorySearch = RunFilters & {
   view?: View;
   run?: string;
   job?: number;
@@ -103,14 +105,17 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
       // Not trimmed, so a space typed between words stays.
       q: typeof search.q === "string" && search.q ? search.q : undefined,
       chart: textParam(search.chart),
+      ...runFilterSearch(search),
     };
   },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
-    const range = ranges.rangeOf(location.search as HistorySearch);
-    if (view === "jobs") return { view, jobs: await loadPage(jobsQuery(range)) };
-    return { view, runs: await loadPage(runsQuery(range)) };
+    const search = location.search as HistorySearch;
+    const range = ranges.rangeOf(search);
+    const filters = setFilters(search);
+    if (view === "jobs") return { view, jobs: await loadPage(jobsQuery(range, filters)) };
+    return { view, runs: await loadPage(runsQuery(range, filters)) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
@@ -179,7 +184,8 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const { report, refetch } = usePageReport(runsQuery(range), loaded);
+  const filters = useMemo(() => setFilters(search), [search]);
+  const { report, refetch } = usePageReport(runsQuery(range, filters), loaded);
   const repository = search.repo ?? "all";
   const result = search.result ?? "all";
   const routed = search.routed ?? "all";
@@ -223,6 +229,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
       <div className="flex flex-wrap items-center gap-3">
         <TimeRangePicker {...JOB_RANGES} value={range} onChange={setRange} />
         <RepoSelect value={repository} repositories={repositories} onChange={setRepository} />
+        <RunFilterBar range={range} value={filters} onChange={setSearch} />
         <Select value={result} onValueChange={(value) => setResult(value as ResultFilter)}>
           <SelectTrigger size="sm" aria-label="Result">
             <SelectValue />
@@ -377,6 +384,7 @@ const RunRow = memo(function RunRow({
           </span>
           <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
             <CommitBy actor={run.actor} sha={run.sha} className="shrink-0" />
+            <AgentMark agent={run.agent} />
             <span className="truncate">
               {meta.map((part, i) => (
                 <Fragment key={i}>

@@ -5,6 +5,8 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { PublicRepoMark } from "@/components/public-repo";
 import { PageTabs, PERFORMANCE_TABS as TABS, viewOf } from "@/components/page-tabs";
+import { RunFilterBar } from "@/components/run-filters";
+import { type RunFilterKey, type RunFilters, runFilterSearch, setFilters } from "@/lib/run-filters";
 import { JobTypes } from "@/components/job-type-time";
 import { PerformanceWorkflows } from "@/components/performance-workflows";
 import { RunnerLink } from "@/components/runner-link";
@@ -68,7 +70,10 @@ type View = (typeof TABS)[number]["value"];
 
 // `range` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one
 // job's detail, for links from a job's panel.
-type Search = {
+// The run filters too, but the workflow: every row is one already, and `workflow` opens a detail.
+const FILTER_KEYS = ["person", "branch", "trigger", "agent"] as const satisfies RunFilterKey[];
+
+type Search = RunFilters & {
   view?: View;
   range?: TimeRange;
   repos?: string;
@@ -85,16 +90,19 @@ const validateSearch = (search: Record<string, unknown>): Search => {
     repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
     workflow: textParam(search.workflow),
     job: textParam(search.job),
+    ...setFilters(runFilterSearch(search), FILTER_KEYS),
   };
 };
 
-const jobTimesQuery = (range: TimeRange) =>
-  pageQuery(["job-times", range], () => getJobTimes(range));
+const filtersOf = (search: Search) => setFilters(search, FILTER_KEYS);
+
+const jobTimesQuery = (range: TimeRange, filters: RunFilters) =>
+  pageQuery(["job-times", range, filters], () => getJobTimes(range, filters));
 
 export const Route = createFileRoute("/_authed/_workspace/performance")({
   validateSearch,
   loader: ({ location }) =>
-    loadPage(jobTimesQuery(ranges.rangeOf(validateSearch(location.search)))),
+    loadPage(jobTimesQuery(ranges.rangeOf(location.search), filtersOf(location.search))),
   // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
   // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -121,7 +129,8 @@ function PerformancePage() {
   const range = ranges.rangeOf(search);
   const repository = search.repos ?? "all";
   const setSearch = useSetSearch<Search>();
-  const { report } = usePageReport(jobTimesQuery(range), Route.useLoaderData());
+  const filterValue = useMemo(() => filtersOf(search), [search]);
+  const { report } = usePageReport(jobTimesQuery(range, filterValue), Route.useLoaderData());
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const detail = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   function closeDetail() {
@@ -166,6 +175,9 @@ function PerformancePage() {
             ))}
           </SelectContent>
         </Select>
+      )}
+      {view !== "types" && (
+        <RunFilterBar range={range} value={filterValue} onChange={setSearch} keys={FILTER_KEYS} />
       )}
       {view === "runners" && (
         <Button

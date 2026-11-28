@@ -1,5 +1,6 @@
 // Runs, jobs and steps for the dev preview (lib/sample/answers.ts), like GET /api/runs and
 // /api/runs/jobs.
+import { BOTS, runAgent, type RunFilterOptions } from "@relayrunner/api-types";
 import { relayInputs } from "@relayrunner/runner-order";
 import type { RouteWalk } from "../route-walk";
 import { SAMPLE_FAILED_JOB } from "./evaluations";
@@ -71,6 +72,7 @@ const SAMPLE_PRS = [
   { branch: "fix-flaky-cache", pullRequest: 214, title: "Fix the flaky cache test" },
   { branch: "main", pullRequest: null, title: "Bump the Node version" },
   { branch: "faster-builds", pullRequest: 211, title: "Build packages in parallel" },
+  { branch: "claude/run-filters", pullRequest: 216, title: "Add filters to the History page" },
 ];
 
 /** A made-up branch and pull request for sample run `n`. */
@@ -80,6 +82,7 @@ const sampleBranch = (n: number) => SAMPLE_PRS[n % SAMPLE_PRS.length]!;
 export const sampleRunInfo = (n: number) => ({
   sha: sampleSha(n),
   actor: sampleActor(n),
+  agent: runAgent(null, sampleBranch(n).branch),
   ...sampleBranch(n),
 });
 
@@ -106,6 +109,7 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
     usualMs: 170_000,
     supersededBy: null,
     ...run,
+    agent: run.agent ?? runAgent(null, run.branch ?? "main"),
   };
 }
 
@@ -124,6 +128,9 @@ export function sampleRuns(): RunsReport {
       sampleRun({
         runId: 6,
         title: "docs: add the runs view design",
+        event: "pull_request",
+        pullRequest: 216,
+        branch: "claude/runs-view-design",
         status: "in_progress",
         conclusion: null,
         startedAt: now - 65_000,
@@ -381,4 +388,43 @@ export function sampleJobSteps(job: Pick<RunJob, "startedAt" | "completedAt" | "
       completedAt: at,
     };
   });
+}
+
+type Filterable = Pick<Run, "workflow" | "actor" | "branch" | "agent" | "pullRequest"> & {
+  event?: string | null;
+};
+
+/** Whether a sample run or job matches the run filters in a query, as the API would. */
+export function sampleMatches(item: Filterable, q: URLSearchParams) {
+  const event = item.event ?? (item.pullRequest ? "pull_request" : "push");
+  const person = q.get("person");
+  const agent = q.get("agent");
+  return (
+    (!q.get("workflow") || item.workflow === q.get("workflow")) &&
+    (!person || (person === BOTS ? !!item.actor?.endsWith("[bot]") : item.actor === person)) &&
+    (!q.get("branch") || item.branch === q.get("branch")) &&
+    (!q.get("trigger") || event === q.get("trigger")) &&
+    (!agent ||
+      (agent === "any" ? !!item.agent : agent === "none" ? !item.agent : item.agent?.id === agent))
+  );
+}
+
+/** What each run filter can be set to over the sample runs, like GET /api/runs/filters. */
+export function sampleFilterOptions(): RunFilterOptions {
+  const runs = sampleRuns().runs;
+  const tally = (values: (string | null | undefined)[]) => {
+    const counts = new Map<string, number>();
+    for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1]);
+  };
+  return {
+    workflows: tally(runs.map((run) => run.workflow)).map(([name, n]) => ({ name, runs: n })),
+    people: tally(runs.map((run) => run.actor)).map(([login, n]) => ({ login, runs: n })),
+    branches: tally(runs.map((run) => run.branch)).map(([name, n]) => ({ name, runs: n })),
+    triggers: tally(runs.map((run) => run.event)).map(([name, n]) => ({ name, runs: n })),
+    agents: tally(runs.map((run) => run.agent?.id)).map(([id, n]) => ({
+      id: id as RunFilterOptions["agents"][number]["id"],
+      runs: n,
+    })),
+  };
 }

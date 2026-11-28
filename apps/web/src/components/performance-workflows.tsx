@@ -19,7 +19,7 @@ import {
 } from "@/lib/job-times";
 import { type TimeRange, trendPhrase } from "@/lib/time-range";
 import { type ExportColumn, seconds } from "@/lib/table-export";
-import { cn } from "@/lib/utils";
+import { cn, count } from "@/lib/utils";
 import { PublicRepoMark } from "@/components/public-repo";
 
 /** Runners that need no provider's name to read: GitHub's images, machines, containers. */
@@ -81,10 +81,24 @@ function RunnerMarks({ keys, environments }: { keys: string[]; environments: Env
 
 type Row = WorkflowRow & { id: string };
 
+/** Runs a day over the range: "12", "2.5", or "<0.1" for a workflow that hardly runs. */
+function perDayText(runs: number, days: number) {
+  const perDay = runs / Math.max(1, days);
+  if (perDay >= 10) return count(Math.round(perDay));
+  if (perDay >= 0.1) return String(Math.round(perDay * 10) / 10);
+  return "<0.1";
+}
+
+function PerDay({ runs }: { runs: number | undefined }) {
+  const { days } = useContext();
+  return runs === undefined ? "—" : perDayText(runs, days);
+}
+
 const [Context, useContext] = createCellContext<{
   showRepository: boolean;
   range: TimeRange;
   environments: Environment[];
+  days: number;
 }>("Workflows");
 
 // A workflow's export: its run counts and times in seconds, and its cost in USD.
@@ -119,6 +133,14 @@ const columns = column.columns([
       const runs = getValue();
       return runs === undefined ? "—" : <Count value={runs} />;
     },
+  }),
+  column.accessor((row) => row.wall?.runs, {
+    id: "perDay",
+    header: "Per day",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { ...END, hideOnPhone: true },
+    cell: ({ getValue }) => <PerDay runs={getValue()} />,
   }),
   column.accessor((row) => (row.wall?.runs ? row.wall.successes / row.wall.runs : undefined), {
     id: "passed",
@@ -326,8 +348,8 @@ export const PerformanceWorkflows = memo(function PerformanceWorkflows({
     [workflows],
   );
   const context = useMemo(
-    () => ({ showRepository, range, environments: report.environments }),
-    [showRepository, range, report.environments],
+    () => ({ showRepository, range, environments: report.environments, days: report.days }),
+    [showRepository, range, report.environments, report.days],
   );
   // From the workflows shown, so picking a repo narrows the tiles too.
   const totals = useMemo(() => {

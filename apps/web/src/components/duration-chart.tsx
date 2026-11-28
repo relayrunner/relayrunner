@@ -105,6 +105,7 @@ const HEIGHT = 168;
 const PAD = { top: 8, right: 8, bottom: 22, left: 40 };
 const PLOT_HEIGHT = HEIGHT - PAD.top - PAD.bottom;
 const BARS_FLAG = "rr:history-chart-bars";
+const DAILY_FLAG = "rr:history-chart-daily";
 
 /**
  * How long one workflow's (or job's) runs took over the page's range, one dot per run in the order
@@ -132,6 +133,8 @@ export const DurationChart = memo(function DurationChart({
   groupLabel: string;
 }) {
   const [bars, setBars] = useState(() => readFlag(BARS_FLAG));
+  // The count view's bars a day each, whatever the range, rather than as many as fit.
+  const [daily, setDaily] = useState(() => readFlag(DAILY_FLAG));
   const [picked, setMetric] = useState<Metric>("duration");
   const [showCancelled, setShowCancelled] = useState(false);
   const groups = useMemo(() => groupsByCount(all.map((point) => point.group)), [all]);
@@ -148,7 +151,13 @@ export const DurationChart = memo(function DurationChart({
       ),
     [points],
   );
-  const [ref, frame, bucketMs] = useFrame(range, { firstAt });
+  // A range of a day or less has nothing to put a day per bar on.
+  const span = resolveRange(range);
+  const spansDays = span.to - span.from > DAY_MS;
+  const [ref, frame, bucketMs] = useFrame(range, {
+    firstAt,
+    bucketMs: bars && daily && spansDays ? DAY_MS : undefined,
+  });
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const point of points) totals[point.result]++;
@@ -215,6 +224,19 @@ export const DurationChart = memo(function DurationChart({
                 ))}
               </SelectContent>
             </Select>
+          )}
+          {bars && spansDays && (
+            <Button
+              size="xs"
+              variant={daily ? "secondary" : "ghost"}
+              aria-pressed={daily}
+              onClick={() => {
+                setDaily(!daily);
+                saveFlag(DAILY_FLAG, !daily);
+              }}
+            >
+              Per day
+            </Button>
           )}
           <div role="group" aria-label="Chart" className="flex gap-1">
             <ChartToggle label="Duration" pressed={!bars} onClick={() => choose(false)}>

@@ -6,6 +6,8 @@ import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { TimeRangePicker } from "@/components/range-picker";
 import { CommitBy } from "@/components/commit";
+import { AgentMark, RunFilterBar } from "@/components/run-filters";
+import { setFilters } from "@/lib/run-filters";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import {
@@ -245,6 +247,7 @@ function JobCell({ job }: { job: Row }) {
           )}
         </span>
         <CommitBy actor={job.actor} sha={job.sha} repository={job.repository} />
+        <AgentMark agent={job.agent} />
       </span>
       {/* Phones leave out the Ran on and Result columns, so the runner and any result that
           isn't success go here. */}
@@ -293,7 +296,9 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [flat, setFlat] = useState(() => readFlag(FLAT_KEY));
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
-  const { report } = usePageReport(jobsQuery(range), first);
+  const search = history.useSearch();
+  const filters = useMemo(() => setFilters(search), [search]);
+  const { report } = usePageReport(jobsQuery(range, filters), first);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),
@@ -367,6 +372,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
             </SelectContent>
           </Select>
         )}
+        <RunFilterBar range={range} value={filters} onChange={setSearch} />
         <Select
           value={result}
           onValueChange={(next) =>

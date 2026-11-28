@@ -6,6 +6,7 @@ import type {
   WorkflowReport,
 } from "@relayrunner/api-types";
 import { api } from "@/lib/api";
+import { filterQuery, type RunFilters } from "./run-filters.ts";
 import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
 import type { Part } from "./job-phases.ts";
@@ -69,8 +70,8 @@ export const JOB_RANGES: RangeOptions = {
   presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
 };
 
-export function getJobTimes(range: TimeRange) {
-  return api<JobTimesReport>(`/job-times?${reportQuery(range)}`);
+export function getJobTimes(range: TimeRange, filters: RunFilters = {}) {
+  return api<JobTimesReport>(`/job-times?${reportQuery(range, filterQuery(filters))}`);
 }
 
 export function getJobRuns(

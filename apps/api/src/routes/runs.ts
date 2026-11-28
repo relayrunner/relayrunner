@@ -10,9 +10,12 @@ import { jobSource, listRuns, liveJobs, runJobs } from "../reports/runs.ts";
 import { parseRunFilters, runFilterOptions } from "../reports/run-filters.ts";
 import { jobFailure, runFailures } from "../reports/job-failures.ts";
 import { jobWindow } from "./job-times.ts";
+import { requireWindow } from "../reports/report-window.ts";
+import { JOB_TIMING_RETENTION_DAYS } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 
 const Id = z.coerce.number().int().positive();
+const FILTER_WINDOW = { maxDays: JOB_TIMING_RETENTION_DAYS, defaultDays: 14 };
 const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 
 // The History page: the workspace's workflow runs in a window (?from=&to=, or the last ?days=N,
@@ -35,9 +38,11 @@ export const runRoutes = new Hono<AppEnv>()
       await listRuns(c.var.db, c.var.workspace.id, jobWindow(query), only, parseRunFilters(query)),
     );
   })
-  .get("/filters", requireUser, requireWorkspace, async (c) =>
-    c.json(await runFilterOptions(c.var.db, c.var.workspace.id, jobWindow(c.req.query()))),
-  )
+  // As far back as Usage reaches, though runs themselves go back only RAW_RETENTION_DAYS.
+  .get("/filters", requireUser, requireWorkspace, async (c) => {
+    const window = requireWindow(c.req.query(), FILTER_WINDOW);
+    return c.json(await runFilterOptions(c.var.db, c.var.workspace.id, window));
+  })
   .get("/live", requireUser, requireWorkspace, async (c) =>
     c.json(await liveJobs(c.var.db, c.var.workspace.id)),
   )

@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { rangeQuery, type TimeRange } from "@/lib/time-range";
+import { filterQuery, type RunFilters } from "./run-filters.ts";
 
 /** One GitHub rate's jobs in the usage report (GET /api/usage). Money is USD. */
 export type UsageRow = {
@@ -56,8 +57,9 @@ export type UsageReport = {
 };
 
 /** The workspace's finished jobs in a range. */
-export function getUsage(range: TimeRange) {
-  return api<UsageReport>(`/usage?${rangeQuery(range)}`);
+export function getUsage(range: TimeRange, filters: RunFilters = {}) {
+  const filter = new URLSearchParams(filterQuery(filters)).toString();
+  return api<UsageReport>(`/usage?${rangeQuery(range)}${filter && `&${filter}`}`);
 }
 
 /** The free checks' savings in a range. */
