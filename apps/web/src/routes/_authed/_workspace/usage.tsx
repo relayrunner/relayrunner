@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { TimeRangePicker } from "@/components/range-picker";
@@ -12,6 +12,8 @@ import { RunFilterBar } from "@/components/run-filters";
 import {
   hasRunFilters,
   parseRunFilters,
+  PULL_REQUEST_PAGE,
+  type PullRequestSort,
   RAW_RETENTION_DAYS,
   type RunFilters,
 } from "@relayrunner/api-types";
@@ -19,8 +21,9 @@ import { PullRequestUsage } from "@/components/pull-request-usage";
 import {
   getPullRequests,
   PULL_REQUEST_RANGES,
-  pullRequestSortParam,
   type PullRequestReport,
+  sortFromSearch,
+  sortSearchParam,
 } from "@/lib/pull-requests";
 import {
   type RangeSearch,
@@ -80,23 +83,31 @@ function pullRequestRange(search: UsageSearch): TimeRange {
 
 const usageQuery = (range: TimeRange, filters: RunFilters) =>
   pageQuery(["usage", range, filters], () => load(range, filters));
-const pullRequestsQuery = (range: TimeRange) =>
-  pageQuery(["usage", "pull-requests", range], () => getPullRequests(range));
+// One page of the Pull requests view: the first `limit` of one repo's, in the URL's order.
+type PullRequestPage = { repository: string; sort: PullRequestSort; limit: number };
+const pullRequestsQuery = (range: TimeRange, page: PullRequestPage) =>
+  pageQuery(["usage", "pull-requests", range, page], () => getPullRequests(range, page));
+const firstPage = (search: UsageSearch): PullRequestPage => ({
+  repository: search.repo ?? "all",
+  sort: sortFromSearch(search.sort),
+  limit: PULL_REQUEST_PAGE,
+});
 
 export const Route = createFileRoute("/_authed/_workspace/usage")({
   validateSearch: (search: Record<string, unknown>): UsageSearch => ({
     view: viewOf(TABS, search.view),
     ...ranges.validateSearch(search),
     repo: textParam(search.repo),
-    sort: pullRequestSortParam(search.sort),
+    sort: sortSearchParam(sortFromSearch(search.sort)),
     ...parseRunFilters(search),
   }),
   loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     if (view === "pull-requests") {
-      const range = pullRequestRange(location.search as UsageSearch);
-      return { view, pullRequests: await loadPage(pullRequestsQuery(range)) };
+      const search = location.search as UsageSearch;
+      const range = pullRequestRange(search);
+      return { view, pullRequests: await loadPage(pullRequestsQuery(range, firstPage(search))) };
     }
     return {
       view,
@@ -136,17 +147,23 @@ function PullRequests({ loaded }: { loaded: PullRequestReport }) {
   const search = Route.useSearch();
   const range = pullRequestRange(search);
   const setSearch = useSetSearch<UsageSearch>();
-  const { report } = usePageReport(pullRequestsQuery(range), loaded);
+  const first = firstPage(search);
+  // "Show more" asks for a longer first page, back to one page when the range, repo or sort change.
+  const key = JSON.stringify([range, first.repository, search.sort]);
+  const [more, setMore] = useState({ key, limit: first.limit });
+  const limit = more.key === key ? more.limit : first.limit;
+  const { report } = usePageReport(pullRequestsQuery(range, { ...first, limit }), loaded);
   return (
     <SectionBoundary>
       <PullRequestUsage
         report={report}
         range={range}
         onRange={(next) => setSearch(ranges.toSearch(next))}
-        repository={search.repo ?? "all"}
+        repository={first.repository}
         onRepository={(next) => setSearch({ repo: unlessDefault(next, "all") })}
-        sort={search.sort}
-        onSort={(sort) => setSearch({ sort })}
+        sort={first.sort}
+        onSort={(sort) => setSearch({ sort: sortSearchParam(sort) })}
+        onMore={() => setMore({ key, limit: limit + PULL_REQUEST_PAGE })}
       />
     </SectionBoundary>
   );

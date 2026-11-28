@@ -5,6 +5,7 @@ export * from "./failure-cause.ts";
 export * from "./flags.ts";
 export * from "./job-times.ts";
 export * from "./phases.ts";
+export * from "./pull-requests.ts";
 export * from "./roles.ts";
 export * from "./run-filters.ts";
 export * from "./stickiness.ts";

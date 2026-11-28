@@ -12,8 +12,20 @@
  * rows only for pull requests with a delivery since it began; the first job's start stands in for
  * the rest.
  *
+ * One repo's pull requests can be asked for, and a page of them in an order; the summary always
+ * covers every pull request in the repo (or all repos).
+ *
  * Reads job_timing's own rows, so the route keeps the window within RAW_RETENTION_DAYS.
  */
+import {
+  DEFAULT_PULL_REQUEST_SORT,
+  PULL_REQUEST_PAGE,
+  type PullRequestMinutes,
+  type PullRequestReport,
+  type PullRequestSort,
+  sortPullRequests,
+  summarizePullRequests,
+} from "@relayrunner/api-types";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { type Db, isMissingTable, schema } from "../db/index.ts";
 import { loadPriceBook } from "../providers/prices.ts";
@@ -24,31 +36,12 @@ import { cents, pricePeriods, rateFor, runnerClass, tenths } from "./runner-rate
 const job = schema.jobTiming;
 const run = schema.workflowRun;
 
-export interface PullRequestMinutes {
-  repository: string;
-  number: number;
-  /** The title of the newest run that named the pull request. */
-  title: string | null;
-  /** Time its jobs ran, and the part of it from re-runs (attempt 2 and up). */
-  minutes: number;
-  rerunMinutes: number;
-  /** Estimated USD after GitHub rounds each job up to a minute, less free public-repo minutes. */
-  cost: number;
-  /** Distinct commits that ran. */
-  commits: number;
-  /** When it opened, merged and closed, epoch ms. Null when not, or not known. */
-  openedAt: number | null;
-  mergedAt: number | null;
-  closedAt: number | null;
-  /** When its first job in the window started, epoch ms. */
-  firstRunAt: number;
-}
-
-export interface PullRequestReport {
-  /** The most minutes first. */
-  pullRequests: PullRequestMinutes[];
-  /** Minutes of jobs no pull request could be found for, per repo. */
-  outside: { repository: string; minutes: number }[];
+/** Which pull requests to list: one repo's (all when not given), in an order, a page at a time. */
+export interface PullRequestQuery {
+  repository?: string;
+  sort?: PullRequestSort;
+  offset?: number;
+  limit?: number;
 }
 
 // A pull request's key, and a branch's, within a repo.
@@ -61,16 +54,23 @@ export async function pullRequestReport(
   db: Db,
   installationId: number,
   { from, to }: Window,
+  {
+    repository,
+    sort = DEFAULT_PULL_REQUEST_SORT,
+    offset = 0,
+    limit = PULL_REQUEST_PAGE,
+  }: PullRequestQuery = {},
   now = Date.now(),
 ): Promise<PullRequestReport> {
   const book = await loadPriceBook(db, now);
   const prices = pricePeriods(book, job.completedAt, from, to);
-  const counted = and(
+  const inWindow = and(
     eq(job.installationId, installationId),
     gte(job.completedAt, new Date(from)),
     lt(job.completedAt, new Date(to)),
     RAN_ON_RUNNER,
   );
+  const counted = repository ? and(inWindow, eq(job.repositoryFullName, repository)) : inWindow;
   const offDefault = sql`${run.headBranch} is not ${run.defaultBranch}`;
   // The branch a run without a pull request is matched by: none on the default branch.
   const unnamedBranch = sql<
@@ -145,7 +145,18 @@ export async function pullRequestReport(
       throw error;
     });
 
-  const [sums, metas, dates] = await Promise.all([sumsQuery, metaQuery, datesQuery]);
+  // Every repo that ran jobs in the window, whichever one is asked for.
+  const repositoriesQuery = db
+    .selectDistinct({ repository: job.repositoryFullName })
+    .from(job)
+    .where(inWindow);
+
+  const [sums, metas, dates, repositories] = await Promise.all([
+    sumsQuery,
+    metaQuery,
+    datesQuery,
+    repositoriesQuery,
+  ]);
   const datesOf = new Map(dates.map((row) => [prKey(row.repository, row.number), row]));
 
   // Each branch's pull request, the newest named run winning on a reused branch; and the title of
@@ -199,18 +210,20 @@ export async function pullRequestReport(
     if (pr) pr.commits += Number(meta.commits);
   }
 
+  const all = [...pullRequests.values()].map((pr) => ({
+    ...pr,
+    minutes: tenths(pr.minutes),
+    rerunMinutes: tenths(pr.rerunMinutes),
+    cost: cents(pr.cost),
+  }));
+  const outsideRows = [...outside].map(([repository, minutes]) => ({
+    repository,
+    minutes: tenths(minutes),
+  }));
   return {
-    pullRequests: [...pullRequests.values()]
-      .map((pr) => ({
-        ...pr,
-        minutes: tenths(pr.minutes),
-        rerunMinutes: tenths(pr.rerunMinutes),
-        cost: cents(pr.cost),
-      }))
-      .sort((a, b) => b.minutes - a.minutes || b.number - a.number),
-    outside: [...outside].map(([repository, minutes]) => ({
-      repository,
-      minutes: tenths(minutes),
-    })),
+    summary: summarizePullRequests(all, outsideRows),
+    pullRequests: sortPullRequests(all, sort).slice(offset, offset + limit),
+    outside: outsideRows,
+    repositories: repositories.map((row) => row.repository).sort(),
   };
 }

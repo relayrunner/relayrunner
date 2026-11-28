@@ -34,18 +34,6 @@ export function useSetSearch<S>() {
     });
 }
 
-/** One column a table sorts by, as `?sort=`: its id, with `-asc` when it sorts ascending. */
-export type Sort = { id: string; desc: boolean };
-
-export const sortParam = ({ id, desc }: Sort) => (desc ? id : `${id}-asc`);
-
-/** The sort a `?sort=` names, when it's one of the table's `ids`. */
-export function sortOf(value: unknown, ids: readonly string[]): Sort | undefined {
-  if (typeof value !== "string") return undefined;
-  const id = value.replace(/-asc$/, "");
-  return ids.includes(id) ? { id, desc: id === value } : undefined;
-}
-
 /** The value to put in the URL: nothing for the default. */
 export const unlessDefault = <V>(value: V, fallback: V) => (value === fallback ? undefined : value);
 

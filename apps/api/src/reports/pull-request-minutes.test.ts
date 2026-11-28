@@ -120,9 +120,19 @@ describe("pull request minutes", () => {
     const firstRun = (index: number) => runs[index]!.jobs[0]!.startedAt!.getTime();
 
     const now = Date.now();
-    const report = await pullRequestReport(db, INSTALLATION, { from: now - DAY_MS, to: now }, now);
+    const window = { from: now - DAY_MS, to: now };
+    const report = await pullRequestReport(db, INSTALLATION, window, {}, now);
 
     expect(report).toEqual({
+      summary: {
+        count: 2,
+        minutes: { median: 8, p90: 13.6, average: 8, total: 16 },
+        cost: expect.objectContaining({ total: 0.096 }),
+        prShare: 16 / 22.5,
+        rerunShare: 3 / 16,
+        buckets: expect.any(Array),
+      },
+      repositories: ["acme/app"],
       pullRequests: [
         {
           repository: "acme/app",
@@ -152,6 +162,34 @@ describe("pull request minutes", () => {
         },
       ],
       outside: [{ repository: "acme/app", minutes: 6.5 }],
+    });
+
+    // In another order, a page at a time.
+    const byNumber = await pullRequestReport(
+      db,
+      INSTALLATION,
+      window,
+      { sort: { id: "number", desc: false }, limit: 1 },
+      now,
+    );
+    expect(byNumber.pullRequests.map((pr) => pr.number)).toEqual([12]);
+    expect(byNumber.summary.count).toBe(2);
+    const next = await pullRequestReport(
+      db,
+      INSTALLATION,
+      window,
+      { sort: { id: "number", desc: false }, offset: 1, limit: 1 },
+      now,
+    );
+    expect(next.pullRequests.map((pr) => pr.number)).toEqual([13]);
+
+    // Another repo has none, and still lists every repo to pick from.
+    const other = await pullRequestReport(db, INSTALLATION, window, { repository: "acme/x" }, now);
+    expect(other).toMatchObject({
+      summary: { count: 0 },
+      pullRequests: [],
+      outside: [],
+      repositories: ["acme/app"],
     });
   });
 });

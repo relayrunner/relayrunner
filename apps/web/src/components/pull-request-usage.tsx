@@ -6,24 +6,24 @@ import { Histogram } from "@/components/histogram";
 import { StatTile } from "@/components/stat-tile";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { TimeRangePicker } from "@/components/range-picker";
-import { RepoSelect, repositoriesOf } from "@/components/repo-select";
+import { RepoSelect } from "@/components/repo-select";
+import { Button } from "@/components/ui/button";
 import { minutesText } from "@/lib/job-times";
 import {
-  bucketPosition,
-  dateOf,
-  datedAs,
   DEFAULT_PULL_REQUEST_SORT,
-  minuteBuckets,
+  PULL_REQUEST_PAGE,
+  PULL_REQUEST_SORTS,
+  pullRequestDate,
+  type PullRequestSort,
+} from "@relayrunner/api-types";
+import {
+  bucketPosition,
   PULL_REQUEST_RANGES,
-  pullRequestSortOf,
-  pullRequestSortParam,
   type PullRequestMinutes,
   type PullRequestReport,
   stateOf,
-  summarize,
 } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
-import { sortParam } from "@/lib/search-params";
 import { isoTime, type ExportColumn } from "@/lib/table-export";
 import type { TimeRange } from "@/lib/time-range";
 import { formatDate, shortDate } from "@/lib/time-zone";
@@ -35,9 +35,8 @@ const min = (minutes: number) => `${minutesOf(minutes)} min`;
 
 /**
  * Usage › Pull requests: CI minutes per pull request across its pushes and re-runs, the typical
- * pull request over the range, and each one's estimated spend. `repository` narrows it all to one
- * repo ("all" for every one), worked out here since the report holds the whole range. `sort` is
- * the table's, kept in the URL (undefined at the default, the most minutes first).
+ * pull request over the range, and each one's estimated spend. The API narrows it to `repository`
+ * ("all" for every one), sorts it by `sort` and sends a page of it; `onMore` asks for another.
  */
 export function PullRequestUsage({
   report,
@@ -47,39 +46,31 @@ export function PullRequestUsage({
   onRepository,
   sort,
   onSort,
+  onMore,
 }: {
   report: PullRequestReport;
   range: TimeRange;
   onRange: (range: TimeRange) => void;
   repository: string;
   onRepository: (repository: string) => void;
-  /** The `?sort=` param, undefined at the default. */
-  sort: string | undefined;
-  onSort: (sort: string | undefined) => void;
+  sort: PullRequestSort;
+  onSort: (sort: PullRequestSort) => void;
+  onMore: () => void;
 }) {
-  const repositories = useMemo(
-    () => repositoriesOf([...report.pullRequests, ...report.outside]),
-    [report],
+  const { summary, pullRequests } = report;
+  const showRepository = report.repositories.length > 1 && repository === "all";
+  const table = useMemo(
+    () => ({ most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)), showRepository }),
+    [pullRequests, showRepository],
   );
-  const showRepository = repositories.length > 1 && repository === "all";
-  const { pullRequests, summary, table } = useMemo(() => {
-    const keep = (row: { repository: string }) =>
-      repository === "all" || row.repository === repository;
-    const pullRequests = report.pullRequests.filter(keep);
-    return {
-      pullRequests,
-      summary: summarize(pullRequests, report.outside.filter(keep)),
-      table: { most: Math.max(0, ...pullRequests.map((pr) => pr.minutes)), showRepository },
-    };
-  }, [report, repository, showRepository]);
-
-  const sorting = useMemo(() => [pullRequestSortOf(sort)], [sort]);
+  const sorting = useMemo(() => [sort], [sort]);
+  const left = summary.count - pullRequests.length;
 
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <TimeRangePicker {...PULL_REQUEST_RANGES} value={range} onChange={onRange} />
-        <RepoSelect value={repository} repositories={repositories} onChange={onRepository} />
+        <RepoSelect value={repository} repositories={report.repositories} onChange={onRepository} />
       </div>
 
       {summary.count === 0 ? (
@@ -107,7 +98,7 @@ export function PullRequestUsage({
             />
           </div>
 
-          <Spread pullRequests={pullRequests} summary={summary} />
+          <Spread summary={summary} />
 
           <TableContext value={table}>
             <DataTable
@@ -115,15 +106,18 @@ export function PullRequestUsage({
               data={pullRequests}
               getRowId={(pr) => `${pr.repository}#${pr.number}`}
               sorting={sorting}
-              onSortingChange={([next = DEFAULT_PULL_REQUEST_SORT]) =>
-                onSort(pullRequestSortParam(sortParam(next)))
-              }
+              onSortingChange={([next]) => onSort(sortOf(next))}
               exportAs={{
                 name: repository === "all" ? "pull-requests" : `pull-requests-${repository}`,
                 columns: EXPORT_COLUMNS,
               }}
             />
           </TableContext>
+          {left > 0 && (
+            <Button variant="outline" className="justify-self-center" onClick={onMore}>
+              Show {Math.min(left, PULL_REQUEST_PAGE)} more of {summary.count}
+            </Button>
+          )}
         </>
       )}
 
@@ -144,15 +138,9 @@ const bucketLabel = ({ from, to }: { from: number; to: number | null }) =>
  * How many pull requests took how many minutes, with the typical one and p90 marked, so a few
  * heavy pull requests stand out from the usual.
  */
-function Spread({
-  pullRequests,
-  summary,
-}: {
-  pullRequests: PullRequestMinutes[];
-  summary: ReturnType<typeof summarize>;
-}) {
-  if (pullRequests.length < 5) return null;
-  const buckets = minuteBuckets(pullRequests.map((pr) => pr.minutes));
+function Spread({ summary }: { summary: PullRequestReport["summary"] }) {
+  if (summary.count < 5) return null;
+  const { buckets } = summary;
   const { median, p90, total } = summary.minutes;
   return (
     <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
@@ -225,6 +213,14 @@ const EXPORT_COLUMNS: ExportColumn<PullRequestMinutes>[] = [
   { header: "Est. spend (USD)", value: (pr) => pr.cost },
 ];
 
+const dateOf = (pr: PullRequestMinutes) => pullRequestDate(pr).at;
+
+/** A sort the table hands back, as one the API takes: the default when it's none of those. */
+const sortOf = (sort: { id: string; desc: boolean } | undefined): PullRequestSort =>
+  sort && PULL_REQUEST_SORTS.includes(sort.id as never)
+    ? (sort as PullRequestSort)
+    : DEFAULT_PULL_REQUEST_SORT;
+
 const STATE_ICON = {
   open: GitPullRequestIcon,
   merged: GitMergeIcon,
@@ -233,7 +229,7 @@ const STATE_ICON = {
 
 // What the Date column shows for a pull request, for its hover text.
 function dateTitle(pr: PullRequestMinutes) {
-  const { label, at } = datedAs(pr);
+  const { label, at } = pullRequestDate(pr);
   return `${label} ${formatDate(at)}`;
 }
 

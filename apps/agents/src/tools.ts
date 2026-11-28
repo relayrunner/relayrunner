@@ -14,6 +14,7 @@ import {
   BREAKDOWN_SORTS,
   hasRunFilters,
   MAX_UTC_OFFSET_MINUTES,
+  type PullRequestReport,
   RAW_RETENTION_DAYS,
   RUN_FILTER_HELP,
   type RunFilterKey,
@@ -297,8 +298,9 @@ export function registerTools(server: McpServer, context: ToolContext) {
           filtered ? undefined : api("/usage/checks", { days }),
           api("/usage/actions"),
           pullRequests > 0
-            ? api<{ pullRequests: unknown[]; outside: unknown[] }>("/usage/pull-requests", {
+            ? api<PullRequestReport>("/usage/pull-requests", {
                 days: Math.min(days, RAW_RETENTION_DAYS),
+                limit: pullRequests,
               })
             : undefined,
         ]);
@@ -307,8 +309,8 @@ export function registerTools(server: McpServer, context: ToolContext) {
           ...(checks !== undefined && { checks }),
           actions,
           ...(prs && {
-            pullRequests: prs.pullRequests.slice(0, pullRequests),
-            morePullRequests: Math.max(0, prs.pullRequests.length - pullRequests),
+            pullRequests: prs.pullRequests,
+            morePullRequests: Math.max(0, prs.summary.count - prs.pullRequests.length),
             outsidePullRequests: prs.outside,
           }),
         };

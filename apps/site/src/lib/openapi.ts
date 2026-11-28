@@ -20,6 +20,9 @@ import {
   BREAKDOWN_MAX_ROWS,
   BREAKDOWN_SORTS,
   MAX_UTC_OFFSET_MINUTES,
+  PULL_REQUEST_MAX_PAGE,
+  PULL_REQUEST_PAGE,
+  PULL_REQUEST_SORTS,
   RAW_RETENTION_DAYS,
   RUN_FILTER_HELP,
   RUN_FILTER_KEYS,
@@ -431,9 +434,39 @@ export const openApi = {
     "/usage/pull-requests": read(
       "getPullRequestMinutes",
       "Get minutes per pull request",
-      "CI minutes per pull request, across its pushes and re-runs, with re-run minutes, estimated cost, commits and when each opened and merged, the most minutes first.",
-      object("Minutes per pull request.", { pullRequests: list, outside: list }),
-      [daysQuery(RAW_RETENTION_DAYS, 30)],
+      "CI minutes per pull request, across its pushes and re-runs, with re-run minutes, estimated cost, commits and when each opened and merged. The summary covers every pull request in the range; pullRequests is one page of them.",
+      object("Minutes per pull request.", {
+        summary: record,
+        pullRequests: list,
+        outside: list,
+        repositories: list,
+      }),
+      [
+        daysQuery(RAW_RETENTION_DAYS, 30),
+        stringQuery("repo", "Only this repo's pull requests, as owner/name."),
+        stringQuery(
+          "sort",
+          "What the pull requests are ordered by, most first. Add -asc for least first. date is when it merged, or opened if it hasn't.",
+          { enum: PULL_REQUEST_SORTS, default: "minutes" },
+        ),
+        {
+          name: "offset",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 0, default: 0 },
+        },
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: {
+            type: "integer",
+            minimum: 1,
+            maximum: PULL_REQUEST_MAX_PAGE,
+            default: PULL_REQUEST_PAGE,
+          },
+        },
+      ],
     ),
     "/usage/breakdown": read(
       "getBreakdown",

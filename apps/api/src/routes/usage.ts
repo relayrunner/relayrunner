@@ -13,7 +13,10 @@ import {
   BREAKDOWN_DEFAULT_ROWS,
   BREAKDOWN_MAX_ROWS,
   BREAKDOWN_SORTS,
+  parsePullRequestSort,
   parseRunFilters,
+  PULL_REQUEST_MAX_PAGE,
+  PULL_REQUEST_PAGE,
 } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 import { z } from "zod";
@@ -30,12 +33,19 @@ const BreakdownQuery = z.object({
   utcOffset: UtcOffset,
 });
 
+const PullRequestQuery = z.object({
+  repo: z.string().trim().min(1).optional(),
+  sort: z.string().optional().transform(parsePullRequestSort),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(PULL_REQUEST_MAX_PAGE).default(PULL_REQUEST_PAGE),
+});
+
 // The Usage page: how many of the workspace's jobs ran under a minute, and what GitHub's round-up
 // to whole minutes cost, over ?from=&to= or the last ?days=N days (default 30), narrowed by the run
 // filters (src/reports/run-filters.ts). /checks is what the free checks
 // saved over the same range, for the Usage and Activity pages. /actions is each connected GitHub
 // account's Actions minutes this billing cycle, read from GitHub billing (#116). /pull-requests is
-// CI minutes per pull request. /breakdown is every job's minutes cut one way, for agents
+// CI minutes per pull request (one ?repo=, in ?sort= order, a page at ?offset=&limit=). /breakdown is every job's minutes cut one way, for agents
 // (src/reports/breakdown.ts).
 // As far back as job_timing_daily and activity_event keep.
 const USAGE_RANGE = { maxDays: JOB_TIMING_RETENTION_DAYS, defaultDays: 30 };
@@ -49,8 +59,17 @@ export const usageRoutes = new Hono<AppEnv>()
   // CI minutes per pull request (src/reports/pull-request-minutes.ts), as far back as job_timing
   // keeps its own rows.
   .get("/pull-requests", requireUser, requireWorkspace, async (c) => {
-    const window = requireWindow(c.req.query(), { ...USAGE_RANGE, maxDays: RAW_RETENTION_DAYS });
-    return c.json(await pullRequestReport(c.var.db, c.var.workspace.installationId, window));
+    const query = c.req.query();
+    const parsed = PullRequestQuery.safeParse(query);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const window = requireWindow(query, { ...USAGE_RANGE, maxDays: RAW_RETENTION_DAYS });
+    const { repo, ...page } = parsed.data;
+    return c.json(
+      await pullRequestReport(c.var.db, c.var.workspace.installationId, window, {
+        repository: repo,
+        ...page,
+      }),
+    );
   })
   .get("/breakdown", requireUser, requireWorkspace, async (c) => {
     const query = c.req.query();

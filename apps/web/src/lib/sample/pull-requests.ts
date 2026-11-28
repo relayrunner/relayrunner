@@ -1,5 +1,12 @@
 // CI minutes per pull request for the dev preview (lib/sample/answers.ts).
-import type { PullRequestMinutes, PullRequestReport } from "@/lib/pull-requests";
+import {
+  parsePullRequestSort,
+  PULL_REQUEST_PAGE,
+  type PullRequestMinutes,
+  type PullRequestReport,
+  sortPullRequests,
+  summarizePullRequests,
+} from "@relayrunner/api-types";
 import { DAY_MS } from "@/lib/job-times";
 import { seededRandom } from "./shared";
 
@@ -19,8 +26,11 @@ const TITLES = [
 ];
 const REPOS = ["acme/app", "acme/api", "acme/site"];
 
-/** Example pull requests over a window, epoch ms. */
-export function samplePullRequests({ from, to }: { from: number; to: number }): PullRequestReport {
+/** Example pull requests over a window, epoch ms, asked for as the API is (repo, sort, limit). */
+export function samplePullRequests(
+  { from, to }: { from: number; to: number },
+  query: URLSearchParams,
+): PullRequestReport {
   const days = Math.max(1, Math.round((to - from) / DAY_MS));
   const random = seededRandom(days + 7);
   const count = Math.max(3, Math.round(days * 2.4));
@@ -45,10 +55,17 @@ export function samplePullRequests({ from, to }: { from: number; to: number }): 
       closedAt: mergedAt,
       firstRunAt: Math.max(from, openedAt),
     };
-  }).sort((a, b) => b.minutes - a.minutes);
+  });
+  const repo = query.get("repo");
+  const keep = (row: { repository: string }) => !repo || row.repository === repo;
+  const outside = REPOS.map((repository, i) => ({ repository, minutes: days * (40 - i * 12) }));
+  const kept = pullRequests.filter(keep);
+  const limit = Number(query.get("limit")) || PULL_REQUEST_PAGE;
   return {
-    pullRequests,
-    outside: REPOS.map((repository, i) => ({ repository, minutes: days * (40 - i * 12) })),
+    summary: summarizePullRequests(kept, outside.filter(keep)),
+    pullRequests: sortPullRequests(kept, parsePullRequestSort(query.get("sort"))).slice(0, limit),
+    outside: outside.filter(keep),
+    repositories: REPOS,
   };
 }
 

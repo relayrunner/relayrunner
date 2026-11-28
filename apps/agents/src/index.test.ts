@@ -410,8 +410,10 @@ describe("mcp server", () => {
       "/api/usage/checks": { saved: 0 },
       "/api/usage/actions": { accounts: [] },
       "/api/usage/pull-requests": {
-        pullRequests: [{ number: 1 }, { number: 2 }, { number: 3 }],
+        summary: { count: 3 },
+        pullRequests: [{ number: 1 }, { number: 2 }],
         outside: [],
+        repositories: [],
       },
       "/api/usage/breakdown": { by: "workflow", total: {}, rows: [], rest: null },
       "/api/providers": {
@@ -478,6 +480,7 @@ describe("mcp server", () => {
     expect(asked).toContain("/api/usage?days=30&person=ada @w1");
     // Optimized checks aren't runs, so a filter leaves them out.
     expect(asked.some((path) => path.startsWith("/api/usage/checks"))).toBe(false);
+    expect(asked).toContain("/api/usage/pull-requests?days=30&limit=2 @w1");
     expect(usage.pullRequests).toHaveLength(2);
     expect(usage.morePullRequests).toBe(1);
 
