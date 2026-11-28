@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import { useFlag } from "@/lib/flags";
 import { pageQuery } from "@/lib/query";
 import { triggerName } from "@/lib/signals";
 import { reportQuery, type TimeRange } from "@/lib/time-range";
@@ -92,15 +91,13 @@ export function RunFilterBar({
   onChange: (patch: RunFilters) => void;
   keys?: readonly RunFilterKey[];
 }) {
-  const on = useFlag("run-filters");
   // Read once the menu first opens, since most visits never open it.
   const [opened, setOpened] = useState(false);
   const { data } = useQuery({
     ...runFilterOptionsQuery(range),
-    enabled: on && opened,
+    enabled: opened,
     placeholderData: keepPreviousData,
   });
-  if (!on) return null;
   const choices = data ? withGroups(data) : null;
   const active = keys.filter((key) => value[key]);
   return (
@@ -162,8 +159,7 @@ export function RunFilterBar({
 
 /** A run's or job's coding agent, as a small mark with its name on hover. */
 export function AgentMark({ agent, className }: { agent: RunAgent | null; className?: string }) {
-  const on = useFlag("run-filters");
-  if (!on || !agent) return null;
+  if (!agent) return null;
   const name = agentById(agent.id)?.name ?? agent.id;
   const text = agent.likely ? `Likely ${name}, from its branch name` : `From ${name}`;
   return (
