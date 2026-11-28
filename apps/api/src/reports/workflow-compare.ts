@@ -90,7 +90,7 @@ function runPartsQuery(workspaceId: string, { from, to }: Window, filters: RunFi
       max(${timing.completedAt}) as last_completed
     from ${timing}
     where ${inWorkspace(workspaceId)} and ${timing.completedAt} >= ${from}
-      and ${timing.completedAt} < ${to} and ${RAN}${jobFilterSql(filters)}
+      and ${timing.completedAt} < ${to} and ${RAN} and ${jobFilterSql(filters)}
     group by ${timing.repositoryId}, ${timing.runId}, ${timing.runAttempt}, ${timing.labels},
       ${timing.runnerGroupName}, ${timing.machineId}`;
 }

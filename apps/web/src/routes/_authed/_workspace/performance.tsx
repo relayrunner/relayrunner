@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { PublicRepoMark } from "@/components/public-repo";
 import { PageTabs, PERFORMANCE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { RunFilterBar } from "@/components/run-filters";
-import { type RunFilterKey, type RunFilters, runFilterSearch, setFilters } from "@/lib/run-filters";
+import { parseRunFilters, type RunFilterKey, type RunFilters } from "@relayrunner/api-types";
 import { JobTypes } from "@/components/job-type-time";
 import { PerformanceWorkflows } from "@/components/performance-workflows";
 import { RunnerLink } from "@/components/runner-link";
@@ -90,11 +90,11 @@ const validateSearch = (search: Record<string, unknown>): Search => {
     repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
     workflow: textParam(search.workflow),
     job: textParam(search.job),
-    ...setFilters(runFilterSearch(search), FILTER_KEYS),
+    ...parseRunFilters(search, FILTER_KEYS),
   };
 };
 
-const filtersOf = (search: Search) => setFilters(search, FILTER_KEYS);
+const filtersOf = (search: Search) => parseRunFilters(search, FILTER_KEYS);
 
 const jobTimesQuery = (range: TimeRange, filters: RunFilters) =>
   pageQuery(["job-times", range, filters], () => getJobTimes(range, filters));

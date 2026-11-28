@@ -7,7 +7,8 @@ import { recentJobs } from "../reports/job-times.ts";
 import { workflowJobSteps } from "../github/actions-api.ts";
 import { appInstallationToken } from "../github/github-app.ts";
 import { jobSource, listRuns, liveJobs, runJobs } from "../reports/runs.ts";
-import { parseRunFilters, runFilterOptions } from "../reports/run-filters.ts";
+import { runFilterOptions } from "../reports/run-filters.ts";
+import { parseRunFilters } from "@relayrunner/api-types";
 import { jobFailure, runFailures } from "../reports/job-failures.ts";
 import { jobWindow } from "./job-times.ts";
 import { requireWindow } from "../reports/report-window.ts";
@@ -31,9 +32,9 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 export const runRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, async (c) => {
     // `repo` and `workflow` together narrow it to one workflow, for its panel.
-    const { repo, workflow } = c.req.query();
-    const only = repo && workflow ? { repository: repo, workflow } : undefined;
     const query = c.req.query();
+    const { repo, workflow } = query;
+    const only = repo && workflow ? { repository: repo, workflow } : undefined;
     return c.json(
       await listRuns(c.var.db, c.var.workspace.id, jobWindow(query), only, parseRunFilters(query)),
     );

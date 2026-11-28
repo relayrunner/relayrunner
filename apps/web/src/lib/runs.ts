@@ -4,7 +4,6 @@ import { pageQuery } from "@/lib/query";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
 import type { WorkflowRef } from "@/lib/workflow-ref";
-import { filterQuery } from "./run-filters.ts";
 import { reportQuery, type TimeRange } from "@/lib/time-range";
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -153,16 +152,12 @@ export const HISTORY_DEFAULT_RANGE: TimeRange = "7d";
 
 /** The workspace's runs in a range, or with `only`, just one workflow's. */
 export function getRuns(range: TimeRange, only?: WorkflowRef, filters: RunFilters = {}) {
-  const query = reportQuery(range, filterQuery(filters));
-  if (only) {
-    const filter = new URLSearchParams({ repo: only.repository, workflow: only.workflow });
-    return api<RunsReport>(`/runs?${query}&${filter}`);
-  }
-  return api<RunsReport>(`/runs?${query}`);
+  const extra = only ? { repo: only.repository, workflow: only.workflow } : {};
+  return api<RunsReport>(`/runs?${reportQuery(range, { ...filters, ...extra })}`);
 }
 
 export function getJobs(range: TimeRange, filters: RunFilters = {}) {
-  return api<JobsReport>(`/runs/jobs?${reportQuery(range, filterQuery(filters))}`);
+  return api<JobsReport>(`/runs/jobs?${reportQuery(range, { ...filters })}`);
 }
 
 // History's reports, a load per range and set of filters.

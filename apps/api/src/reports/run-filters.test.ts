@@ -1,4 +1,4 @@
-import { branchAgent, explicitAgent, runAgent } from "@relayrunner/api-types";
+import { branchAgent, explicitAgent, parseRunFilters, runAgent } from "@relayrunner/api-types";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "../db/index.ts";
@@ -7,7 +7,7 @@ import { usageReport } from "../ingest/job-timings.ts";
 import * as testing from "../testing.ts";
 import { recentJobs } from "./job-times.ts";
 import { lastDays, withPrior } from "./report-window.ts";
-import { parseRunFilters, runFilterOptions } from "./run-filters.ts";
+import { runFilterOptions } from "./run-filters.ts";
 import { listRuns, performanceReport, recordWorkflowRun } from "./runs.ts";
 
 let env: Env;
@@ -180,19 +180,19 @@ describe("run filters", () => {
   test("lists what each filter can be set to, busiest first", async () => {
     const { db, workspaceId } = await workspaceWithRuns();
     const options = await runFilterOptions(db, workspaceId, lastDays(1));
-    expect(options.people).toEqual([
-      { login: "ada", runs: 2 },
-      { login: "dependabot[bot]", runs: 1 },
-      { login: "grace", runs: 1 },
+    expect(options.person).toEqual([
+      { value: "ada", runs: 2 },
+      { value: "dependabot[bot]", runs: 1 },
+      { value: "grace", runs: 1 },
     ]);
-    expect(options.workflows[0]).toEqual({ name: "CI", runs: 3 });
-    expect(options.triggers).toEqual([
-      { name: "pull_request", runs: 3 },
-      { name: "push", runs: 1 },
+    expect(options.workflow[0]).toEqual({ value: "CI", runs: 3 });
+    expect(options.trigger).toEqual([
+      { value: "pull_request", runs: 3 },
+      { value: "push", runs: 1 },
     ]);
-    expect(options.agents).toEqual([
-      { id: "claude", runs: 1 },
-      { id: "codex", runs: 1 },
+    expect(options.agent).toEqual([
+      { value: "claude", runs: 1 },
+      { value: "codex", runs: 1 },
     ]);
   });
 });

@@ -1,6 +1,12 @@
 // Runs, jobs and steps for the dev preview (lib/sample/answers.ts), like GET /api/runs and
 // /api/runs/jobs.
-import { BOTS, runAgent, type RunFilterOptions } from "@relayrunner/api-types";
+import {
+  parseRunFilters,
+  runAgent,
+  type RunFilterOptions,
+  runMatches,
+  tallyRunFilters,
+} from "@relayrunner/api-types";
 import { relayInputs } from "@relayrunner/runner-order";
 import type { RouteWalk } from "../route-walk";
 import { SAMPLE_FAILED_JOB } from "./evaluations";
@@ -390,41 +396,29 @@ export function sampleJobSteps(job: Pick<RunJob, "startedAt" | "completedAt" | "
   });
 }
 
-type Filterable = Pick<Run, "workflow" | "actor" | "branch" | "agent" | "pullRequest"> & {
-  event?: string | null;
-};
-
 /** Whether a sample run or job matches the run filters in a query, as the API would. */
-export function sampleMatches(item: Filterable, q: URLSearchParams) {
-  const event = item.event ?? (item.pullRequest ? "pull_request" : "push");
-  const person = q.get("person");
-  const agent = q.get("agent");
-  return (
-    (!q.get("workflow") || item.workflow === q.get("workflow")) &&
-    (!person || (person === BOTS ? !!item.actor?.endsWith("[bot]") : item.actor === person)) &&
-    (!q.get("branch") || item.branch === q.get("branch")) &&
-    (!q.get("trigger") || event === q.get("trigger")) &&
-    (!agent ||
-      (agent === "any" ? !!item.agent : agent === "none" ? !item.agent : item.agent?.id === agent))
-  );
+export function sampleMatches(
+  item: Pick<Run, "workflow" | "actor" | "branch" | "agent" | "pullRequest"> & {
+    event?: string | null;
+  },
+  q: URLSearchParams,
+) {
+  return runMatches(parseRunFilters(Object.fromEntries(q)), sampleFilterable(item));
 }
+
+const sampleFilterable = (
+  item: Pick<Run, "workflow" | "actor" | "branch" | "agent" | "pullRequest"> & {
+    event?: string | null;
+  },
+) => ({
+  workflow: item.workflow,
+  person: item.actor,
+  branch: item.branch,
+  // Sample jobs don't say what triggered their run.
+  event: item.event ?? (item.pullRequest ? "pull_request" : "push"),
+  agent: item.agent,
+});
 
 /** What each run filter can be set to over the sample runs, like GET /api/runs/filters. */
-export function sampleFilterOptions(): RunFilterOptions {
-  const runs = sampleRuns().runs;
-  const tally = (values: (string | null | undefined)[]) => {
-    const counts = new Map<string, number>();
-    for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
-    return [...counts].sort((a, b) => b[1] - a[1]);
-  };
-  return {
-    workflows: tally(runs.map((run) => run.workflow)).map(([name, n]) => ({ name, runs: n })),
-    people: tally(runs.map((run) => run.actor)).map(([login, n]) => ({ login, runs: n })),
-    branches: tally(runs.map((run) => run.branch)).map(([name, n]) => ({ name, runs: n })),
-    triggers: tally(runs.map((run) => run.event)).map(([name, n]) => ({ name, runs: n })),
-    agents: tally(runs.map((run) => run.agent?.id)).map(([id, n]) => ({
-      id: id as RunFilterOptions["agents"][number]["id"],
-      runs: n,
-    })),
-  };
-}
+export const sampleFilterOptions = (): RunFilterOptions =>
+  tallyRunFilters(sampleRuns().runs.map(sampleFilterable));

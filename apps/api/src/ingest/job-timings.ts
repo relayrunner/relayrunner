@@ -5,8 +5,8 @@ import type { PriceBook } from "@relayrunner/providers";
 import { type Db, schema } from "../db/index.ts";
 import { purgeBefore } from "./purge.ts";
 import { BILLED_MINUTES, DURATION_MS } from "../reports/job-sql.ts";
-import { hasRunFilters, jobFilterSql } from "../reports/run-filters.ts";
-import type { RunFilters } from "@relayrunner/api-types";
+import { jobFilterSql } from "../reports/run-filters.ts";
+import { hasRunFilters, type RunFilters } from "@relayrunner/api-types";
 import {
   classRate,
   cents,
@@ -545,7 +545,7 @@ async function recentUsage(
         isNotNull(table.startedAt),
         isNotNull(table.runnerName),
         ne(sql`coalesce(${table.conclusion}, '')`, "skipped"),
-        sql`1${jobFilterSql(filters)}`,
+        jobFilterSql(filters),
       ),
     )
     .groupBy(

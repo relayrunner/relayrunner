@@ -103,7 +103,10 @@ export function branchAgent(branch: string | null | undefined): AgentId | null {
 /** A run's agent: `likely` when only its branch name points to it. */
 export type RunAgent = { id: AgentId; likely: boolean };
 
-export function runAgent(stored: string | null | undefined, branch: string | null | undefined) {
+export function runAgent(
+  stored: string | null | undefined,
+  branch: string | null | undefined,
+): RunAgent | null {
   if (stored && agentById(stored)) return { id: stored as AgentId, likely: false };
   const guess = branchAgent(branch);
   return guess ? { id: guess, likely: true } : null;

@@ -9,7 +9,12 @@ import { PHONE_HIDDEN } from "@/components/ui/table";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { PageTabs, USAGE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { RunFilterBar } from "@/components/run-filters";
-import { hasFilters, type RunFilters, runFilterSearch, setFilters } from "@/lib/run-filters";
+import {
+  hasRunFilters,
+  parseRunFilters,
+  RAW_RETENTION_DAYS,
+  type RunFilters,
+} from "@relayrunner/api-types";
 import { PullRequestUsage } from "@/components/pull-request-usage";
 import { getPullRequests, PULL_REQUEST_RANGES, type PullRequestReport } from "@/lib/pull-requests";
 import {
@@ -40,19 +45,17 @@ const RANGES: RangeOptions = {
   presets: ["24h", "7d", "14d", "30d", "90d", "week", "lastweek", "month", "lastmonth"],
 };
 const DEFAULT_RANGE: TimeRange = "month";
-// How far back the API keeps jobs' own rows, the only ones that know who or what started a job.
-const RAW_DAYS = 62;
 
-type UsageData = { report: UsageReport; checks: FreeCheckSavings };
+// No check savings with filters on: optimized checks aren't workflow runs, so filters leave them out.
+type UsageData = { report: UsageReport; checks: FreeCheckSavings | null };
 
 // The job report and what the free checks saved, over the same range.
 function load(range: TimeRange, filters: RunFilters): Promise<UsageData> {
-  return Promise.all([getUsage(range, filters), getCheckSavings(range)]).then(
-    ([report, checks]) => ({
-      report,
-      checks,
-    }),
-  );
+  const checks = hasRunFilters(filters) ? null : getCheckSavings(range);
+  return Promise.all([getUsage(range, filters), checks]).then(([report, checks]) => ({
+    report,
+    checks,
+  }));
 }
 
 const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
@@ -80,7 +83,7 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
     view: viewOf(TABS, search.view),
     ...ranges.validateSearch(search),
     repo: textParam(search.repo),
-    ...runFilterSearch(search),
+    ...parseRunFilters(search),
   }),
   loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
   // Each view loads its first range here, and another range in the page.
@@ -94,7 +97,7 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
       usage: await loadPage(
         usageQuery(
           ranges.rangeOf(location.search as UsageSearch),
-          setFilters(location.search as UsageSearch),
+          parseRunFilters(location.search as UsageSearch),
         ),
       ),
     };
@@ -144,7 +147,7 @@ function PullRequests({ loaded }: { loaded: PullRequestReport }) {
 function Overview({ loaded }: { loaded: UsageData }) {
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const filters = useMemo(() => setFilters(search), [search]);
+  const filters = useMemo(() => parseRunFilters(search), [search]);
   const setSearch = useSetSearch<UsageSearch>();
   const {
     report: { report, checks },
@@ -163,14 +166,13 @@ function Overview({ loaded }: { loaded: UsageData }) {
         />
         <RunFilterBar range={range} value={filters} onChange={setSearch} />
       </div>
-      {hasFilters(filters) && report.days > RAW_DAYS && (
+      {hasRunFilters(filters) && report.days > RAW_RETENTION_DAYS && (
         <p className="text-sm text-muted-foreground">
-          With filters on, these count the last {RAW_DAYS} days.
+          With filters on, these count the last {RAW_RETENTION_DAYS} days.
         </p>
       )}
 
-      {/* Optimized checks aren't workflow runs, so a filter leaves them out. */}
-      {checks.checks > 0 && !hasFilters(filters) && (
+      {checks && checks.checks > 0 && (
         <SectionBoundary>
           <FreeChecks savings={checks} />
         </SectionBoundary>

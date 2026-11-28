@@ -40,7 +40,7 @@ import { hasTrend, lastDays, type ReportWindow, type Window, windowDays } from "
 import { parseDate } from "../ingest/jobs.ts";
 import { jobKey, picksForJobs } from "../routing/route-decisions.ts";
 import { workflowCosts } from "./workflow-compare.ts";
-import { runMatches } from "./run-filters.ts";
+import { rowMatches } from "./run-filters.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -316,7 +316,7 @@ async function runSummaries(db: Db, workspaceId: string, window: Window, filters
   for (const { group, row } of sources.values()) {
     // A run seen only as a pick (its jobs still running, no workflow_run yet) has nothing to show.
     if (!row && !Number(group?.jobs)) continue;
-    if (!runMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null)) continue;
+    if (!rowMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null)) continue;
     const status = runStatus(row?.status);
     const startedAt = row?.runStartedAt?.getTime() ?? group?.first_queued ?? null;
     const completedAt =
@@ -412,7 +412,7 @@ export async function listRuns(
   const summaries = all.filter(
     ({ updatedAt, row, group }) =>
       updatedAt >= window.from &&
-      runMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null) &&
+      rowMatches(filters, row, row?.workflowName ?? group?.workflow_name ?? null) &&
       (!only ||
         ((row?.repositoryFullName ?? group?.repository) === only.repository &&
           (row?.workflowName ?? group?.workflow_name) === only.workflow)),

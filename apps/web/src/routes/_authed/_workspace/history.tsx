@@ -55,7 +55,7 @@ import {
   unlessDefault,
   useSetSearch,
 } from "@/lib/search-params";
-import { type RunFilters, runFilterSearch, setFilters } from "@/lib/run-filters";
+import { parseRunFilters, type RunFilters } from "@relayrunner/api-types";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed } from "@/lib/utils";
 
@@ -105,7 +105,7 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
       // Not trimmed, so a space typed between words stays.
       q: typeof search.q === "string" && search.q ? search.q : undefined,
       chart: textParam(search.chart),
-      ...runFilterSearch(search),
+      ...parseRunFilters(search),
     };
   },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
@@ -113,7 +113,7 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     const search = location.search as HistorySearch;
     const range = ranges.rangeOf(search);
-    const filters = setFilters(search);
+    const filters = parseRunFilters(search);
     if (view === "jobs") return { view, jobs: await loadPage(jobsQuery(range, filters)) };
     return { view, runs: await loadPage(runsQuery(range, filters)) };
   },
@@ -184,7 +184,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const filters = useMemo(() => setFilters(search), [search]);
+  const filters = useMemo(() => parseRunFilters(search), [search]);
   const { report, refetch } = usePageReport(runsQuery(range, filters), loaded);
   const repository = search.repo ?? "all";
   const result = search.result ?? "all";

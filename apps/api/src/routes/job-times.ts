@@ -6,7 +6,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { jobTypeTimes } from "../reports/job-type-times.ts";
 import { performanceReport } from "../reports/runs.ts";
-import { parseRunFilters } from "../reports/run-filters.ts";
+import { parseRunFilters } from "@relayrunner/api-types";
 import { workflowReport } from "../reports/workflow-compare.ts";
 import { MAX_RANGE_MS, runnerReport } from "../reports/runner-report.ts";
 import { Epoch, requireWindow } from "../reports/report-window.ts";

@@ -14,7 +14,8 @@ export const JOB_TIMING_RETENTION_DAYS = 90;
 // job_timing_daily: two months, so last month is still single jobs, and so is this month's trend
 // window (the same days of last month). The Runs page and job times read single jobs, so they only
 // look this far back.
-export const RAW_RETENTION_DAYS = 62;
+// Kept in @relayrunner/api-types, so the dashboard can say how far back a filtered report counts.
+export { RAW_RETENTION_DAYS } from "@relayrunner/api-types";
 // How far back a filtered Signals page, a signal's runs and pull request folders look: shorter than
 // single jobs are kept, since each of those reads (and GitHub calls) grows with it.
 export const LIVE_DAYS = 30;

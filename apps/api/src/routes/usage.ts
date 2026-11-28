@@ -8,7 +8,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { pullRequestReport } from "../reports/pull-request-minutes.ts";
 import { requireWindow } from "../reports/report-window.ts";
-import { parseRunFilters } from "../reports/run-filters.ts";
+import { parseRunFilters } from "@relayrunner/api-types";
 
 // The Usage page: how many of the workspace's jobs ran under a minute, and what GitHub's round-up
 // to whole minutes cost, over ?from=&to= or the last ?days=N days (default 30), narrowed by the run

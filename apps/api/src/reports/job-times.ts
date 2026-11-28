@@ -188,7 +188,7 @@ export function windowQuery(
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,
       ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
       count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
-    from ${table} where ${windowWhere(workspaceId, since, until)}${jobFilterSql(filters)}
+    from ${table} where ${windowWhere(workspaceId, since, until)} and ${jobFilterSql(filters)}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
 }
@@ -205,7 +205,7 @@ export function missedQuery(
       ${table.machineId} as machine_id, count(*) as missed
     from ${table}
     where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}
-      ${before(until)} and ${NOT_PICKED_UP}${jobFilterSql(filters)}
+      ${before(until)} and ${NOT_PICKED_UP} and ${jobFilterSql(filters)}
     group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`;
 }
 
@@ -566,7 +566,7 @@ export async function recentJobs(
   window: Window = lastDays(DEFAULT_DAYS),
   filters: RunFilters = {},
 ): Promise<{ days: number; environments: Environment[]; jobs: HistoryJob[]; truncated: boolean }> {
-  const where = sql`${windowWhere(workspaceId, new Date(window.from), window.to)}${jobFilterSql(filters)}`;
+  const where = sql`${windowWhere(workspaceId, new Date(window.from), window.to)} and ${jobFilterSql(filters)}`;
   const rows = await jobListQuery(db, where, JOB_LIMIT + 1);
   const days = windowDays(window);
 

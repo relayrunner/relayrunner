@@ -98,9 +98,17 @@ export function resolveRange(range: TimeRange, now = Date.now()): { from: number
 }
 
 /** The range as a report's query, `from=…&to=…` in epoch ms, so the API reads the same days. */
-export function rangeQuery(range: TimeRange, now = Date.now()) {
+export function rangeQuery(range: TimeRange, extra: QueryExtra = {}, now = Date.now()) {
   const { from, to } = resolveRange(range, now);
-  return `from=${from}&to=${to}`;
+  return withExtra(new URLSearchParams({ from: String(from), to: String(to) }), extra);
+}
+
+/** More params for a report's query, such as its run filters; unset ones are left out. */
+type QueryExtra = Record<string, string | undefined>;
+
+function withExtra(params: URLSearchParams, extra: QueryExtra) {
+  for (const [key, value] of Object.entries(extra)) if (value !== undefined) params.set(key, value);
+  return params.toString();
 }
 
 /**
@@ -131,11 +139,7 @@ function priorStart(range: TimeRange, now: number) {
  * last few days as the API counts them, and any other as `from=…&to=…` with `priorFrom=` where its
  * trend starts.
  */
-export function reportQuery(
-  range: TimeRange,
-  extra: Record<string, string> = {},
-  now = Date.now(),
-) {
+export function reportQuery(range: TimeRange, extra: QueryExtra = {}, now = Date.now()) {
   const params = new URLSearchParams();
   if (isRolling(range)) params.set("days", String(presetDays(range)));
   else {
@@ -145,8 +149,7 @@ export function reportQuery(
     params.set("to", String(to));
     if (prior !== undefined) params.set("priorFrom", String(prior));
   }
-  for (const [key, value] of Object.entries(extra)) params.set(key, value);
-  return params.toString();
+  return withExtra(params, extra);
 }
 
 /** What a range's trend compares it with: "the 7 days before", "the same days last month". */

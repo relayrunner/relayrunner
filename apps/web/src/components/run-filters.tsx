@@ -1,9 +1,20 @@
 // The filter bar History, Performance and Usage share: a Filter menu with each kind of filter and
 // what it can be set to over the range, busiest first, and each filter that's set as a button that
 // clears it. Also the mark a run or job from a coding agent gets.
-import { agentById, type RunAgent } from "@relayrunner/api-types";
+import {
+  agentById,
+  BOTS,
+  isBotLogin,
+  RUN_FILTER_KEYS,
+  type RunAgent,
+  type RunFilterChoice,
+  type RunFilterKey,
+  type RunFilterOptions,
+  type RunFilters,
+} from "@relayrunner/api-types";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { BotIcon, ListFilterIcon, XIcon } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,22 +27,30 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useFlag } from "@/lib/flags";
-import {
-  BOTS,
-  FILTER_NAMES,
-  filterValueLabel,
-  RUN_FILTER_KEYS,
-  type RunFilterKey,
-  type RunFilterOptions,
-  type RunFilters,
-} from "@/lib/run-filters";
 import { api } from "@/lib/api";
+import { useFlag } from "@/lib/flags";
 import { pageQuery } from "@/lib/query";
+import { triggerName } from "@/lib/signals";
 import { reportQuery, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 
-type Choice = { value: string; label: string; runs: number };
+const FILTER_NAMES: Record<RunFilterKey, string> = {
+  workflow: "Workflow",
+  person: "Person",
+  branch: "Branch",
+  trigger: "Trigger",
+  agent: "Agent",
+};
+
+/** What a filter's value reads as: `pull_request` is "Pull request", `bots` is "Bots". */
+function valueLabel(key: RunFilterKey, value: string) {
+  if (key === "trigger") return triggerName(value);
+  if (key === "person" && value === BOTS) return "Bots";
+  if (key === "agent" && value === "any") return "Any agent";
+  if (key === "agent" && value === "none") return "No agent";
+  if (key === "agent") return agentById(value)?.name ?? value;
+  return value;
+}
 
 /** What each filter can be set to over the range. */
 const runFilterOptionsQuery = (range: TimeRange) =>
@@ -39,31 +58,20 @@ const runFilterOptionsQuery = (range: TimeRange) =>
     api<RunFilterOptions>(`/runs/filters?${reportQuery(range)}`),
   );
 
-/** Each filter's choices, as the menu lists them. */
-function filterChoices(options: RunFilterOptions): Record<RunFilterKey, Choice[]> {
-  const choice = (key: RunFilterKey, value: string, runs: number) => ({
-    value,
-    label: filterValueLabel(key, value),
-    runs,
-  });
-  const bots = options.people
-    .filter((person) => person.login.endsWith("[bot]"))
-    .reduce((sum, person) => sum + person.runs, 0);
-  const total = options.triggers.reduce((sum, trigger) => sum + trigger.runs, 0);
-  const agents = options.agents.reduce((sum, agent) => sum + agent.runs, 0);
+const sum = (choices: RunFilterChoice[]) => choices.reduce((total, each) => total + each.runs, 0);
+
+/** Each filter's choices as the menu lists them: Bots first among people, any and no agent around the agents. */
+function withGroups(options: RunFilterOptions): RunFilterOptions {
+  const bots = sum(options.person.filter((each) => isBotLogin(each.value)));
+  const agents = sum(options.agent);
   return {
-    workflow: options.workflows.map((each) => choice("workflow", each.name, each.runs)),
-    person: [
-      ...(bots ? [choice("person", BOTS, bots)] : []),
-      ...options.people.map((each) => choice("person", each.login, each.runs)),
-    ],
-    branch: options.branches.map((each) => choice("branch", each.name, each.runs)),
-    trigger: options.triggers.map((each) => choice("trigger", each.name, each.runs)),
+    ...options,
+    person: bots ? [{ value: BOTS, runs: bots }, ...options.person] : options.person,
     agent: agents
       ? [
-          choice("agent", "any", agents),
-          ...options.agents.map((each) => choice("agent", each.id, each.runs)),
-          choice("agent", "none", Math.max(0, total - agents)),
+          { value: "any", runs: agents },
+          ...options.agent,
+          { value: "none", runs: Math.max(0, sum(options.trigger) - agents) },
         ]
       : [],
   };
@@ -85,17 +93,19 @@ export function RunFilterBar({
   keys?: readonly RunFilterKey[];
 }) {
   const on = useFlag("run-filters");
+  // Read once the menu first opens, since most visits never open it.
+  const [opened, setOpened] = useState(false);
   const { data } = useQuery({
     ...runFilterOptionsQuery(range),
-    enabled: on,
+    enabled: on && opened,
     placeholderData: keepPreviousData,
   });
   if (!on) return null;
-  const choices = data ? filterChoices(data) : null;
+  const choices = data ? withGroups(data) : null;
   const active = keys.filter((key) => value[key]);
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && setOpened(true)}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm">
             <ListFilterIcon />
@@ -119,7 +129,7 @@ export function RunFilterBar({
                   >
                     {items.map((item) => (
                       <DropdownMenuRadioItem key={item.value} value={item.value}>
-                        <span className="max-w-64 truncate">{item.label}</span>
+                        <span className="max-w-64 truncate">{valueLabel(key, item.value)}</span>
                         <span className="ml-auto pl-6 text-xs text-muted-foreground tabular-nums">
                           {count(item.runs)}
                         </span>
@@ -142,7 +152,7 @@ export function RunFilterBar({
           onClick={() => onChange({ [key]: undefined })}
         >
           <span className="text-muted-foreground">{FILTER_NAMES[key]}</span>
-          <span className="max-w-48 truncate">{filterValueLabel(key, value[key]!)}</span>
+          <span className="max-w-48 truncate">{valueLabel(key, value[key]!)}</span>
           <XIcon className="text-muted-foreground" />
         </Button>
       ))}

@@ -7,7 +7,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { TimeRangePicker } from "@/components/range-picker";
 import { CommitBy } from "@/components/commit";
 import { AgentMark, RunFilterBar } from "@/components/run-filters";
-import { setFilters } from "@/lib/run-filters";
+import { parseRunFilters } from "@relayrunner/api-types";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import {
@@ -297,7 +297,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
   const search = history.useSearch();
-  const filters = useMemo(() => setFilters(search), [search]);
+  const filters = useMemo(() => parseRunFilters(search), [search]);
   const { report } = usePageReport(jobsQuery(range, filters), first);
 
   const repositories = useMemo(
