@@ -1,30 +1,33 @@
+import type { InfiniteData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { TimeRangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
-import { loadPage, pageQuery, usePageReport } from "@/lib/query";
+import {
+  loadPage,
+  loadPages,
+  pagedQuery,
+  pageQuery,
+  usePagedReport,
+  usePageReport,
+} from "@/lib/query";
 import { PageTabs, USAGE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { RunFilterBar } from "@/components/run-filters";
 import {
   hasRunFilters,
+  parsePullRequestSort,
   parseRunFilters,
-  PULL_REQUEST_PAGE,
+  type PullRequestReport,
   type PullRequestSort,
   RAW_RETENTION_DAYS,
   type RunFilters,
 } from "@relayrunner/api-types";
 import { PullRequestUsage } from "@/components/pull-request-usage";
-import {
-  getPullRequests,
-  PULL_REQUEST_RANGES,
-  type PullRequestReport,
-  sortFromSearch,
-  sortSearchParam,
-} from "@/lib/pull-requests";
+import { getPullRequests, PULL_REQUEST_RANGES, sortSearchParam } from "@/lib/pull-requests";
 import {
   type RangeSearch,
   rangeSearch,
@@ -72,7 +75,7 @@ type View = (typeof TABS)[number]["value"];
 type UsageSearch = RangeSearch & RunFilters & { view?: View; repo?: string; sort?: string };
 type Loaded =
   | { view: "overview"; usage: UsageData }
-  | { view: "pull-requests"; pullRequests: PullRequestReport };
+  | { view: "pull-requests"; pullRequests: InfiniteData<PullRequestReport, number> };
 
 // The Overview's longer ranges reach past what the Pull requests view can read, which falls back
 // to its default.
@@ -83,14 +86,20 @@ function pullRequestRange(search: UsageSearch): TimeRange {
 
 const usageQuery = (range: TimeRange, filters: RunFilters) =>
   pageQuery(["usage", range, filters], () => load(range, filters));
-// One page of the Pull requests view: the first `limit` of one repo's, in the URL's order.
-type PullRequestPage = { repository: string; sort: PullRequestSort; limit: number };
-const pullRequestsQuery = (range: TimeRange, page: PullRequestPage) =>
-  pageQuery(["usage", "pull-requests", range, page], () => getPullRequests(range, page));
-const firstPage = (search: UsageSearch): PullRequestPage => ({
+// The Pull requests view: one repo's, in the URL's order, read a page at a time.
+type PullRequestList = { repository: string; sort: PullRequestSort };
+const pullRequestsQuery = (range: TimeRange, list: PullRequestList) =>
+  pagedQuery(
+    ["usage", "pull-requests", range, list],
+    (offset) => getPullRequests(range, { ...list, offset }),
+    (pages) => {
+      const shown = pages.reduce((sum, page) => sum + page.pullRequests.length, 0);
+      return shown < pages[0]!.summary.count ? shown : undefined;
+    },
+  );
+const listOf = (search: UsageSearch): PullRequestList => ({
   repository: search.repo ?? "all",
-  sort: sortFromSearch(search.sort),
-  limit: PULL_REQUEST_PAGE,
+  sort: parsePullRequestSort(search.sort),
 });
 
 export const Route = createFileRoute("/_authed/_workspace/usage")({
@@ -98,7 +107,7 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
     view: viewOf(TABS, search.view),
     ...ranges.validateSearch(search),
     repo: textParam(search.repo),
-    sort: sortSearchParam(sortFromSearch(search.sort)),
+    sort: sortSearchParam(parsePullRequestSort(search.sort)),
     ...parseRunFilters(search),
   }),
   loaderDeps: ({ search }) => ({ view: search.view ?? "overview" }),
@@ -107,7 +116,7 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
     if (view === "pull-requests") {
       const search = location.search as UsageSearch;
       const range = pullRequestRange(search);
-      return { view, pullRequests: await loadPage(pullRequestsQuery(range, firstPage(search))) };
+      return { view, pullRequests: await loadPages(pullRequestsQuery(range, listOf(search))) };
     }
     return {
       view,
@@ -143,27 +152,29 @@ function UsagePage() {
   );
 }
 
-function PullRequests({ loaded }: { loaded: PullRequestReport }) {
+function PullRequests({ loaded }: { loaded: InfiniteData<PullRequestReport, number> }) {
   const search = Route.useSearch();
   const range = pullRequestRange(search);
   const setSearch = useSetSearch<UsageSearch>();
-  const first = firstPage(search);
-  // "Show more" asks for a longer first page, back to one page when the range, repo or sort change.
-  const key = JSON.stringify([range, first.repository, search.sort]);
-  const [more, setMore] = useState({ key, limit: first.limit });
-  const limit = more.key === key ? more.limit : first.limit;
-  const { report } = usePageReport(pullRequestsQuery(range, { ...first, limit }), loaded);
+  const list = listOf(search);
+  const { pages, more, loadingMore } = usePagedReport(pullRequestsQuery(range, list), loaded);
+  // The first page's summary and repos, with every page's pull requests.
+  const report = useMemo(
+    () => ({ ...pages[0]!, pullRequests: pages.flatMap((page) => page.pullRequests) }),
+    [pages],
+  );
   return (
     <SectionBoundary>
       <PullRequestUsage
         report={report}
         range={range}
         onRange={(next) => setSearch(ranges.toSearch(next))}
-        repository={first.repository}
+        repository={list.repository}
         onRepository={(next) => setSearch({ repo: unlessDefault(next, "all") })}
-        sort={first.sort}
+        sort={list.sort}
         onSort={(sort) => setSearch({ sort: sortSearchParam(sort) })}
-        onMore={() => setMore({ key, limit: limit + PULL_REQUEST_PAGE })}
+        onMore={more}
+        loadingMore={loadingMore}
       />
     </SectionBoundary>
   );

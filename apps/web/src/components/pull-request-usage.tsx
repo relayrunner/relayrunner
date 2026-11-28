@@ -12,17 +12,13 @@ import { minutesText } from "@/lib/job-times";
 import {
   DEFAULT_PULL_REQUEST_SORT,
   PULL_REQUEST_PAGE,
-  PULL_REQUEST_SORTS,
+  isPullRequestSortBy,
   pullRequestDate,
-  type PullRequestSort,
-} from "@relayrunner/api-types";
-import {
-  bucketPosition,
-  PULL_REQUEST_RANGES,
   type PullRequestMinutes,
   type PullRequestReport,
-  stateOf,
-} from "@/lib/pull-requests";
+  type PullRequestSort,
+} from "@relayrunner/api-types";
+import { bucketPosition, PULL_REQUEST_RANGES, stateOf } from "@/lib/pull-requests";
 import { pullRequestUrl } from "@/lib/runs";
 import { isoTime, type ExportColumn } from "@/lib/table-export";
 import type { TimeRange } from "@/lib/time-range";
@@ -47,6 +43,7 @@ export function PullRequestUsage({
   sort,
   onSort,
   onMore,
+  loadingMore,
 }: {
   report: PullRequestReport;
   range: TimeRange;
@@ -56,6 +53,7 @@ export function PullRequestUsage({
   sort: PullRequestSort;
   onSort: (sort: PullRequestSort) => void;
   onMore: () => void;
+  loadingMore: boolean;
 }) {
   const { summary, pullRequests } = report;
   const showRepository = report.repositories.length > 1 && repository === "all";
@@ -114,7 +112,12 @@ export function PullRequestUsage({
             />
           </TableContext>
           {left > 0 && (
-            <Button variant="outline" className="justify-self-center" onClick={onMore}>
+            <Button
+              variant="outline"
+              className="justify-self-center"
+              disabled={loadingMore}
+              onClick={onMore}
+            >
               Show {Math.min(left, PULL_REQUEST_PAGE)} more of {summary.count}
             </Button>
           )}
@@ -217,8 +220,8 @@ const dateOf = (pr: PullRequestMinutes) => pullRequestDate(pr).at;
 
 /** A sort the table hands back, as one the API takes: the default when it's none of those. */
 const sortOf = (sort: { id: string; desc: boolean } | undefined): PullRequestSort =>
-  sort && PULL_REQUEST_SORTS.includes(sort.id as never)
-    ? (sort as PullRequestSort)
+  sort && isPullRequestSortBy(sort.id)
+    ? { id: sort.id, desc: sort.desc }
     : DEFAULT_PULL_REQUEST_SORT;
 
 const STATE_ICON = {

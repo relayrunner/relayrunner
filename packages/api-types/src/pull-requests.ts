@@ -1,3 +1,5 @@
+import { interpolate } from "./job-times.ts";
+
 // GET /api/usage/pull-requests (apps/api/src/reports/pull-request-minutes.ts): CI minutes per pull
 // request, shared with the dashboard's Usage › Pull requests view and the MCP server.
 
@@ -89,11 +91,14 @@ export const DEFAULT_PULL_REQUEST_SORT: PullRequestSort = { id: "minutes", desc:
 
 export const pullRequestSortParam = ({ id, desc }: PullRequestSort) => (desc ? id : `${id}-asc`);
 
+export const isPullRequestSortBy = (id: string): id is PullRequestSortBy =>
+  (PULL_REQUEST_SORTS as readonly string[]).includes(id);
+
 /** The sort a `sort=` names, or the default when it names none. */
 export function parsePullRequestSort(value: unknown): PullRequestSort {
   if (typeof value !== "string") return DEFAULT_PULL_REQUEST_SORT;
-  const id = value.replace(/-asc$/, "") as PullRequestSortBy;
-  return PULL_REQUEST_SORTS.includes(id) ? { id, desc: id === value } : DEFAULT_PULL_REQUEST_SORT;
+  const id = value.replace(/-asc$/, "");
+  return isPullRequestSortBy(id) ? { id, desc: id === value } : DEFAULT_PULL_REQUEST_SORT;
 }
 
 /** Pull requests a page lists unless asked for more, and the most one lists. */
@@ -120,14 +125,6 @@ export function sortPullRequests(
   const value = SORT_VALUE[id];
   const sign = desc ? -1 : 1;
   return pullRequests.toSorted((a, b) => sign * (value(a) - value(b)) || b.number - a.number);
-}
-
-/** The q-quantile (0..1) of ascending values, interpolated. */
-function interpolate(sorted: number[], q: number) {
-  const at = (sorted.length - 1) * q;
-  const lo = Math.floor(at);
-  const hi = Math.ceil(at);
-  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo);
 }
 
 const total = (values: number[]) => values.reduce((sum, value) => sum + value, 0);
@@ -161,6 +158,19 @@ export function summarizePullRequests(
       ? total(pullRequests.map((pr) => pr.rerunMinutes)) / minutes.total
       : 0,
     buckets: minuteBuckets(pullRequests.map((pr) => pr.minutes)),
+  };
+}
+
+/** The summary of every pull request, and the page of them a query asks for, in its order. */
+export function pullRequestPage(
+  pullRequests: PullRequestMinutes[],
+  outside: PullRequestReport["outside"],
+  { sort, offset, limit }: { sort: PullRequestSort; offset: number; limit: number },
+): Omit<PullRequestReport, "repositories"> {
+  return {
+    summary: summarizePullRequests(pullRequests, outside),
+    pullRequests: sortPullRequests(pullRequests, sort).slice(offset, offset + limit),
+    outside,
   };
 }
 

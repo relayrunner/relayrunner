@@ -1,7 +1,6 @@
 import {
   DEFAULT_PULL_REQUEST_SORT,
   type MinuteBucket,
-  parsePullRequestSort,
   pullRequestSortParam,
   type PullRequestMinutes,
   type PullRequestReport,
@@ -10,8 +9,6 @@ import {
 import { api } from "./api";
 import { unlessDefault } from "./search-params";
 import { type RangeOptions, rangeQuery, type TimeRange } from "./time-range";
-
-export type { PullRequestMinutes, PullRequestReport };
 
 /** The view reads jobs' own rows, which the API keeps 62 days, so it has no 90-day range. */
 export const PULL_REQUEST_RANGES: RangeOptions = {
@@ -22,18 +19,15 @@ export const PULL_REQUEST_RANGES: RangeOptions = {
 export const sortSearchParam = (sort: PullRequestSort) =>
   unlessDefault(pullRequestSortParam(sort), pullRequestSortParam(DEFAULT_PULL_REQUEST_SORT));
 
-/** The table's sort from its `?sort=`, the default when it names nothing it can sort by. */
-export const sortFromSearch = (value: unknown) => parsePullRequestSort(value);
-
-/** One page of the pull requests: one repo's ("all" for every one), in `sort` order, the first `limit`. */
+/** One page of the pull requests: one repo's ("all" for every one), in `sort` order, from `offset`. */
 export function getPullRequests(
   range: TimeRange,
-  { repository, sort, limit }: { repository: string; sort: PullRequestSort; limit: number },
+  { repository, sort, offset }: { repository: string; sort: PullRequestSort; offset: number },
 ) {
   const query = rangeQuery(range, {
     repo: unlessDefault(repository, "all"),
     sort: sortSearchParam(sort),
-    limit: String(limit),
+    offset: offset ? String(offset) : undefined,
   });
   return api<PullRequestReport>(`/usage/pull-requests?${query}`);
 }

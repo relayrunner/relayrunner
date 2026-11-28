@@ -3,6 +3,14 @@
 import type { RunnerSize } from "@relayrunner/providers";
 import type { DeviceKind } from "./device.ts";
 
+/** The q-quantile (0 to 1) of ascending values, interpolated: how every percentile is worked out. */
+export function interpolate(sorted: number[], q: number) {
+  const at = (sorted.length - 1) * q;
+  const lo = Math.floor(at);
+  const hi = Math.ceil(at);
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo);
+}
+
 /** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
 export type Confidence = "none" | "few" | "low" | "ok";
 

@@ -20,7 +20,7 @@ import type {
   Stat,
   WorkflowRow,
 } from "@relayrunner/api-types";
-import { runAgent } from "@relayrunner/api-types";
+import { interpolate, runAgent } from "@relayrunner/api-types";
 import { type Db, schema } from "../db/index.ts";
 import {
   before,
@@ -77,13 +77,9 @@ export function confidence(samples: number): Confidence {
   return "ok";
 }
 
-/** The q-quantile (0..1) of ascending values, interpolated. */
+/** The q-quantile (0..1) of ascending values, rounded, or null when there are none. */
 export function quantile(sorted: number[], q: number): number | null {
-  if (!sorted.length) return null;
-  const at = (sorted.length - 1) * q;
-  const lo = Math.floor(at);
-  const hi = Math.ceil(at);
-  return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo));
+  return sorted.length ? Math.round(interpolate(sorted, q)) : null;
 }
 
 interface Sample {

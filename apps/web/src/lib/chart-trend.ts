@@ -1,3 +1,5 @@
+import { interpolate } from "@relayrunner/api-types";
+
 // How a chart's time axis and its trend line are worked out. Kept free of `@/` imports so tests
 // can load it, like time-range.ts.
 const HOUR_MS = 3_600_000;
@@ -85,13 +87,7 @@ export function periodStarts(times: number[], periodOf: (at: number) => number) 
   return starts;
 }
 
-/** The q-quantile (0 to 1) of ascending values, interpolated the way the API's job times are. */
-export function interpolate(sorted: number[], q: number) {
-  const at = (sorted.length - 1) * q;
-  const lo = Math.floor(at);
-  const hi = Math.ceil(at);
-  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo);
-}
+export { interpolate };
 
 /** interpolate, rounded to a whole number, for milliseconds. */
 export const quantile = (sorted: number[], q: number) => Math.round(interpolate(sorted, q));

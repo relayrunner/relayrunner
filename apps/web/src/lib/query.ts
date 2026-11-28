@@ -3,10 +3,13 @@
 // or panel come back to shows what it read last, and two parts asking for the same thing share one
 // request.
 import {
+  type InfiniteData,
+  infiniteQueryOptions,
   keepPreviousData,
   QueryClient,
   type QueryKey,
   queryOptions,
+  useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
 import { useRef } from "react";
@@ -53,4 +56,41 @@ export function usePageReport<T>(options: ReturnType<typeof pageQuery<T>>, first
   const last = useRef(first);
   if (query.data !== undefined) last.current = query.data;
   return { report: last.current, refetch: query.refetch };
+}
+
+/**
+ * A page's report that lists its rows a page at a time: `queryFn` reads the page from an offset,
+ * and `nextOffset` says where the next one starts after `pages` (undefined when there's none).
+ */
+export function pagedQuery<T>(
+  queryKey: QueryKey,
+  queryFn: (offset: number) => Promise<T>,
+  nextOffset: (pages: T[]) => number | undefined,
+) {
+  return infiniteQueryOptions<T, Error, InfiniteData<T, number>, QueryKey, number>({
+    queryKey,
+    queryFn: ({ pageParam }) => queryFn(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (_last: T, pages: T[]) => nextOffset(pages),
+    staleTime: PAGE_FRESH_MS,
+  });
+}
+
+type PagedQuery<T> = ReturnType<typeof pagedQuery<T>>;
+
+/** loadPage for a paged report: its first page, or every page it has cached. */
+export function loadPages<T>(options: PagedQuery<T>) {
+  return queryClient.ensureInfiniteQueryData({ ...options, revalidateIfStale: true });
+}
+
+/** usePageReport for a paged report: the pages read so far, and a way to read the next one. */
+export function usePagedReport<T>(options: PagedQuery<T>, first: InfiniteData<T, number>) {
+  const query = useInfiniteQuery({ ...options, placeholderData: keepPreviousData });
+  const last = useRef(first);
+  if (query.data !== undefined) last.current = query.data;
+  return {
+    pages: last.current.pages,
+    more: () => void query.fetchNextPage(),
+    loadingMore: query.isFetchingNextPage,
+  };
 }

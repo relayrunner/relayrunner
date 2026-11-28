@@ -22,9 +22,8 @@ import {
   PULL_REQUEST_PAGE,
   type PullRequestMinutes,
   type PullRequestReport,
+  pullRequestPage,
   type PullRequestSort,
-  sortPullRequests,
-  summarizePullRequests,
 } from "@relayrunner/api-types";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { type Db, isMissingTable, schema } from "../db/index.ts";
@@ -145,18 +144,21 @@ export async function pullRequestReport(
       throw error;
     });
 
-  // Every repo that ran jobs in the window, whichever one is asked for.
-  const repositoriesQuery = db
-    .selectDistinct({ repository: job.repositoryFullName })
-    .from(job)
-    .where(inWindow);
+  // Every repo that ran jobs in the window, whichever one is asked for: the sums have them all
+  // when none is.
+  const repositoriesQuery = repository
+    ? db.selectDistinct({ repository: job.repositoryFullName }).from(job).where(inWindow)
+    : undefined;
 
-  const [sums, metas, dates, repositories] = await Promise.all([
+  const [sums, metas, dates, otherRepositories] = await Promise.all([
     sumsQuery,
     metaQuery,
     datesQuery,
     repositoriesQuery,
   ]);
+  const repositories = otherRepositories?.map((row) => row.repository) ?? [
+    ...new Set(sums.map((row) => row.repository)),
+  ];
   const datesOf = new Map(dates.map((row) => [prKey(row.repository, row.number), row]));
 
   // Each branch's pull request, the newest named run winning on a reused branch; and the title of
@@ -221,9 +223,7 @@ export async function pullRequestReport(
     minutes: tenths(minutes),
   }));
   return {
-    summary: summarizePullRequests(all, outsideRows),
-    pullRequests: sortPullRequests(all, sort).slice(offset, offset + limit),
-    outside: outsideRows,
-    repositories: repositories.map((row) => row.repository).sort(),
+    ...pullRequestPage(all, outsideRows, { sort, offset, limit }),
+    repositories: repositories.sort(),
   };
 }
